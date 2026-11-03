@@ -1,0 +1,7 @@
+[mcp.servers.calculator]
+instructions = "Use the calculator tool to transform a numeric input. The same operation is also exposed by the HTTP route."
+
+[[mcp.servers.calculator.tools]]
+name = "scale_number"
+description = "Add 2 to the input number, then multiply it by 100."
+operation = "calculations.demo_handler"

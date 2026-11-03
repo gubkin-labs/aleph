@@ -24,7 +24,9 @@ Declarative configuration can simplify deployment, but it does not remove the ne
 
 ### 1. API and gateway
 
-HTTP APIs and webhooks, request-shape validation, routing, rate limits, and generated interfaces such as OpenAPI or MCP where appropriate. The gateway owns protocol entry and routing, then passes trusted tenant context to app logic; it does not make app-specific authorization decisions.
+HTTP APIs and webhooks, request-shape validation, routing, rate limits, and generated interfaces such as OpenAPI. The gateway owns protocol entry and routing, then passes trusted tenant context to app logic; it does not make app-specific authorization decisions.
+
+MCP is another protocol binding. An MCP server can declare server instructions and tools with names and descriptions. Each tool references a reusable operation and inherits its input/output schemas and authorization. The same operation can back an HTTP route and an MCP tool. Instructions guide clients; they are not a security control. Prompts and resources can be considered as separate capabilities.
 
 ### 2. Identity and access
 
@@ -49,7 +51,9 @@ Expose execution modes by their guarantees, rather than treating every task as a
 - **Workflows:** durable, resumable processes with persisted progress, business-step retries, waits, and timers. They own orchestration state, not queue delivery mechanics.
 - **Live:** event-driven logic for WebSocket connections, rooms, subscriptions, and presence.
 
-Cron is a trigger for a function or workflow, not a separate execution model. The gateway owns WebSocket protocol entry; Live owns connection/session behavior.
+Model operations as ordered, typed pipelines. Candidate steps include `authorize`, `derive`, `query`, `mutate`, `transform`, `call`, `publish`, `start_workflow`, and `return`. Each step is a built-in, inspectable primitive—not an arbitrary callback. Queries use a typed query structure, apply tenant scoping from table metadata, and have explicit result bounds.
+
+Cron is a trigger for a function or workflow, not a separate execution model. The gateway owns WebSocket protocol entry; Live owns connection/session behavior. If common use cases need branching or collection processing, add finite `when` branches and an explicit bounded `for_each` primitive rather than general loops or recursion.
 
 ### 5. Events and messaging
 
@@ -90,3 +94,5 @@ The proposed source format uses an Aleph-defined import manifest; TOML itself do
 - [Storage](examples/multi-file/storage/main.toml)
 - [Calculation](examples/multi-file/logic/calculations.toml)
 - [Route](examples/multi-file/routes/foo.toml)
+- [MCP server and shared tool](examples/multi-file/mcp/server.toml)
+- [Syntax stress tests](examples/syntax-stress-tests.md)

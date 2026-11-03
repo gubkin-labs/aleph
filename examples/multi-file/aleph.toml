@@ -14,3 +14,6 @@ as = "calculations"
 
 [[imports]]
 path = "routes/foo.toml"
+
+[[imports]]
+path = "mcp/server.toml"

@@ -2,4 +2,4 @@
 path = "/foo/:number"
 method = "GET"
 schema = "common.number"
-handler = "calculations.demo_handler"
+operation = "calculations.demo_handler"
