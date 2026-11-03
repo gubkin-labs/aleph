@@ -168,12 +168,122 @@ tools = ["logic.orders.get"]
 
 This probes WebSocket/session authorization, bounded history and retrieval, model budgets, and calls from an AI model into ordinary app operations. The search step inherits tenant filtering from the index declaration. Tool calls must use the same tenant context and authorization as HTTP/MCP calls; the model cannot invent capabilities or run an unbounded agent loop.
 
+## 5. Checkout: pass results, parallel async calls, and match
+
+```toml
+[schemas.checkout_input]
+cart_id = "uuid"
+postal_code = "string"
+payment_method = "string"
+
+[logic.checkout.quote]
+input_schema = "schemas.checkout_input"
+output_schema = "schemas.checkout_result"
+max_steps = 12
+
+[[logic.checkout.quote.steps]]
+kind = "authorize"
+policy = "cart.checkout"
+
+[[logic.checkout.quote.steps]]
+kind = "query"
+as = "cart"
+table = "carts"
+select = ["id", "subtotal", "items"]
+where = { id = "$input.cart_id" }
+limit = 1
+on_empty = "not_found"
+
+[[logic.checkout.quote.steps]]
+kind = "parallel"
+as = "quotes"
+max_concurrency = 2
+
+[[logic.checkout.quote.steps.calls]]
+as = "tax"
+operation = "logic.tax.quote"
+timeout = "2s"
+input.items = "$cart.items"
+input.postal_code = "$input.postal_code"
+
+[[logic.checkout.quote.steps.calls]]
+as = "shipping"
+operation = "logic.shipping.quote"
+timeout = "2s"
+input.items = "$cart.items"
+input.postal_code = "$input.postal_code"
+
+[[logic.checkout.quote.steps]]
+kind = "derive"
+as = "total"
+expression = "$cart.subtotal + $quotes.tax.amount + $quotes.shipping.amount"
+
+[[logic.checkout.quote.steps]]
+kind = "call"
+as = "payment"
+operation = "logic.payments.authorize"
+timeout = "3s"
+idempotency_key = "$request.idempotency_key"
+input.amount = "$total"
+input.method = "$input.payment_method"
+
+[[logic.checkout.quote.steps]]
+kind = "match"
+as = "result"
+on = "$payment.status"
+cases = [
+  { value = "authorized", result = { status = "paid", total = "$total" } },
+  { value = "declined", result = { status = "declined" } },
+  { value = "requires_action", result = { status = "pending", action_url = "$payment.action_url" } },
+]
+default = { error = "unexpected_payment_status" }
+
+[[logic.checkout.quote.steps]]
+kind = "return"
+value = "$result"
+```
+
+The `as` names make dataflow explicit: tax and shipping receive the cart, their results become `$quotes.tax` and `$quotes.shipping`, and the payment call receives `$total`. `parallel` contains two statically declared calls; each has a deadline and the fan-out is capped at two. `match` has a finite set of cases and a default, and every result must conform to the operation's declared output union.
+
+Waiting on tax, shipping, or payment I/O consumes wall time and connection capacity, not interpreter CPU. CPU is still charged to the operation's fuel budget. If payment requires a callback hours later, use a workflow `wait_for` step so the function invocation can finish and release compute.
+
+## 6. Bounded batch operation
+
+```toml
+[schemas.refresh_input]
+sku_ids = { type = "array", items = "uuid", max_items = 100 }
+
+[logic.inventory.refresh]
+input_schema = "schemas.refresh_input"
+output_schema = "schemas.status_list"
+
+[[logic.inventory.refresh.steps]]
+kind = "for_each"
+over = "$input.sku_ids"
+item_as = "sku"
+results_as = "statuses"
+max_items = 100
+max_concurrency = 8
+operation = "logic.inventory.get_status"
+timeout = "1s"
+input.sku = "$sku"
+
+[[logic.inventory.refresh.steps]]
+kind = "return"
+value = "$statuses"
+```
+
+The compiler can require `max_items` to be a literal no larger than the input schema's bound, calculate a worst-case operation budget as `100 × cost(logic.inventory.get_status)`, and cap fan-out at eight. Runtime rejects an oversized input rather than silently processing it. Nested loops should be rejected initially; large batches should use chunked durable workflows. If each item would issue the same database query, the compiler should flag the N+1 pattern and prefer a bounded batch-query primitive.
+
 ## What these examples reveal
 
-- **Bounded iteration:** avoid general loops and recursion. If real apps need collection processing, add a dedicated `for_each` primitive with a statically checked `max_items`, or use chunked workflows.
-- **Finite branching:** workflows and operations need a constrained `when`/`choose` primitive with statically visible branches.
-- **Typed step results:** `as` names and `$input` references need compile-time type checking; implicit “current value” behavior may be convenient but harder to debug.
-- **Safe queries:** query and mutation steps should use a typed query AST, tenant-scope tables automatically, cap result sizes, and avoid raw SQL in the shared runtime.
+- **Typed dataflow:** every step output has a declared type and name (`as = "cart"`; later use `$cart.items`). Reject unknown names, type mismatches, and accidental secret-to-public output flows.
+- **Cost model:** give each primitive a maximum fuel cost. Sequential cost sums; `match` cost is the maximum branch; `for_each` cost is `max_items × body cost`; fixed `parallel` cost sums child costs while its concurrency limit bounds simultaneous resource use.
+- **Bounded iteration:** no general `while` loops or recursion. `for_each` requires a literal `max_items` no larger than the input schema's maximum; cap nesting, output size, and per-tenant fan-out. Use chunked workflows for larger jobs.
+- **Finite branching:** `match` checks an enum/tag, has exhaustive cases or an explicit default, and returns a declared union type. Side-effecting branches need their own bounded step lists and failure semantics.
+- **Async semantics:** request-time calls require deadlines, response-size and call-count limits, and bounded concurrency. Waiting uses wall time and connections even when it consumes little CPU. Durable waits belong in workflows and must have timeouts or cancellation policy. Parallel calls should join; define whether one failure cancels siblings. Detached work should use a queue or workflow, not an untracked promise.
+- **Safe queries:** a row limit bounds returned data, not necessarily database CPU. Use a typed query AST, automatic tenant scope, allowed/indexed query shapes, database statement timeouts, and query budgets; avoid raw SQL in the shared runtime.
 - **Side effects:** mutations and external calls need explicit idempotency, retry, timeout, and transaction semantics.
-- **MCP surface:** start with server instructions and tools referencing operations. Prompts and resources can be added as separate declarative capabilities; instructions must never substitute for authorization.
-- **Resource accounting:** enforce budgets at operation, workflow, tenant, connection, and AI-provider boundaries—not just with a maximum step count.
+- **Runtime backstop:** static estimates are not a hard sandbox. Enforce fuel, CPU/memory quotas, cancellation, and per-tenant concurrency at runtime as well.
+- **MCP surface:** tools reference operations; server instructions are descriptive. Prompts and resources can be separate declarative capabilities, but instructions never substitute for authorization.
+- **Resource accounting:** meter operations, workflows, tenant queues, live connections, database work, and AI-provider usage independently.

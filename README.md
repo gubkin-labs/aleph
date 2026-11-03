@@ -51,9 +51,11 @@ Expose execution modes by their guarantees, rather than treating every task as a
 - **Workflows:** durable, resumable processes with persisted progress, business-step retries, waits, and timers. They own orchestration state, not queue delivery mechanics.
 - **Live:** event-driven logic for WebSocket connections, rooms, subscriptions, and presence.
 
-Model operations as ordered, typed pipelines. Candidate steps include `authorize`, `derive`, `query`, `mutate`, `transform`, `call`, `publish`, `start_workflow`, and `return`. Each step is a built-in, inspectable primitive—not an arbitrary callback. Queries use a typed query structure, apply tenant scoping from table metadata, and have explicit result bounds.
+Model operations as ordered, typed pipelines. Candidate steps include `authorize`, `derive`, `query`, `mutate`, `transform`, `call`, `publish`, `start_workflow`, and `return`. Each step is a built-in, inspectable primitive—not an arbitrary callback. A step binds results with `as`; later steps reference typed values such as `$cart.total`, alongside `$input` and trusted `$auth` context. Queries use a typed query structure, apply tenant scoping from table metadata, and have explicit result bounds.
 
-Cron is a trigger for a function or workflow, not a separate execution model. The gateway owns WebSocket protocol entry; Live owns connection/session behavior. If common use cases need branching or collection processing, add finite `when` branches and an explicit bounded `for_each` primitive rather than general loops or recursion.
+For control flow, `match` should select among finite, typed cases; its worst-case cost is the most expensive branch. Collection work should use a dedicated `for_each` with a literal maximum item count and concurrency bound. This gives the validator a cost model: sequential steps sum, `match` takes the maximum branch cost, `for_each` multiplies body cost by its item bound, and fixed `parallel` calls sum total CPU cost while limiting peak concurrency. No general `while` loops or recursion. Request-time async calls need deadlines, response-size, and concurrency limits; long waits belong in workflows, where progress is persisted and compute can be released. Static estimates should include retry bounds and be backed by runtime fuel and per-tenant budgets.
+
+Cron is a trigger for a function or workflow, not a separate execution model. The gateway owns WebSocket protocol entry; Live owns connection/session behavior.
 
 ### 5. Events and messaging
 
