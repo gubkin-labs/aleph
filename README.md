@@ -15,65 +15,16 @@ The goal of this language is to become a new way of building server side applica
 - gateway
 
 ## the language
-the language will be written in typescript using the sdk which will provide a declarative approach.
-from the sdk, configurations files will be generated to a format like json that describes how the app should behave. and from that point that platform should be able to take the config files and have the user app deployed.
+Aleph apps use a declarative syntax. The compiler validates each app and emits a versioned JSON configuration for the platform to deploy.
 
-### example
+### example (multi-file TOML)
 
-```typescript
-import {
-  Aleph,
-  Math,
-  Table,
-  serial,
-  text,
-  foreignKey,
-  Route,
-} from 'aleph-language'
-import { z } from 'zod'
+The root manifest imports separate schema, storage, logic, and route files. Import aliases provide namespaces, so the route and calculation can both reuse `common.number`.
 
-const numberSchema = z.object({
-  input: {
-    number: z.number(),
-  },
-  output: {
-    string: z.string(),
-  },
-})
+- [Root manifest](examples/multi-file/aleph.toml)
+- [Shared schema](examples/multi-file/schemas/common.toml)
+- [Storage](examples/multi-file/storage/main.toml)
+- [Calculation](examples/multi-file/logic/calculations.toml)
+- [Route](examples/multi-file/routes/foo.toml)
 
-
-const posts = new Table({
-  columns: z.object({
-    id: z.uuid(),
-    name: z.string().max(100),
-    content: z.string().optional(),
-  }),
-})
-
-const comments = new Table({
-  columns: {
-    id: z.uuid(),
-  },
-  foreignKeys: [posts.id],
-})
-
-const relationStorage = new RelationalStorage({
-  tables: [posts, comments],
-})
-
-const math = new Math(numberSchema).add(2).multiply(100)
-
-const demoHandler = math.
-
-const demoRoute = new Route({
-    path: '/foo/:number',
-    method: 'get',
-    schema: numberSchema,
-    handler: demoHandler
-})
-
-new Aleph({
-  storage: [relationStorage],
-  routes: [demoRoute]
-})
-```
+`[[imports]]` and its aliases are Aleph compiler features; TOML itself does not define imports.

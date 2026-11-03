@@ -1,0 +1,3 @@
+[schemas.number]
+input.number = "number"
+output.number = "number"

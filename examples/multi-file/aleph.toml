@@ -1,0 +1,16 @@
+version = 1
+
+[[imports]]
+path = "schemas/common.toml"
+as = "common"
+
+[[imports]]
+path = "storage/main.toml"
+as = "data"
+
+[[imports]]
+path = "logic/calculations.toml"
+as = "calculations"
+
+[[imports]]
+path = "routes/foo.toml"
