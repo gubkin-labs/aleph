@@ -11,5 +11,9 @@ The goal of this language is to become a new way of building server side applica
 
 - auth
 - storage: relational storage, kv storage, files storage (and probably more in the future)
-- logic: 
+- logic: Functions Workflows, Live
 - gateway
+
+## the language
+the language will be written in typescript using the sdk which will provide a declarative approach.
+from the sdk, configurations files will be generated to a format like json that describes how the app should behave. and from that point that platform should be able to take the config files and have the user app deployed.
