@@ -87,15 +87,22 @@ These are cross-cutting guarantees, not separate app-level pillars:
 
 Keep the core contracts stable and add a small number of platform-maintained adapters at each stage. Avoid arbitrary tenant plugins in the shared runtime; they make isolation, support, and cost guarantees much harder.
 
-## Multi-file TOML example
+## TypeScript SDK and runtime boundary
 
-The proposed source format uses an Aleph-defined import manifest; TOML itself does not define imports. The example demonstrates a shared schema referenced by both a calculation and a route.
+The proposed TypeScript SDK is an authoring frontend, not the tenant runtime. Schema and builder calls create typed, serializable plan nodes. A synthesis step emits a versioned manifest; the shared Rust or Go runtime validates and executes that manifest without evaluating tenant TypeScript.
 
-- [Root manifest](examples/multi-file/aleph.toml)
-- [Shared schema](examples/multi-file/schemas/common.toml)
-- [Composed auth profile](examples/multi-file/auth/workforce.toml)
-- [Storage](examples/multi-file/storage/main.toml)
-- [Calculation](examples/multi-file/logic/calculations.toml)
-- [Route](examples/multi-file/routes/foo.toml)
-- [MCP server and shared tool](examples/multi-file/mcp/server.toml)
-- [Syntax stress tests](examples/syntax-stress-tests.md)
+Imports let teams reuse schemas, auth profiles, operations, and storage definitions across modules. The Aleph schema builders generate both TypeScript types and runtime validators. Custom JavaScript callbacks are not serializable plan nodes; use the SDK's expression and operation builders instead. The platform validates the emitted manifest independently of TypeScript's compile-time checks.
+
+## TypeScript SDK examples
+
+- [Composed application](examples/multi-file/app.ts)
+- [Reusable schemas](examples/multi-file/schemas/common.ts)
+- [Storage definitions](examples/multi-file/storage/main.ts)
+- [Composed auth profile](examples/multi-file/auth/workforce.ts)
+- [Bounded calculation](examples/multi-file/logic/calculations.ts)
+- [Shared order operation](examples/multi-file/logic/orders.ts)
+- [HTTP calculation route](examples/multi-file/routes/foo.ts)
+- [HTTP order route](examples/multi-file/routes/orders.ts)
+- [MCP server and shared tool](examples/multi-file/mcp/server.ts)
+- [Auth syntax and model extensions](examples/auth-syntax.md)
+- [Logic and cost-model stress tests](examples/syntax-stress-tests.md)

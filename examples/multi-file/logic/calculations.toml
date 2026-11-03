@@ -1,8 +1,0 @@
-[logic.demo_handler]
-kind = "calculation"
-schema = "common.number"
-input = "number"
-steps = [
-  { op = "add", value = 2 },
-  { op = "multiply", value = 100 },
-]

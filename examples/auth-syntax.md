@@ -1,137 +1,140 @@
-# Auth syntax exploration (draft)
+# Auth SDK design sketch
 
-The goal is Better Auth-style composition without running arbitrary tenant plugins in the shared runtime. An app selects platform-supported providers and feature plugins in one or more named auth profiles. The compiler validates plugin dependencies, generated routes/models, and configuration before deployment.
+This is a proposed TypeScript authoring API, not an implemented package. TypeScript builders describe auth configuration; they do not execute user callbacks in the shared runtime. The SDK emits serializable nodes that the platform validates and runs.
 
-Separate two concepts:
+The profile separates **providers**, which establish identity, from **plugins**, which add platform-supported features. Providers and plugins are composed per named profile; the compiler checks their options, dependencies, routes, permissions, and model changes.
 
-- **Providers** establish identity: email/password, passkeys, OIDC, SAML, and similar integrations.
-- **Plugins** add application features: organizations, teams, invitations, MFA, SCIM, API keys, roles, and audit events.
+## Compose a B2B profile
 
-Plugins are declarative, versioned platform modules. A plugin may contribute routes, typed entities, policies, and lifecycle events; it cannot inject arbitrary code into the shared runtime.
+```ts
+import { auth, schema as s, secret } from 'aleph-language'
 
-## Example: B2B workforce auth
-
-```toml
-[auth.workforce]
-plugins = ["organizations", "scim", "api_keys", "mfa"]
-session.max_age = "12h"
-session.idle_timeout = "30m"
-
-[auth.workforce.providers.email_password]
-require_verified_email = true
-
-[auth.workforce.providers.oidc.acme]
-issuer_url = "https://login.example.com"
-client_id = "acme-client"
-client_secret = { secret_ref = "sso.acme.client_secret" }
-
-[auth.workforce.plugin_options.organizations]
-teams = true
-default_role = "member"
-allow_personal_organizations = false
-
-[auth.workforce.plugin_options.scim]
-sync_users = true
-sync_groups = true
-
-[auth.workforce.roles.admin]
-permissions = ["orders.read", "orders.write", "members.manage"]
-
-[auth.workforce.roles.member]
-permissions = ["orders.read"]
-
-[auth.workforce.policies.orders_read]
-requires_authentication = true
-permissions = ["orders.read"]
-organization_scope = "active"
-
-[auth.workforce.models.user.fields]
-employee_number = { type = "string", max_length = 32, unique_within = "organization" }
-department = { type = "string", max_length = 80 }
-
-[auth.workforce.models.session.fields]
-device_label = { type = "string", max_length = 80 }
-
-[auth.workforce.models.organization.fields]
-billing_reference = { type = "string", max_length = 64, unique_within = "app_tenant" }
-
-[auth.workforce.models.team.fields]
-external_group_id = { type = "string", max_length = 128 }
+export const workforce = auth
+  .profile('workforce')
+  .provider(
+    auth.providers.emailPassword({
+      requireVerifiedEmail: true,
+    }),
+  )
+  .provider(
+    auth.providers.oidc('acme', {
+      issuerUrl: 'https://login.example.com',
+      clientId: 'acme-client',
+      clientSecret: secret('sso.acme.client_secret'),
+    }),
+  )
+  .plugin(
+    auth.plugins.organizations({
+      teams: true,
+      defaultRole: 'member',
+      allowPersonalOrganizations: false,
+    }),
+  )
+  .plugin(auth.plugins.scim({ syncUsers: true, syncGroups: true }))
+  .plugin(auth.plugins.apiKeys())
+  .plugin(auth.plugins.mfa({ requiredForRoles: ['admin'] }))
+  .role('admin', ['orders.read', 'orders.write', 'members.manage'])
+  .role('member', ['orders.read'])
+  .policy(
+    'orders.read',
+    auth
+      .policy()
+      .authenticated()
+      .permission('orders.read')
+      .activeOrganization(),
+  )
+  .extend('user', {
+    employeeNumber: s.string().max(32).uniqueWithin('organization'),
+    department: s.string().max(80).optional(),
+  })
+  .extend('session', {
+    deviceLabel: s.string().max(80).optional(),
+  })
+  .extend('organization', {
+    billingReference: s.string().max(64).uniqueWithin('appTenant'),
+  })
+  .extend('team', {
+    externalGroupId: s.string().max(128).optional(),
+  })
 ```
 
-A smaller app can use only an email/password provider and omit the organization, SCIM, and API-key plugins. Multiple profiles can support different audiences, such as customer, staff, and machine-to-machine access. Provider credentials are secret references, never literals in the manifest.
+A smaller app can omit the OIDC provider and enterprise plugins. Profiles can be reused for customer, staff, and service access. Secrets are references, never literal credential values. Plugins are versioned, platform-maintained declarations—not arbitrary TypeScript plugins—and can contribute routes, models, policies, and lifecycle events.
 
-## Connect identity to routes, operations, and MCP
+## Use the same identity and policy through HTTP and MCP
 
-A gateway or MCP server selects the profile that authenticates its callers. The reusable operation owns authorization, so the same policy applies regardless of which protocol invokes it.
+This excerpt is intended for `examples/multi-file/app.ts`; its relative imports resolve to the modules in that directory.
 
-```toml
-[[routes]]
-method = "GET"
-path = "/orders/:order_id"
-auth = "auth.workforce"
-operation = "logic.orders.get"
+```ts
+import { mcp, route } from 'aleph-language'
+import { getOrder } from './logic/orders'
+import { workforce } from './auth/workforce'
 
-[logic.orders.get]
-input_schema = "schemas.order_lookup"
-output_schema = "schemas.order_summary"
+export const getOrderRoute = route
+  .get('/orders/:orderId')
+  .auth(workforce)
+  .operation(getOrder)
 
-[[logic.orders.get.steps]]
-kind = "authorize"
-policy = "auth.workforce.policies.orders_read"
-
-[mcp.servers.support]
-auth = "auth.workforce"
-instructions = "Use tools only for the authenticated user's active organization."
-
-[[mcp.servers.support.tools]]
-name = "get_order"
-description = "Read an order's status and total."
-operation = "logic.orders.get"
+export const supportMcp = mcp
+  .server('support')
+  .auth(workforce)
+  .instructions('Use tools only for the caller’s active organization.')
+  .tool('get_order', {
+    description: 'Read an order’s status and total.',
+    operation: getOrder,
+  })
 ```
 
-The route and MCP tool reuse the operation's input/output schema and policy. MCP instructions are descriptive guidance, not enforcement. The gateway and MCP adapter establish the authenticated principal; the operation's policy checks permission and active-organization membership.
+The route and MCP tool bind to one operation, so the operation’s input/output schemas and authorization policy are shared. The auth profile authenticates callers; the operation policy authorizes actions. MCP instructions are guidance for clients, never an enforcement mechanism.
 
-## Reference and extend built-in auth entities
+## Reference auth entities and extend their schemas
 
-Plugins provide typed system entities that logic can reference, such as:
+Profiles provide typed entity references such as:
 
-- `auth.workforce.user`
-- `auth.workforce.session`
-- `auth.workforce.organization` and `auth.workforce.membership`
-- `auth.workforce.team` and `auth.workforce.team_membership`
-
-A profile operation can query the current user's public fields through the same typed query primitive used for app tables:
-
-```toml
-[logic.profile.current_user]
-output_schema = "schemas.public_user"
-
-[[logic.profile.current_user.steps]]
-kind = "query"
-as = "user"
-table = "auth.workforce.user"
-select = ["id", "email", "department"]
-where = { id = "$auth.user.id" }
-limit = 1
-
-[[logic.profile.current_user.steps]]
-kind = "return"
-value = "$user"
+```ts
+workforce.models.user
+workforce.models.session
+workforce.models.organization
+workforce.models.membership
+workforce.models.team
+workforce.models.teamMembership
 ```
 
-The identity context is platform-derived; a request body cannot choose its own user, organization, or tenant. Session credentials and token material are never exposed to ordinary logic. Auth lifecycle writes—creating sessions, changing membership, revoking credentials—go through the relevant auth primitive/plugin rather than unrestricted table mutations.
+A regular operation can query allowed fields through the same typed query builder used for app data:
 
-`models.<entity>.fields` adds typed custom fields and lets the compiler plan schema changes. Core identity keys and plugin-owned columns stay protected. Uniqueness must name its scope (`organization` or `app_tenant`) so a shared database does not accidentally impose global uniqueness or leak cross-tenant information.
+```ts
+import { operation, result, schema as s, select, authContext } from 'aleph-language'
+import { workforce } from './auth/workforce'
 
-## Tenancy and enforcement boundary
+const publicUser = s.object({
+  id: s.uuid(),
+  email: s.email(),
+  department: s.string().optional(),
+})
 
-Aleph's **app tenant** is the deployment/isolation boundary in the shared platform. An application's **organization** or **team** is an end-user business boundary inside that app tenant. A request can therefore carry both scopes. Storage access is always scoped to the app tenant; organization/team policies add narrower checks. Never use a client-supplied tenant or organization ID as proof of membership.
+export const currentUser = operation('profile.currentUser')
+  .input(s.object({}))
+  .output(publicUser)
+  .query(
+    select('user', workforce.models.user)
+      .fields({
+        id: workforce.models.user.id,
+        email: workforce.models.user.email,
+        department: workforce.models.user.department,
+      })
+      .where(workforce.models.user.id.eq(authContext.user.id))
+      .limit(1),
+  )
+  .return(result('user'))
+```
 
-The initial plugin catalog should be curated and dependency-checked. For example, SCIM may require organizations; teams may be an option of the organizations plugin. The compiler should reject unknown plugins, incompatible combinations, undeclared model references, and attempts to alter protected fields.
+The compiler generates schema changes for `.extend(...)` and protects core identity fields and plugin-owned columns. Session token material is never exposed to ordinary operations; session access is limited to safe metadata and dedicated auth operations such as revocation.
 
-## Questions for the next iteration
+Aleph's **app tenant** is the shared-platform isolation boundary. An app's **organization** and **team** are business scopes inside that tenant. Every request carries trusted app-tenant context; organization/team policies add narrower checks. Client-provided IDs are not proof of membership.
 
-- Should teams be a feature of `organizations`, or a separately selectable plugin?
-- Are roles and permissions enough for the first policy language, or do real use cases need bounded attribute-based conditions (for example, `record.owner_id == auth.user.id`)?
-- Which auth entities should be queryable directly, and which should only expose dedicated operations? My starting point is typed read access with redaction for sessions and plugin-controlled writes for all security-sensitive fields.
+## Decisions to resolve
+
+- Keep roles/permissions plus active-organization scope initially, or add a restricted attribute policy builder such as `record.ownerId.eq(authContext.user.id)`?
+- Should teams be an option of the organizations plugin or a separate plugin?
+- Which auth entities should allow direct typed reads, and which should be accessible only through dedicated auth operations?
+
+The guiding constraint is that every plugin and policy must compile to a known, typed capability graph. Custom JS callbacks, raw database writes to security-sensitive records, and client-controlled tenant context are not part of the runtime language.

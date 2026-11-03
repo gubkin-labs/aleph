@@ -1,289 +1,252 @@
-# Syntax stress tests (draft)
+# TypeScript SDK stress tests (draft)
 
-These are design probes for the proposed TOML-based language, not compiler-validated programs. They test whether a small set of typed operations can cover common backend tasks without allowing arbitrary tenant code to run in the shared runtime. The auth examples assume the profile and policy model in [the auth syntax draft](auth-syntax.md).
+These sketches test a typed TypeScript SDK as an authoring language. They are not executable examples yet. SDK calls should build a serializable plan; no callback or arbitrary TypeScript function is sent to the shared runtime. The compiler validates the generated plan independently of TypeScript's type checker.
 
-The working model is a named operation with an ordered list of typed steps. Each step is a platform-defined primitive with declared inputs, outputs, permissions, and resource limits. A route, MCP tool, queue subscription, schedule, or live session can invoke the same operation.
+Schemas, operations, storage, routes, MCP tools, workflows, and live handlers are reusable exported values. Importing a schema or operation reuses the same descriptor; it does not copy or reimplement its logic. Later snippets assume shared exports such as `schemas`, `tables`, `workforce`, `operations`, and `workflows` are imported from neighboring TypeScript modules.
 
-## 1. Tenant-scoped lookup exposed as HTTP and MCP
+## 1. One tenant-scoped operation, exposed through HTTP and MCP
 
-```toml
-[schemas.order_lookup.input]
-order_id = "uuid"
+```ts
+import {
+  arg,
+  mcp,
+  operation,
+  result,
+  route,
+  schema as s,
+  select,
+} from 'aleph-language'
 
-[schemas.order_summary]
-id = "uuid"
-status = "string"
-total = "decimal(12,2)"
+import { workforce } from './auth/workforce'
+import { orders } from './storage/orders'
 
-[tables.orders]
-tenant_scope = "required"
+export const orderLookup = s.object({
+  orderId: s.uuid(),
+})
 
-[logic.orders.get]
-input_schema = "schemas.order_lookup"
-output_schema = "schemas.order_summary"
-max_steps = 4
+export const orderSummary = s.object({
+  id: s.uuid(),
+  status: s.enum(['pending', 'paid', 'declined']),
+  total: s.decimal({ precision: 12, scale: 2 }),
+})
 
-[[logic.orders.get.steps]]
-kind = "authorize"
-policy = "auth.workforce.policies.orders_read"
+export const getOrder = operation('orders.get')
+  .input(orderLookup)
+  .output(orderSummary)
+  .authorize(workforce.policy('orders.read'))
+  .query(
+    select('order', orders)
+      .fields({
+        id: orders.id,
+        status: orders.status,
+        total: orders.total,
+      })
+      .where(orders.id.eq(arg('orderId')))
+      .limit(1),
+  )
+  .transform('summary', {
+    id: result('order').id,
+    status: result('order').status,
+    total: result('order').total,
+  })
+  .return(result('summary'))
 
-[[logic.orders.get.steps]]
-kind = "query"
-as = "order"
-table = "orders"
-select = ["id", "status", "total"]
-limit = 1
-on_empty = "not_found"
+export const getOrderRoute = route
+  .get('/orders/:orderId')
+  .auth(workforce)
+  .operation(getOrder)
 
-[logic.orders.get.steps.where]
-id = "$input.order_id"
-
-[[logic.orders.get.steps]]
-kind = "transform"
-as = "result"
-fields = ["order.id", "order.status", "order.total"]
-
-[[logic.orders.get.steps]]
-kind = "return"
-value = "$result"
-
-[[routes]]
-method = "GET"
-path = "/orders/:order_id"
-auth = "auth.workforce"
-operation = "logic.orders.get"
-
-[mcp.servers.support]
-auth = "auth.workforce"
-instructions = "Use these tools only for the authenticated user's active organization."
-
-[[mcp.servers.support.tools]]
-name = "get_order"
-description = "Read an order's status and total."
-operation = "logic.orders.get"
+export const supportMcp = mcp
+  .server('support')
+  .auth(workforce)
+  .instructions('Use tools only for the caller’s active organization.')
+  .tool('get_order', {
+    description: 'Read an order’s status and total.',
+    operation: getOrder,
+  })
 ```
 
-The route and MCP tool reuse the operation's input/output schemas, authorization, tenant-scoped query, and transform. The route path parameter maps to `input.order_id`; MCP supplies the same field in its tool arguments. Server instructions guide the MCP client, but are not an authorization or security control. The operation's policy is enforced for both entry points.
+The route and MCP tool use the same operation, schemas, and authorization policy. Route parameters and MCP arguments are validated against `orderLookup`. Tenant scoping comes from the trusted runtime context and table metadata, not a caller-supplied tenant ID.
 
-## 2. Durable order processing
+## 2. Durable order processing with results passed between steps
 
-```toml
-[workflows.orders.fulfill]
-input_schema = "schemas.order_id"
-max_duration = "48h"
-max_steps = 8
+```ts
+import { arg, call, event, result, workflow, workflowContext } from 'aleph-language'
 
-[[workflows.orders.fulfill.steps]]
-kind = "call"
-operation = "logic.inventory.reserve"
-as = "reservation"
-idempotency_key = "$workflow.id"
-
-[[workflows.orders.fulfill.steps]]
-kind = "call"
-operation = "logic.payments.create_intent"
-as = "payment"
-retry = { max_attempts = 3, backoff = "exponential" }
-idempotency_key = "$workflow.id"
-
-[[workflows.orders.fulfill.steps]]
-kind = "wait_for"
-event = "payments.captured"
-correlation = { payment_id = "$payment.id" }
-timeout = "24h"
-
-[[workflows.orders.fulfill.steps]]
-kind = "call"
-operation = "logic.shipping.create_label"
-input = { reservation_id = "$reservation.id", payment_id = "$payment.id" }
-
-[[queue_subscriptions]]
-queue = "orders.created"
-workflow = "workflows.orders.fulfill"
+export const fulfillOrder = workflow('orders.fulfill')
+  .input(schemas.orderId)
+  .maxSteps(8)
+  .maxDuration('48h')
+  .step(
+    'reservation',
+    call(inventory.reserve, {
+      orderId: arg('orderId'),
+    }).idempotencyKey(workflowContext.id),
+  )
+  .step(
+    'payment',
+    call(payments.createIntent, {
+      orderId: arg('orderId'),
+      reservationId: result('reservation').id,
+    }).retry({ maxAttempts: 3, backoff: 'exponential' }),
+  )
+  .waitFor(
+    'paymentCaptured',
+    event('payments.captured')
+      .where(event.paymentId.eq(result('payment').id))
+      .timeout('24h'),
+  )
+  .step(
+    'shipment',
+    call(shipping.createLabel, {
+      orderId: arg('orderId'),
+      reservationId: result('reservation').id,
+      paymentId: result('payment').id,
+    }),
+  )
 ```
 
-This probes durable checkpoints, event correlation, retries, and idempotent side effects. The runtime must persist progress and be clear about replay semantics; queue delivery retries and workflow-step retries remain separate policies. Open design questions include compensation when payment or shipping fails and how finite conditional branches are represented.
+Each named step has a typed result available to later steps. The workflow runtime persists progress before waiting, releases compute during `waitFor`, and applies explicit retry, idempotency, step-count, and duration limits. Queue delivery retries remain distinct from workflow-step retries.
 
-## 3. Scheduled per-tenant reports
+## 3. Scheduled reports with bounded per-tenant fan-out
 
-```toml
-[[schedules]]
-name = "daily-tenant-report"
-cron = "0 2 * * *"
-timezone = "UTC"
-workflow = "workflows.reports.generate"
-tenant_scope = "per_tenant"
-max_concurrent_runs = 10
+```ts
+import { schedule } from 'aleph-language'
+
+export const dailyTenantReport = schedule('daily-tenant-report')
+  .cron('0 2 * * *', { timezone: 'UTC' })
+  .forEachTenant({ maxConcurrent: 10 })
+  .start(workflows.reports.generate)
 ```
 
-This probes tenant fan-out and scheduling semantics: how to cap concurrent runs, handle missed schedules, and avoid duplicate reports after a retry. The schedule should start bounded workflow instances; it should not create an unmetered loop over every tenant.
+`forEachTenant` is a platform primitive, not a user-defined loop. It creates isolated, metered workflow runs with a concurrency cap. The scheduler still needs defined behavior for missed runs, overlaps, retries, and tenants added while a schedule is active.
 
 ## 4. Live AI support chat
 
-```toml
-[live.support_chat]
-connection_policy = "support.member"
-room_key = "input.conversation_id"
-on_message = "logic.support.reply"
+```ts
+import { arg, live, operation, result } from 'aleph-language'
 
-[indexes.knowledge_base]
-tenant_scope = "required"
+export const replyToSupportMessage = operation('support.reply')
+  .input(schemas.chatMessage)
+  .output(schemas.chatResponse)
+  .authorize(workforce.policy('support.chat.send'))
+  .query(
+    select('history', tables.chatMessages)
+      .fields({ role: tables.chatMessages.role, content: tables.chatMessages.content })
+      .where(tables.chatMessages.conversationId.eq(arg('conversationId')))
+      .limit(20),
+  )
+  .vectorSearch('context', indexes.knowledgeBase, {
+    query: arg('message'),
+    topK: 5,
+  })
+  .model('answer', models.default)
+  .prompt(prompts.supportReply)
+  .context(result('history'), result('context'))
+  .maxOutputTokens(600)
+  .maxToolCalls(2)
+  .tools(operations.getOrder)
+  .return(result('answer'))
 
-[logic.support.reply]
-input_schema = "schemas.chat_message"
-output_schema = "schemas.chat_response"
-max_steps = 8
-
-[[logic.support.reply.steps]]
-kind = "authorize"
-policy = "support.chat.send"
-
-[[logic.support.reply.steps]]
-kind = "query"
-as = "history"
-table = "chat_messages"
-select = ["role", "content"]
-limit = 20
-
-[logic.support.reply.steps.where]
-conversation_id = "$input.conversation_id"
-
-[[logic.support.reply.steps]]
-kind = "vector_search"
-as = "context"
-index = "knowledge_base"
-query = "$input.message"
-top_k = 5
-
-[[logic.support.reply.steps]]
-kind = "model"
-as = "answer"
-provider = "default"
-prompt = "prompts.support_reply"
-context = ["$history", "$context"]
-max_output_tokens = 600
-max_tool_calls = 2
-tools = ["logic.orders.get"]
+export const supportChat = live
+  .room('support')
+  .auth(workforce)
+  .key(arg('conversationId'))
+  .onMessage(replyToSupportMessage)
 ```
 
-This probes WebSocket/session authorization, bounded history and retrieval, model budgets, and calls from an AI model into ordinary app operations. The search step inherits tenant filtering from the index declaration. Tool calls must use the same tenant context and authorization as HTTP/MCP calls; the model cannot invent capabilities or run an unbounded agent loop.
+The model can invoke only declared operations, using the same tenant context and authorization. History size, retrieval count, output tokens, and tool calls are bounded. The AI step is still a metered platform primitive; the SDK does not run an arbitrary agent loop.
 
-## 5. Checkout: pass results, parallel async calls, and match
+## 5. Checkout with parallel calls, dataflow, and finite matching
 
-```toml
-[schemas.checkout_input]
-cart_id = "uuid"
-postal_code = "string"
-payment_method = "string"
+```ts
+import { arg, call, match, operation, result, select } from 'aleph-language'
 
-[logic.checkout.quote]
-input_schema = "schemas.checkout_input"
-output_schema = "schemas.checkout_result"
-max_steps = 12
-
-[[logic.checkout.quote.steps]]
-kind = "authorize"
-policy = "cart.checkout"
-
-[[logic.checkout.quote.steps]]
-kind = "query"
-as = "cart"
-table = "carts"
-select = ["id", "subtotal", "items"]
-where = { id = "$input.cart_id" }
-limit = 1
-on_empty = "not_found"
-
-[[logic.checkout.quote.steps]]
-kind = "parallel"
-as = "quotes"
-max_concurrency = 2
-
-[[logic.checkout.quote.steps.calls]]
-as = "tax"
-operation = "logic.tax.quote"
-timeout = "2s"
-input.items = "$cart.items"
-input.postal_code = "$input.postal_code"
-
-[[logic.checkout.quote.steps.calls]]
-as = "shipping"
-operation = "logic.shipping.quote"
-timeout = "2s"
-input.items = "$cart.items"
-input.postal_code = "$input.postal_code"
-
-[[logic.checkout.quote.steps]]
-kind = "derive"
-as = "total"
-expression = "$cart.subtotal + $quotes.tax.amount + $quotes.shipping.amount"
-
-[[logic.checkout.quote.steps]]
-kind = "call"
-as = "payment"
-operation = "logic.payments.authorize"
-timeout = "3s"
-idempotency_key = "$request.idempotency_key"
-input.amount = "$total"
-input.method = "$input.payment_method"
-
-[[logic.checkout.quote.steps]]
-kind = "match"
-as = "result"
-on = "$payment.status"
-cases = [
-  { value = "authorized", result = { status = "paid", total = "$total" } },
-  { value = "declined", result = { status = "declined" } },
-  { value = "requires_action", result = { status = "pending", action_url = "$payment.action_url" } },
-]
-default = { error = "unexpected_payment_status" }
-
-[[logic.checkout.quote.steps]]
-kind = "return"
-value = "$result"
+export const checkout = operation('checkout.quote')
+  .input(schemas.checkoutInput)
+  .output(schemas.checkoutResult)
+  .authorize(workforce.policy('cart.checkout'))
+  .query(
+    select('cart', tables.carts)
+      .fields({ id: tables.carts.id, subtotal: tables.carts.subtotal, items: tables.carts.items })
+      .where(tables.carts.id.eq(arg('cartId')))
+      .limit(1)
+      .notFound(),
+  )
+  .parallel(
+    'quotes',
+    [
+      call('tax', operations.taxQuote, {
+        items: result('cart').items,
+        postalCode: arg('postalCode'),
+      }).timeout('2s'),
+      call('shipping', operations.shippingQuote, {
+        items: result('cart').items,
+        postalCode: arg('postalCode'),
+      }).timeout('2s'),
+    ],
+    { maxConcurrency: 2 },
+  )
+  .derive(
+    'total',
+    result('cart').subtotal
+      .add(result('quotes').tax.amount)
+      .add(result('quotes').shipping.amount),
+  )
+  .step(
+    'payment',
+    call(operations.authorizePayment, {
+      amount: result('total'),
+      method: arg('paymentMethod'),
+    })
+      .timeout('3s')
+      .idempotencyKey(request.idempotencyKey),
+  )
+  .match(result('payment').status, {
+    authorized: match.value({ status: 'paid', total: result('total') }),
+    declined: match.value({ status: 'declined' }),
+    requires_action: match.value({
+      status: 'pending',
+      actionUrl: result('payment').actionUrl,
+    }),
+    otherwise: match.fail('unexpected_payment_status'),
+  })
 ```
 
-The `as` names make dataflow explicit: tax and shipping receive the cart, their results become `$quotes.tax` and `$quotes.shipping`, and the payment call receives `$total`. `parallel` contains two statically declared calls; each has a deadline and the fan-out is capped at two. `match` has a finite set of cases and a default, and every result must conform to the operation's declared output union.
+`arg` and `result` create typed references, not runtime closures. `parallel` has a fixed set of calls; `match` has finite cases and returns the declared result union. A long payment callback should become a workflow wait rather than holding this request open.
 
-Waiting on tax, shipping, or payment I/O consumes wall time and connection capacity, not interpreter CPU. CPU is still charged to the operation's fuel budget. If payment requires a callback hours later, use a workflow `wait_for` step so the function invocation can finish and release compute.
+## 6. Bounded collection processing
 
-## 6. Bounded batch operation
+```ts
+import { arg, call, item, operation, result, schema as s } from 'aleph-language'
 
-```toml
-[schemas.refresh_input]
-sku_ids = { type = "array", items = "uuid", max_items = 100 }
+const refreshInput = s.object({
+  skuIds: s.array(s.uuid()).maxItems(100),
+})
 
-[logic.inventory.refresh]
-input_schema = "schemas.refresh_input"
-output_schema = "schemas.status_list"
+const statusList = s.array(s.enum(['available', 'unavailable'])).maxItems(100)
 
-[[logic.inventory.refresh.steps]]
-kind = "for_each"
-over = "$input.sku_ids"
-item_as = "sku"
-results_as = "statuses"
-max_items = 100
-max_concurrency = 8
-operation = "logic.inventory.get_status"
-timeout = "1s"
-input.sku = "$sku"
-
-[[logic.inventory.refresh.steps]]
-kind = "return"
-value = "$statuses"
+export const refreshInventory = operation('inventory.refresh')
+  .input(refreshInput)
+  .output(statusList)
+  .forEach('statuses', {
+    over: arg('skuIds'),
+    as: 'sku',
+    maxItems: 100,
+    maxConcurrency: 8,
+    step: call(operations.getInventoryStatus, {
+      sku: item('sku'),
+    }).timeout('1s'),
+  })
+  .return(result('statuses'))
 ```
 
-The compiler can require `max_items` to be a literal no larger than the input schema's bound, calculate a worst-case operation budget as `100 × cost(logic.inventory.get_status)`, and cap fan-out at eight. Runtime rejects an oversized input rather than silently processing it. Nested loops should be rejected initially; large batches should use chunked durable workflows. If each item would issue the same database query, the compiler should flag the N+1 pattern and prefer a bounded batch-query primitive.
+The input schema also caps `skuIds` at 100. The compiler checks that the loop bound does not exceed that maximum and estimates cost as the bound times the body cost. Nested loops are initially disallowed; large batches should be chunked into durable workflows. For database work, a batch query is preferable to repeating one query per item.
 
-## What these examples reveal
+## Validation and cost model to preserve
 
-- **Typed dataflow:** every step output has a declared type and name (`as = "cart"`; later use `$cart.items`). Reject unknown names, type mismatches, and accidental secret-to-public output flows.
-- **Cost model:** give each primitive a maximum fuel cost. Sequential cost sums; `match` cost is the maximum branch; `for_each` cost is `max_items × body cost`; fixed `parallel` cost sums child costs while its concurrency limit bounds simultaneous resource use.
-- **Bounded iteration:** no general `while` loops or recursion. `for_each` requires a literal `max_items` no larger than the input schema's maximum; cap nesting, output size, and per-tenant fan-out. Use chunked workflows for larger jobs.
-- **Finite branching:** `match` checks an enum/tag, has exhaustive cases or an explicit default, and returns a declared union type. Side-effecting branches need their own bounded step lists and failure semantics.
-- **Async semantics:** request-time calls require deadlines, response-size and call-count limits, and bounded concurrency. Waiting uses wall time and connections even when it consumes little CPU. Durable waits belong in workflows and must have timeouts or cancellation policy. Parallel calls should join; define whether one failure cancels siblings. Detached work should use a queue or workflow, not an untracked promise.
-- **Safe queries:** a row limit bounds returned data, not necessarily database CPU. Use a typed query AST, automatic tenant scope, allowed/indexed query shapes, database statement timeouts, and query budgets; avoid raw SQL in the shared runtime.
-- **Side effects:** mutations and external calls need explicit idempotency, retry, timeout, and transaction semantics.
-- **Runtime backstop:** static estimates are not a hard sandbox. Enforce fuel, CPU/memory quotas, cancellation, and per-tenant concurrency at runtime as well.
-- **MCP surface:** tools reference operations; server instructions are descriptive. Prompts and resources can be separate declarative capabilities, but instructions never substitute for authorization.
-- **Resource accounting:** meter operations, workflows, tenant queues, live connections, database work, and AI-provider usage independently.
+- `schema` builders produce serializable descriptors and TypeScript types; custom JavaScript refinements are not accepted.
+- Binding an input/output schema adds runtime validation at the route, MCP, workflow, and operation boundaries. The server validates the emitted plan again; SDK types are not a security boundary.
+- Sequential operation cost sums; `match` uses the maximum branch; bounded iteration multiplies body cost by `maxItems`; fixed parallel work sums CPU cost and separately caps concurrency.
+- Async waiting uses wall time and connections even when it consumes little CPU. External calls need deadlines, call/payload budgets, and cancellation. Database `limit` bounds returned rows, not necessarily query CPU, so query shapes and statement budgets need enforcement too.
+- Every operation has a runtime fuel budget and every tenant has aggregate CPU, memory, concurrency, storage, and provider quotas. Static estimates complement these runtime backstops; they do not replace them.
