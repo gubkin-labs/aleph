@@ -30,7 +30,7 @@ MCP is another protocol binding. An MCP server can declare server instructions a
 
 ### 2. Identity and access
 
-Authenticate users and services, resolve organization membership, and authorize access to capabilities and resources. Common B2B features could include roles and permissions, OIDC/SAML SSO, SCIM provisioning, service accounts, API keys, sessions, and audit events. The platform derives trusted tenant context from identity and membership; it must never trust a tenant ID supplied only in request data.
+Compose named auth profiles from platform-supported identity providers and feature plugins. Providers can cover email/password, passkeys, OIDC, and SAML; plugins can add organizations, teams, roles and permissions, invitations, MFA, SCIM, API keys, and audit events. Profiles bind to gateway routes and MCP servers, while reusable operations enforce authorization policies. Built-in user, session, organization, membership, and team entities are referenceable and safely extensible. See the [auth syntax draft](examples/auth-syntax.md). The platform derives trusted tenant context from identity and membership; it must never trust a tenant ID supplied only in request data.
 
 ### 3. Data and storage
 
@@ -91,6 +91,7 @@ The proposed source format uses an Aleph-defined import manifest; TOML itself do
 
 - [Root manifest](examples/multi-file/aleph.toml)
 - [Shared schema](examples/multi-file/schemas/common.toml)
+- [Composed auth profile](examples/multi-file/auth/workforce.toml)
 - [Storage](examples/multi-file/storage/main.toml)
 - [Calculation](examples/multi-file/logic/calculations.toml)
 - [Route](examples/multi-file/routes/foo.toml)

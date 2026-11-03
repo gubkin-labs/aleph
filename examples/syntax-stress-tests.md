@@ -1,6 +1,6 @@
 # Syntax stress tests (draft)
 
-These are design probes for the proposed TOML-based language, not compiler-validated programs. They test whether a small set of typed operations can cover common backend tasks without allowing arbitrary tenant code to run in the shared runtime.
+These are design probes for the proposed TOML-based language, not compiler-validated programs. They test whether a small set of typed operations can cover common backend tasks without allowing arbitrary tenant code to run in the shared runtime. The auth examples assume the profile and policy model in [the auth syntax draft](auth-syntax.md).
 
 The working model is a named operation with an ordered list of typed steps. Each step is a platform-defined primitive with declared inputs, outputs, permissions, and resource limits. A route, MCP tool, queue subscription, schedule, or live session can invoke the same operation.
 
@@ -25,7 +25,7 @@ max_steps = 4
 
 [[logic.orders.get.steps]]
 kind = "authorize"
-policy = "orders.read"
+policy = "auth.workforce.policies.orders_read"
 
 [[logic.orders.get.steps]]
 kind = "query"
@@ -50,10 +50,12 @@ value = "$result"
 [[routes]]
 method = "GET"
 path = "/orders/:order_id"
+auth = "auth.workforce"
 operation = "logic.orders.get"
 
 [mcp.servers.support]
-instructions = "Use these tools only for the authenticated user's tenant."
+auth = "auth.workforce"
+instructions = "Use these tools only for the authenticated user's active organization."
 
 [[mcp.servers.support.tools]]
 name = "get_order"

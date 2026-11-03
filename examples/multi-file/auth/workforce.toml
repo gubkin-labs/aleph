@@ -1,0 +1,9 @@
+[auth.workforce]
+plugins = ["organizations"]
+
+[auth.workforce.providers.email_password]
+require_verified_email = true
+
+[auth.workforce.plugin_options.organizations]
+teams = true
+default_role = "member"

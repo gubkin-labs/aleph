@@ -1,4 +1,5 @@
 [mcp.servers.calculator]
+auth = "auth.workforce"
 instructions = "Use the calculator tool to transform a numeric input. The same operation is also exposed by the HTTP route."
 
 [[mcp.servers.calculator.tools]]

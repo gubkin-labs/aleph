@@ -1,5 +1,6 @@
 [[routes]]
 path = "/foo/:number"
 method = "GET"
+auth = "auth.workforce"
 schema = "common.number"
 operation = "calculations.demo_handler"
