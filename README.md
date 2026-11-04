@@ -1,6 +1,6 @@
 # Aleph Language
 
-Aleph is a declarative language for describing server-side applications. This repository is intended to own the TypeScript authoring experience—the SDK, CLI, manifest contract, documentation, and examples. The separate Aleph Platform repository is intended to contain the Rust backend that validates and runs manifests as a shared, multi-tenant service. Apps describe the capabilities they need and the bounded logic they are allowed to run; the platform supplies the managed runtime and common backend services.
+Aleph is a declarative language for describing server-side applications. This repository owns the TypeScript SDK, manifest contract, documentation, and examples. The separate Aleph Language CLI repository contains the CLI that checks app projects and synthesizes manifests. The separate Aleph Platform repository contains the TypeScript backend, built on Hono, Drizzle, PostgreSQL, and Better Auth, that validates and runs manifests as a shared, multi-tenant service. Apps describe the capabilities they need and the bounded logic they are allowed to run; the platform supplies the managed runtime and common backend services.
 
 ## Goals
 
@@ -89,15 +89,36 @@ Keep the core contracts stable and add a small number of platform-maintained ada
 
 ## TypeScript SDK, CLI, and manifest boundary
 
-The TypeScript SDK is an authoring frontend, not the tenant runtime. Schema and builder calls create typed, serializable plan nodes. The CLI type-checks the project and synthesizes those nodes into a versioned manifest; it does not translate arbitrary TypeScript into runtime code. Custom JavaScript callbacks are not serializable plan nodes—use Aleph's expression and operation builders instead.
+The TypeScript SDK is an authoring frontend, not the tenant runtime. Schema and builder calls create typed, serializable plan nodes. The separate `aleph-language-cli` package type-checks the project and synthesizes those nodes into a versioned manifest; it does not translate arbitrary TypeScript into runtime code. Custom JavaScript callbacks are not serializable plan nodes—use Aleph's expression and operation builders instead.
 
-The intended workflow is:
+The implemented workflow currently includes:
 
-1. `aleph check` type-checks the project and checks the Aleph definitions.
-2. `aleph build` loads the app's entry module and synthesizes a manifest. This evaluates project code at build time, so builds should run on the developer's machine or trusted CI. A hosted builder must sandbox that step.
-3. `aleph apply` publishes the manifest to the platform. The platform independently validates it before activating a new immutable app revision.
+1. `aleph check <entry.ts>` type-checks the TypeScript project, loads its exported manifest, and validates the Aleph definitions.
+2. `aleph build <entry.ts> --out aleph.manifest.json` performs the same checks and writes deterministic, versioned JSON.
+3. `aleph-platform deploy <manifest.json>` (from the separate platform CLI) uploads the artifact; the platform independently validates it before activating an immutable app revision.
 
-The platform never evaluates the app's TypeScript. App changes publish a new manifest revision rather than an app-specific binary or container; the shared platform runtime is still deployed and operated separately. Imports let teams reuse schemas, auth profiles, operations, and storage definitions across modules. Schema builders provide TypeScript types and runtime validators, but TypeScript's compile-time checks do not replace platform validation.
+Loading an entry module evaluates project code at build time. Run builds on the developer's machine or trusted CI; any hosted builder must sandbox this step. The platform never evaluates the app's TypeScript. App changes publish a manifest revision rather than an app-specific binary or container; the shared platform runtime is still deployed and operated separately. TypeScript's compile-time checks do not replace platform validation.
+
+The SDK package is built with `tsdown`, including TypeScript declarations. The CLI uses Commander for subcommands and Ink for terminal UI, falling back to plain output in non-interactive environments. The current executable subset covers structured schemas, operations with bounded expressions, and HTTP route bindings. The broader `examples/multi-file` sketches document capabilities still to be implemented.
+
+### Local SDK and CLI development
+
+Use Node.js 24 and pnpm 10. This SDK repository has no workspace; the CLI lives in its own repository.
+
+```bash
+pnpm install
+pnpm check
+pnpm build
+
+cd ../aleph-language-cli
+pnpm install
+pnpm build
+cd ../aleph-language
+node ../aleph-language-cli/dist/index.mjs check examples/quickstart/app.ts
+node ../aleph-language-cli/dist/index.mjs build examples/quickstart/app.ts --out /tmp/quickstart.manifest.json
+```
+
+`examples/quickstart/app.ts` is the executable SDK-to-manifest smoke test.
 
 ### Versioning and independent releases
 
@@ -105,9 +126,35 @@ SDK and CLI package versions are distinct from the manifest format version. Mani
 
 The language tooling and platform are separate repositories and can have separate release and licensing decisions. Keeping the manifest contract versioned and documented allows the authoring tools to be open source even if the platform's open-source status is decided independently.
 
-## TypeScript SDK examples
+## Backend application validation portfolio
 
-- [Composed application](examples/multi-file/app.ts)
+Build these as small, end-to-end slices in roughly this order. Each app should test a real combination of SDK and runtime behavior; the portfolio is a way to expose missing patterns, not a promise that twenty examples alone prove 90% coverage.
+
+1. **Personal tasks and notes:** CRUD, validation, authentication, filtering, and cursor pagination.
+2. **Multi-tenant project tracker:** organizations, teams, roles, tenant-scoped queries, comments, and audit history.
+3. **Headless CMS:** drafts, publishing, revisions, localization, and scheduled publication.
+4. **Appointment booking:** availability, time zones, expiring holds, and concurrency-safe reservations.
+5. **Online shop checkout:** carts, inventory, idempotency, payment calls, and payment webhooks.
+6. **Subscription SaaS:** trials, plan changes, entitlements, renewals, and recurring workflows.
+7. **File and media library:** object storage, signed access, metadata, and asynchronous processing.
+8. **Notification service:** preferences, provider calls, fan-out, retries, deduplication, and digests.
+9. **Customer support desk:** ticket transitions, assignment, SLA timers, attachments, and audit events.
+10. **Webhook delivery service:** endpoint registration, signatures, retries, dead letters, and replay.
+11. **Third-party data sync:** OAuth secret references, pagination cursors, rate limits, schedules, and resumable jobs.
+12. **Realtime collaboration chat:** rooms, authorization, presence, subscriptions, and message history.
+13. **Developer API product:** API keys, service identities, quotas, rate limits, idempotency, and generated API documentation.
+14. **Expense approval system:** multi-step approvals, delegation, reminders, durable waits, and audit history.
+15. **IoT telemetry and alerts:** bounded ingestion, tenant budgets, retention, aggregation, and event-triggered workflows.
+16. **Usage metering and analytics:** event capture, rollups, late/duplicate events, quota checks, and exports.
+17. **Multi-vendor marketplace:** buyer/seller boundaries, order state, refunds, payouts, and financial audit records.
+18. **Community forum:** feeds, search, moderation, visibility rules, and rate limits.
+19. **Learning management system:** courses, enrollments, progress, prerequisites, cohorts, and scheduled reminders.
+20. **AI knowledge base:** document ingestion, retrieval, streaming responses, bounded tool calls, and per-tenant model budgets.
+
+## TypeScript SDK examples and sketches
+
+- [Executable manifest quickstart](examples/quickstart/app.ts)
+- [Composed application design sketch](examples/multi-file/app.ts)
 - [Reusable schemas](examples/multi-file/schemas/common.ts)
 - [Storage definitions](examples/multi-file/storage/main.ts)
 - [Composed auth profile](examples/multi-file/auth/workforce.ts)
