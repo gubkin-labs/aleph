@@ -1,6 +1,6 @@
 # Aleph Language
 
-Aleph aims to be a declarative language and shared, multi-tenant runtime for building server-side applications. Apps describe the capabilities they need and the logic they are allowed to run; the platform supplies the managed runtime and common backend services.
+Aleph is a declarative language for describing server-side applications. This repository is intended to own the TypeScript authoring experience—the SDK, CLI, manifest contract, documentation, and examples. The separate Aleph Platform repository is intended to contain the Rust backend that validates and runs manifests as a shared, multi-tenant service. Apps describe the capabilities they need and the bounded logic they are allowed to run; the platform supplies the managed runtime and common backend services.
 
 ## Goals
 
@@ -87,11 +87,23 @@ These are cross-cutting guarantees, not separate app-level pillars:
 
 Keep the core contracts stable and add a small number of platform-maintained adapters at each stage. Avoid arbitrary tenant plugins in the shared runtime; they make isolation, support, and cost guarantees much harder.
 
-## TypeScript SDK and runtime boundary
+## TypeScript SDK, CLI, and manifest boundary
 
-The proposed TypeScript SDK is an authoring frontend, not the tenant runtime. Schema and builder calls create typed, serializable plan nodes. A synthesis step emits a versioned manifest; the shared Rust or Go runtime validates and executes that manifest without evaluating tenant TypeScript.
+The TypeScript SDK is an authoring frontend, not the tenant runtime. Schema and builder calls create typed, serializable plan nodes. The CLI type-checks the project and synthesizes those nodes into a versioned manifest; it does not translate arbitrary TypeScript into runtime code. Custom JavaScript callbacks are not serializable plan nodes—use Aleph's expression and operation builders instead.
 
-Imports let teams reuse schemas, auth profiles, operations, and storage definitions across modules. The Aleph schema builders generate both TypeScript types and runtime validators. Custom JavaScript callbacks are not serializable plan nodes; use the SDK's expression and operation builders instead. The platform validates the emitted manifest independently of TypeScript's compile-time checks.
+The intended workflow is:
+
+1. `aleph check` type-checks the project and checks the Aleph definitions.
+2. `aleph build` loads the app's entry module and synthesizes a manifest. This evaluates project code at build time, so builds should run on the developer's machine or trusted CI. A hosted builder must sandbox that step.
+3. `aleph apply` publishes the manifest to the platform. The platform independently validates it before activating a new immutable app revision.
+
+The platform never evaluates the app's TypeScript. App changes publish a new manifest revision rather than an app-specific binary or container; the shared platform runtime is still deployed and operated separately. Imports let teams reuse schemas, auth profiles, operations, and storage definitions across modules. Schema builders provide TypeScript types and runtime validators, but TypeScript's compile-time checks do not replace platform validation.
+
+### Versioning and independent releases
+
+SDK and CLI package versions are distinct from the manifest format version. Manifests identify their format version and required features; the platform explicitly supports selected format versions and features. This lets the language tooling release independently while the platform adopts compatibility at its own pace. The platform consumes the manifest contract and artifacts—not the TypeScript SDK or CLI as runtime dependencies—and should reject unsupported versions or features before activation.
+
+The language tooling and platform are separate repositories and can have separate release and licensing decisions. Keeping the manifest contract versioned and documented allows the authoring tools to be open source even if the platform's open-source status is decided independently.
 
 ## TypeScript SDK examples
 
