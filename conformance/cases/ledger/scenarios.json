@@ -1,0 +1,271 @@
+{
+  "seed": 11,
+  "startMs": 1700000000000,
+  "stepMs": 1000,
+  "steps": [
+    {
+      "name": "open a USD account",
+      "request": {
+        "method": "POST",
+        "path": "/accounts",
+        "caller": "u1",
+        "body": {
+          "currency": "USD"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "balance": 0,
+          "currency": "USD",
+          "ownerId": "u1"
+        }
+      },
+      "capture": {
+        "a": "body.accountId"
+      }
+    },
+    {
+      "name": "another user opens a USD account",
+      "request": {
+        "method": "POST",
+        "path": "/accounts",
+        "caller": "u2",
+        "body": {
+          "currency": "USD"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "b": "body.accountId"
+      }
+    },
+    {
+      "name": "open a EUR account",
+      "request": {
+        "method": "POST",
+        "path": "/accounts",
+        "caller": "u1",
+        "body": {
+          "currency": "EUR"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "e": "body.accountId"
+      }
+    },
+    {
+      "name": "deposit",
+      "request": {
+        "method": "POST",
+        "path": "/accounts/{{a}}/deposit",
+        "caller": "u1",
+        "body": {
+          "amount": 1000
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "balance": 1000
+        }
+      }
+    },
+    {
+      "name": "can't deposit into someone else's account",
+      "request": {
+        "method": "POST",
+        "path": "/accounts/{{a}}/deposit",
+        "caller": "u2",
+        "body": {
+          "amount": 5
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "error": "notFound"
+        }
+      }
+    },
+    {
+      "name": "transfer",
+      "request": {
+        "method": "POST",
+        "path": "/transfers",
+        "caller": "u1",
+        "body": {
+          "from": "{{a}}",
+          "to": "{{b}}",
+          "amount": 300,
+          "memo": "rent"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "from": 700,
+          "to": 300
+        }
+      }
+    },
+    {
+      "name": "same account",
+      "request": {
+        "method": "POST",
+        "path": "/transfers",
+        "caller": "u1",
+        "body": {
+          "from": "{{a}}",
+          "to": "{{a}}",
+          "amount": 1
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": "sameAccount"
+        }
+      }
+    },
+    {
+      "name": "insufficient funds rolls everything back",
+      "request": {
+        "method": "POST",
+        "path": "/transfers",
+        "caller": "u1",
+        "body": {
+          "from": "{{a}}",
+          "to": "{{b}}",
+          "amount": 5000
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "error": "insufficientFunds"
+        }
+      }
+    },
+    {
+      "name": "only the owner can send",
+      "request": {
+        "method": "POST",
+        "path": "/transfers",
+        "caller": "u1",
+        "body": {
+          "from": "{{b}}",
+          "to": "{{a}}",
+          "amount": 1
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "error": "notOwner"
+        }
+      }
+    },
+    {
+      "name": "currencies must match",
+      "request": {
+        "method": "POST",
+        "path": "/transfers",
+        "caller": "u1",
+        "body": {
+          "from": "{{a}}",
+          "to": "{{e}}",
+          "amount": 1
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": "currencyMismatch"
+        }
+      }
+    },
+    {
+      "name": "amounts must be positive",
+      "request": {
+        "method": "POST",
+        "path": "/transfers",
+        "caller": "u1",
+        "body": {
+          "from": "{{a}}",
+          "to": "{{b}}",
+          "amount": 0
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": "invalid_input"
+        }
+      }
+    },
+    {
+      "name": "entries are append-only and newest first",
+      "request": {
+        "method": "GET",
+        "path": "/accounts/{{a}}/entries",
+        "caller": "u1"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "entries": [
+            {
+              "amount": -300,
+              "balanceAfter": 700,
+              "memo": "rent"
+            },
+            {
+              "amount": 1000,
+              "balanceAfter": 1000,
+              "memo": "deposit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the receiver's entry",
+      "request": {
+        "method": "GET",
+        "path": "/accounts/{{b}}/entries",
+        "caller": "u2"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "entries": [
+            {
+              "amount": 300,
+              "balanceAfter": 300
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "list my accounts",
+      "request": {
+        "method": "GET",
+        "path": "/accounts",
+        "caller": "u1"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "accounts": [{}, {}]
+        }
+      }
+    }
+  ]
+}

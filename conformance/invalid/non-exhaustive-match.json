@@ -1,0 +1,77 @@
+{
+  "expect": ["non_exhaustive_match", "unknown_match_case"],
+  "manifest": {
+    "formatVersion": "0.1",
+    "app": {
+      "name": "bad"
+    },
+    "entities": {
+      "Item": {
+        "key": ["id"],
+        "fields": {
+          "id": {
+            "type": {
+              "kind": "id"
+            },
+            "default": {
+              "kind": "newId"
+            }
+          },
+          "name": {
+            "type": {
+              "kind": "string",
+              "min": 0,
+              "max": 50
+            }
+          }
+        },
+        "indexes": {}
+      }
+    },
+    "counters": {},
+    "routes": [
+      {
+        "id": "m",
+        "method": "POST",
+        "path": "/x",
+        "auth": {
+          "kind": "public"
+        },
+        "input": {
+          "params": {},
+          "query": {},
+          "body": {
+            "plan": {
+              "type": {
+                "kind": "enum",
+                "values": ["free", "pro"]
+              }
+            }
+          }
+        },
+        "errors": {},
+        "plan": {
+          "body": [],
+          "output": {
+            "kind": "match",
+            "on": {
+              "kind": "input",
+              "source": "body",
+              "name": "plan"
+            },
+            "cases": {
+              "free": {
+                "kind": "lit",
+                "value": 1
+              },
+              "gold": {
+                "kind": "lit",
+                "value": 2
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

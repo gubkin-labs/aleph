@@ -1,0 +1,28 @@
+{
+  "name": "@aleph/core",
+  "version": "0.1.0",
+  "description": "aleph-core compiled to WASM: manifest validation, cost analysis, and a local dev engine",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@aleph/source": "./src/index.ts",
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist",
+    "wasm"
+  ],
+  "scripts": {
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "build": "node scripts/build-wasm.mjs && tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aleph/manifest": "workspace:*"
+  }
+}

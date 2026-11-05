@@ -1,0 +1,71 @@
+{
+  "entities": {
+    "OrgBilling": {
+      "maxRowBytes": 431
+    },
+    "Project": {
+      "maxRowBytes": 1261
+    },
+    "Task": {
+      "maxRowBytes": 1700
+    }
+  },
+  "routes": {
+    "archiveProject": {
+      "bounds": {
+        "reads": 2,
+        "writes": 5,
+        "ops": 16,
+        "bytesRead": 2522
+      }
+    },
+    "completeTasks": {
+      "bounds": {
+        "reads": 33,
+        "writes": 48,
+        "ops": 547,
+        "bytesRead": 54420
+      }
+    },
+    "createProject": {
+      "bounds": {
+        "reads": 3,
+        "writes": 3,
+        "ops": 22,
+        "bytesRead": 1712
+      }
+    },
+    "createTask": {
+      "bounds": {
+        "reads": 2,
+        "writes": 2,
+        "ops": 19,
+        "bytesRead": 2961
+      }
+    },
+    "getProject": {
+      "bounds": {
+        "reads": 22,
+        "writes": 0,
+        "ops": 28,
+        "bytesRead": 35281
+      }
+    },
+    "listProjects": {
+      "bounds": {
+        "reads": 50,
+        "writes": 0,
+        "ops": 7,
+        "bytesRead": 63050
+      }
+    },
+    "setPlan": {
+      "bounds": {
+        "reads": 2,
+        "writes": 1,
+        "ops": 14,
+        "bytesRead": 862
+      }
+    }
+  }
+}

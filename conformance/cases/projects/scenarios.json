@@ -1,0 +1,447 @@
+{
+  "seed": 7,
+  "startMs": 1700000000000,
+  "stepMs": 1000,
+  "steps": [
+    {
+      "name": "billing needs a signed-in caller",
+      "request": {
+        "method": "PUT",
+        "path": "/orgs/acme/billing",
+        "body": {
+          "plan": "free"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "unauthorized"
+        }
+      }
+    },
+    {
+      "name": "create the first project",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects",
+        "caller": "u1",
+        "body": {
+          "name": "Alpha"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "orgId": "acme",
+          "name": "Alpha",
+          "status": "active"
+        }
+      },
+      "capture": {
+        "alpha": "body.projectId"
+      }
+    },
+    {
+      "name": "create a second project",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects",
+        "caller": "u1",
+        "body": {
+          "name": "Beta"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "beta": "body.projectId"
+      }
+    },
+    {
+      "name": "create a third project",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects",
+        "caller": "u1",
+        "body": {
+          "name": "Gamma"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "the free plan stops at three active projects",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects",
+        "caller": "u1",
+        "body": {
+          "name": "Delta"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "error": "planLimit",
+          "message": "Your plan's project limit is reached"
+        }
+      }
+    },
+    {
+      "name": "upgrade to pro",
+      "request": {
+        "method": "PUT",
+        "path": "/orgs/acme/billing",
+        "caller": "u1",
+        "body": {
+          "plan": "pro"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "plan": "pro"
+        }
+      }
+    },
+    {
+      "name": "pro allows a fourth project",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects",
+        "caller": "u1",
+        "body": {
+          "name": "Delta"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "list active projects, newest first",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/projects",
+        "caller": "u1"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "projects": [
+            {
+              "name": "Delta"
+            },
+            {
+              "name": "Gamma"
+            },
+            {
+              "name": "Beta"
+            },
+            {
+              "name": "Alpha"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "archive a project",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects/{{alpha}}/archive",
+        "caller": "u1"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "name": "Alpha",
+          "status": "archived"
+        }
+      }
+    },
+    {
+      "name": "archived projects are listed separately",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/projects",
+        "caller": "u1",
+        "query": {
+          "status": "archived"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "projects": [
+            {
+              "name": "Alpha"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "limits page the list",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/projects",
+        "caller": "u1",
+        "query": {
+          "limit": "2"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "projects": [
+            {
+              "name": "Delta"
+            },
+            {
+              "name": "Gamma"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a limit over the declared max is rejected before the plan runs",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/projects",
+        "caller": "u1",
+        "query": {
+          "limit": "500"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": "invalid_input",
+          "details": [
+            {
+              "field": "query.limit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "archived projects take no tasks",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects/{{alpha}}/tasks",
+        "caller": "u1",
+        "body": {
+          "title": "Too late"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "error": "archived"
+        }
+      }
+    },
+    {
+      "name": "add a task",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects/{{beta}}/tasks",
+        "caller": "u1",
+        "body": {
+          "title": "Write spec"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "t1": "body.taskId"
+      }
+    },
+    {
+      "name": "add another task",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects/{{beta}}/tasks",
+        "caller": "u1",
+        "body": {
+          "title": "Build core"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "t2": "body.taskId"
+      }
+    },
+    {
+      "name": "add a third task",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects/{{beta}}/tasks",
+        "caller": "u1",
+        "body": {
+          "title": "Ship"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "bulk-complete skips ids that don't exist",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects/{{beta}}/tasks/complete",
+        "caller": "u1",
+        "body": {
+          "taskIds": ["{{t1}}", "{{t2}}", "{{alpha}}"]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "completed": 2,
+          "stillOpen": 1
+        }
+      }
+    },
+    {
+      "name": "completing again is a no-op",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects/{{beta}}/tasks/complete",
+        "caller": "u1",
+        "body": {
+          "taskIds": ["{{t1}}"]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "completed": 0,
+          "stillOpen": 1
+        }
+      }
+    },
+    {
+      "name": "read a project with its tasks and counters",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/projects/{{beta}}",
+        "caller": "u1"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "project": {
+            "name": "Beta"
+          },
+          "openTasks": 1,
+          "summary": "Beta (active)",
+          "tasks": [
+            {
+              "title": "Write spec",
+              "done": true
+            },
+            {
+              "title": "Build core",
+              "done": true
+            },
+            {
+              "title": "Ship",
+              "done": false
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a missing project is a declared 404",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects/01ARZ3NDEKTSV4RRFFQ69G5FAV/archive",
+        "caller": "u1"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "error": "notFound",
+          "message": "Project not found"
+        }
+      }
+    },
+    {
+      "name": "a malformed id is rejected as input",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects/nope/archive",
+        "caller": "u1"
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": "invalid_input"
+        }
+      }
+    },
+    {
+      "name": "unknown body fields are rejected",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects",
+        "caller": "u1",
+        "body": {
+          "name": "X",
+          "color": "red"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "details": [
+            {
+              "field": "body.color",
+              "message": "unknown field"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "unknown routes are 404",
+      "request": {
+        "method": "GET",
+        "path": "/nope",
+        "caller": "u1"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "error": "route_not_found"
+        }
+      }
+    },
+    {
+      "name": "wrong methods are 405",
+      "request": {
+        "method": "DELETE",
+        "path": "/orgs/acme/projects",
+        "caller": "u1"
+      },
+      "expect": {
+        "status": 405,
+        "body": {
+          "error": "method_not_allowed"
+        }
+      }
+    }
+  ]
+}

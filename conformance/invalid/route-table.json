@@ -1,0 +1,95 @@
+{
+  "expect": [
+    "duplicate_route",
+    "duplicate_route_id",
+    "path_param_mismatch",
+    "invalid_error_status"
+  ],
+  "manifest": {
+    "formatVersion": "0.1",
+    "app": {
+      "name": "bad"
+    },
+    "entities": {
+      "Item": {
+        "key": ["id"],
+        "fields": {
+          "id": {
+            "type": {
+              "kind": "id"
+            },
+            "default": {
+              "kind": "newId"
+            }
+          },
+          "name": {
+            "type": {
+              "kind": "string",
+              "min": 0,
+              "max": 50
+            }
+          }
+        },
+        "indexes": {}
+      }
+    },
+    "counters": {},
+    "routes": [
+      {
+        "id": "a",
+        "method": "GET",
+        "path": "/items/:id",
+        "auth": {
+          "kind": "public"
+        },
+        "input": {
+          "params": {
+            "id": {
+              "type": {
+                "kind": "string",
+                "min": 0,
+                "max": 10
+              }
+            }
+          },
+          "query": {},
+          "body": {}
+        },
+        "errors": {},
+        "plan": {
+          "body": [],
+          "output": {
+            "kind": "lit",
+            "value": null
+          }
+        }
+      },
+      {
+        "id": "a",
+        "method": "GET",
+        "path": "/items/:itemId",
+        "auth": {
+          "kind": "public"
+        },
+        "input": {
+          "params": {},
+          "query": {},
+          "body": {}
+        },
+        "errors": {
+          "teapot": {
+            "status": 200,
+            "message": "no"
+          }
+        },
+        "plan": {
+          "body": [],
+          "output": {
+            "kind": "lit",
+            "value": null
+          }
+        }
+      }
+    ]
+  }
+}

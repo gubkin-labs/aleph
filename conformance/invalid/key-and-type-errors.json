@@ -1,0 +1,84 @@
+{
+  "expect": ["invalid_key", "type_mismatch", "missing_key_field", "immutable_key_field"],
+  "manifest": {
+    "formatVersion": "0.1",
+    "app": {
+      "name": "bad"
+    },
+    "entities": {
+      "Item": {
+        "key": ["id", "tags"],
+        "fields": {
+          "id": {
+            "type": {
+              "kind": "id"
+            }
+          },
+          "tags": {
+            "type": {
+              "kind": "array",
+              "items": {
+                "kind": "bool"
+              },
+              "max": 2
+            }
+          }
+        },
+        "indexes": {}
+      }
+    },
+    "counters": {},
+    "routes": [
+      {
+        "id": "u",
+        "method": "POST",
+        "path": "/x",
+        "auth": {
+          "kind": "public"
+        },
+        "input": {
+          "params": {},
+          "query": {},
+          "body": {}
+        },
+        "errors": {
+          "e": {
+            "status": 400,
+            "message": "e"
+          }
+        },
+        "plan": {
+          "body": [
+            {
+              "kind": "ensure",
+              "cond": {
+                "kind": "lit",
+                "value": 5
+              },
+              "error": "e"
+            },
+            {
+              "kind": "let",
+              "var": 0,
+              "op": {
+                "op": "update",
+                "entity": "Item",
+                "key": {},
+                "set": {
+                  "id": {
+                    "kind": "lit",
+                    "value": "x"
+                  }
+                }
+              }
+            }
+          ],
+          "output": {
+            "kind": "lit",
+            "value": null
+          }
+        }
+      }
+    ]
+  }
+}

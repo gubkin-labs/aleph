@@ -1,0 +1,14 @@
+{
+  "expect": ["invalid_manifest"],
+  "manifest": {
+    "formatVersion": "0.1",
+    "app": {
+      "name": "x"
+    },
+    "routes": [
+      {
+        "id": "r"
+      }
+    ]
+  }
+}

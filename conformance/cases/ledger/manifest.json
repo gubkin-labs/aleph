@@ -1,0 +1,889 @@
+{
+  "app": {
+    "name": "ledger"
+  },
+  "counters": {},
+  "entities": {
+    "Account": {
+      "fields": {
+        "accountId": {
+          "default": {
+            "kind": "newId"
+          },
+          "type": {
+            "kind": "id"
+          }
+        },
+        "balance": {
+          "default": {
+            "kind": "literal",
+            "value": 0
+          },
+          "type": {
+            "kind": "int",
+            "min": 0
+          }
+        },
+        "currency": {
+          "type": {
+            "kind": "enum",
+            "values": [
+              "USD",
+              "EUR"
+            ]
+          }
+        },
+        "ownerId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 0
+          }
+        }
+      },
+      "indexes": {
+        "byOwner": {
+          "fields": [
+            "ownerId"
+          ]
+        }
+      },
+      "key": [
+        "accountId"
+      ]
+    },
+    "Entry": {
+      "fields": {
+        "accountId": {
+          "type": {
+            "kind": "id"
+          }
+        },
+        "amount": {
+          "type": {
+            "kind": "int"
+          }
+        },
+        "balanceAfter": {
+          "type": {
+            "kind": "int",
+            "min": 0
+          }
+        },
+        "entryId": {
+          "default": {
+            "kind": "newId"
+          },
+          "type": {
+            "kind": "id"
+          }
+        },
+        "memo": {
+          "optional": true,
+          "type": {
+            "kind": "string",
+            "max": 140,
+            "min": 0
+          }
+        }
+      },
+      "indexes": {},
+      "key": [
+        "accountId",
+        "entryId"
+      ]
+    }
+  },
+  "formatVersion": "0.1",
+  "routes": [
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {},
+      "id": "openAccount",
+      "input": {
+        "body": {
+          "currency": {
+            "type": {
+              "kind": "enum",
+              "values": [
+                "USD",
+                "EUR"
+              ]
+            }
+          }
+        },
+        "params": {},
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/accounts",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Account",
+              "op": "insert",
+              "values": {
+                "currency": {
+                  "kind": "input",
+                  "name": "currency",
+                  "source": "body"
+                },
+                "ownerId": {
+                  "kind": "caller"
+                }
+              }
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "id": 0,
+          "kind": "var"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {},
+      "id": "myAccounts",
+      "input": {
+        "body": {},
+        "params": {},
+        "query": {}
+      },
+      "method": "GET",
+      "path": "/accounts",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Account",
+              "index": "byOwner",
+              "limit": {
+                "kind": "lit",
+                "value": 10
+              },
+              "op": "query",
+              "prefix": [
+                {
+                  "kind": "caller"
+                }
+              ]
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "fields": {
+            "accounts": {
+              "id": 0,
+              "kind": "var"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {
+        "notFound": {
+          "message": "Account not found",
+          "status": 404
+        }
+      },
+      "id": "deposit",
+      "input": {
+        "body": {
+          "amount": {
+            "type": {
+              "kind": "int",
+              "max": 100000000,
+              "min": 1
+            }
+          }
+        },
+        "params": {
+          "accountId": {
+            "type": {
+              "kind": "id"
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/accounts/:accountId/deposit",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Account",
+              "key": {
+                "accountId": {
+                  "kind": "input",
+                  "name": "accountId",
+                  "source": "params"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          },
+          {
+            "cond": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "field",
+                "name": "ownerId",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "op": "eq",
+              "rhs": {
+                "kind": "caller"
+              }
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Entry",
+              "op": "insert",
+              "values": {
+                "accountId": {
+                  "kind": "field",
+                  "name": "accountId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                },
+                "amount": {
+                  "kind": "input",
+                  "name": "amount",
+                  "source": "body"
+                },
+                "balanceAfter": {
+                  "kind": "binary",
+                  "lhs": {
+                    "kind": "field",
+                    "name": "balance",
+                    "of": {
+                      "id": 0,
+                      "kind": "var"
+                    }
+                  },
+                  "op": "add",
+                  "rhs": {
+                    "kind": "input",
+                    "name": "amount",
+                    "source": "body"
+                  }
+                },
+                "memo": {
+                  "kind": "lit",
+                  "value": "deposit"
+                }
+              }
+            },
+            "var": 1
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Account",
+              "key": {
+                "accountId": {
+                  "kind": "field",
+                  "name": "accountId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              },
+              "op": "update",
+              "set": {
+                "balance": {
+                  "kind": "binary",
+                  "lhs": {
+                    "kind": "field",
+                    "name": "balance",
+                    "of": {
+                      "id": 0,
+                      "kind": "var"
+                    }
+                  },
+                  "op": "add",
+                  "rhs": {
+                    "kind": "input",
+                    "name": "amount",
+                    "source": "body"
+                  }
+                }
+              }
+            },
+            "var": 2
+          }
+        ],
+        "output": {
+          "id": 2,
+          "kind": "var"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {
+        "currencyMismatch": {
+          "message": "Accounts use different currencies",
+          "status": 400
+        },
+        "insufficientFunds": {
+          "message": "Insufficient funds",
+          "status": 422
+        },
+        "notFound": {
+          "message": "Account not found",
+          "status": 404
+        },
+        "notOwner": {
+          "message": "You don't own the source account",
+          "status": 403
+        },
+        "sameAccount": {
+          "message": "Can't transfer to the same account",
+          "status": 400
+        }
+      },
+      "id": "transfer",
+      "input": {
+        "body": {
+          "amount": {
+            "type": {
+              "kind": "int",
+              "max": 100000000,
+              "min": 1
+            }
+          },
+          "from": {
+            "type": {
+              "kind": "id"
+            }
+          },
+          "memo": {
+            "optional": true,
+            "type": {
+              "kind": "string",
+              "max": 140,
+              "min": 0
+            }
+          },
+          "to": {
+            "type": {
+              "kind": "id"
+            }
+          }
+        },
+        "params": {},
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/transfers",
+      "plan": {
+        "body": [
+          {
+            "cond": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "input",
+                "name": "from",
+                "source": "body"
+              },
+              "op": "neq",
+              "rhs": {
+                "kind": "input",
+                "name": "to",
+                "source": "body"
+              }
+            },
+            "error": "sameAccount",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Account",
+              "key": {
+                "accountId": {
+                  "kind": "input",
+                  "name": "from",
+                  "source": "body"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Account",
+              "key": {
+                "accountId": {
+                  "kind": "input",
+                  "name": "to",
+                  "source": "body"
+                }
+              },
+              "op": "get"
+            },
+            "var": 1
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 1,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          },
+          {
+            "cond": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "field",
+                "name": "ownerId",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "op": "eq",
+              "rhs": {
+                "kind": "caller"
+              }
+            },
+            "error": "notOwner",
+            "kind": "ensure"
+          },
+          {
+            "cond": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "field",
+                "name": "currency",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "op": "eq",
+              "rhs": {
+                "kind": "field",
+                "name": "currency",
+                "of": {
+                  "id": 1,
+                  "kind": "var"
+                }
+              }
+            },
+            "error": "currencyMismatch",
+            "kind": "ensure"
+          },
+          {
+            "cond": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "field",
+                "name": "balance",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "op": "gte",
+              "rhs": {
+                "kind": "input",
+                "name": "amount",
+                "source": "body"
+              }
+            },
+            "error": "insufficientFunds",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Account",
+              "key": {
+                "accountId": {
+                  "kind": "field",
+                  "name": "accountId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              },
+              "op": "update",
+              "set": {
+                "balance": {
+                  "kind": "binary",
+                  "lhs": {
+                    "kind": "field",
+                    "name": "balance",
+                    "of": {
+                      "id": 0,
+                      "kind": "var"
+                    }
+                  },
+                  "op": "sub",
+                  "rhs": {
+                    "kind": "input",
+                    "name": "amount",
+                    "source": "body"
+                  }
+                }
+              }
+            },
+            "var": 2
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Account",
+              "key": {
+                "accountId": {
+                  "kind": "field",
+                  "name": "accountId",
+                  "of": {
+                    "id": 1,
+                    "kind": "var"
+                  }
+                }
+              },
+              "op": "update",
+              "set": {
+                "balance": {
+                  "kind": "binary",
+                  "lhs": {
+                    "kind": "field",
+                    "name": "balance",
+                    "of": {
+                      "id": 1,
+                      "kind": "var"
+                    }
+                  },
+                  "op": "add",
+                  "rhs": {
+                    "kind": "input",
+                    "name": "amount",
+                    "source": "body"
+                  }
+                }
+              }
+            },
+            "var": 3
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Entry",
+              "op": "insert",
+              "values": {
+                "accountId": {
+                  "kind": "input",
+                  "name": "from",
+                  "source": "body"
+                },
+                "amount": {
+                  "arg": {
+                    "kind": "input",
+                    "name": "amount",
+                    "source": "body"
+                  },
+                  "kind": "neg"
+                },
+                "balanceAfter": {
+                  "kind": "binary",
+                  "lhs": {
+                    "kind": "field",
+                    "name": "balance",
+                    "of": {
+                      "id": 0,
+                      "kind": "var"
+                    }
+                  },
+                  "op": "sub",
+                  "rhs": {
+                    "kind": "input",
+                    "name": "amount",
+                    "source": "body"
+                  }
+                },
+                "memo": {
+                  "kind": "input",
+                  "name": "memo",
+                  "source": "body"
+                }
+              }
+            },
+            "var": 4
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Entry",
+              "op": "insert",
+              "values": {
+                "accountId": {
+                  "kind": "input",
+                  "name": "to",
+                  "source": "body"
+                },
+                "amount": {
+                  "kind": "input",
+                  "name": "amount",
+                  "source": "body"
+                },
+                "balanceAfter": {
+                  "kind": "binary",
+                  "lhs": {
+                    "kind": "field",
+                    "name": "balance",
+                    "of": {
+                      "id": 1,
+                      "kind": "var"
+                    }
+                  },
+                  "op": "add",
+                  "rhs": {
+                    "kind": "input",
+                    "name": "amount",
+                    "source": "body"
+                  }
+                },
+                "memo": {
+                  "kind": "input",
+                  "name": "memo",
+                  "source": "body"
+                }
+              }
+            },
+            "var": 5
+          }
+        ],
+        "output": {
+          "fields": {
+            "from": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "field",
+                "name": "balance",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "op": "sub",
+              "rhs": {
+                "kind": "input",
+                "name": "amount",
+                "source": "body"
+              }
+            },
+            "to": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "field",
+                "name": "balance",
+                "of": {
+                  "id": 1,
+                  "kind": "var"
+                }
+              },
+              "op": "add",
+              "rhs": {
+                "kind": "input",
+                "name": "amount",
+                "source": "body"
+              }
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {
+        "notFound": {
+          "message": "Account not found",
+          "status": 404
+        }
+      },
+      "id": "entries",
+      "input": {
+        "body": {},
+        "params": {
+          "accountId": {
+            "type": {
+              "kind": "id"
+            }
+          }
+        },
+        "query": {
+          "limit": {
+            "default": {
+              "kind": "literal",
+              "value": 20
+            },
+            "type": {
+              "kind": "int",
+              "max": 100,
+              "min": 1
+            }
+          }
+        }
+      },
+      "method": "GET",
+      "path": "/accounts/:accountId/entries",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Account",
+              "key": {
+                "accountId": {
+                  "kind": "input",
+                  "name": "accountId",
+                  "source": "params"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          },
+          {
+            "cond": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "field",
+                "name": "ownerId",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "op": "eq",
+              "rhs": {
+                "kind": "caller"
+              }
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Entry",
+              "limit": {
+                "kind": "input",
+                "name": "limit",
+                "source": "query"
+              },
+              "op": "query",
+              "order": "desc",
+              "prefix": [
+                {
+                  "kind": "input",
+                  "name": "accountId",
+                  "source": "params"
+                }
+              ]
+            },
+            "var": 1
+          }
+        ],
+        "output": {
+          "fields": {
+            "entries": {
+              "id": 1,
+              "kind": "var"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    }
+  ]
+}

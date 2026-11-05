@@ -1,0 +1,57 @@
+{
+  "expect": ["invalid_predicate"],
+  "manifest": {
+    "formatVersion": "0.1",
+    "app": {
+      "name": "bad"
+    },
+    "entities": {
+      "Item": {
+        "key": ["id"],
+        "fields": {
+          "id": {
+            "type": {
+              "kind": "id"
+            },
+            "default": {
+              "kind": "newId"
+            }
+          },
+          "name": {
+            "type": {
+              "kind": "string",
+              "min": 0,
+              "max": 50
+            }
+          }
+        },
+        "indexes": {}
+      }
+    },
+    "counters": {
+      "recent": {
+        "of": "Item",
+        "groupBy": [],
+        "where": {
+          "var": 0,
+          "expr": {
+            "kind": "binary",
+            "op": "lt",
+            "lhs": {
+              "kind": "field",
+              "of": {
+                "kind": "var",
+                "id": 0
+              },
+              "name": "name"
+            },
+            "rhs": {
+              "kind": "now"
+            }
+          }
+        }
+      }
+    },
+    "routes": []
+  }
+}

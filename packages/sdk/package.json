@@ -1,0 +1,29 @@
+{
+  "name": "@aleph/sdk",
+  "version": "0.1.0",
+  "description": "Declare Aleph backends in TypeScript and build them into manifests",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "@aleph/source": "./src/index.ts",
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aleph/manifest": "workspace:*"
+  },
+  "devDependencies": {
+    "@aleph/core": "workspace:*"
+  }
+}

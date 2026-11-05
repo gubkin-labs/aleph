@@ -1,0 +1,27 @@
+[package]
+name = "aleph-core"
+description = "Aleph manifest types, validator, cost analyzer, and bounded plan interpreter"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+# Derives JSON Schema + TypeScript bindings for the manifest types (used by xtask codegen).
+codegen = ["dep:schemars", "dep:ts-rs"]
+
+[dependencies]
+schemars = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ts-rs = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
