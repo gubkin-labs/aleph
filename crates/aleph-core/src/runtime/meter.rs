@@ -28,6 +28,10 @@ impl Meter {
         }
     }
 
+    pub(crate) fn limits(&self) -> &Limits {
+        &self.limits
+    }
+
     pub(crate) fn used(&self) -> Cost {
         self.used
     }

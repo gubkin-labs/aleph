@@ -22,7 +22,11 @@ source: InputSource,
 /**
  * The input name.
  */
-name: string, } | { "kind": "caller" } | { "kind": "now" } | { "kind": "field", 
+name: string, } | { "kind": "caller" } | { "kind": "callerRole", 
+/**
+ * The org id.
+ */
+org: Expr, } | { "kind": "now" } | { "kind": "field", 
 /**
  * The row or object.
  */

@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use crate::diagnostics::{Diagnostic, DiagnosticCode as Code};
 use crate::limits::{Cost, Limits, Resource};
 use crate::manifest::{
-    Counter, DefaultValue, Entity, FORMAT_VERSION, Field, FieldType, Literal, Manifest, Route,
+    Auth, AuthConfig, Counter, DefaultValue, Entity, FORMAT_VERSION, Field, FieldType, Idempotency,
+    Literal, Manifest, Route,
 };
 
 mod plan;
@@ -159,10 +160,22 @@ fn check_manifest(m: &Manifest, limits: &Limits, diags: &mut Vec<Diagnostic>) ->
         check_counter(m, counter, &path, diags);
     }
 
+    check_auth_config(&m.auth, diags);
     check_route_table(&m.routes, diags);
     for (i, route) in m.routes.iter().enumerate() {
         let path = format!("routes[{i}]");
-        let bounds = plan::check_route(m, &infos, route, &path, diags);
+        check_route_auth(&m.auth, route, &path, diags);
+        let mut bounds = plan::check_route(m, &infos, route, &path, diags);
+        if let Some(idempotency) = route.idempotency {
+            check_idempotency(idempotency, &format!("{path}.idempotency"), diags);
+            // Reading the stored response, and storing it (it must fit in one row).
+            bounds += Cost {
+                reads: 1,
+                writes: 1,
+                bytes_read: limits.max_row_bytes,
+                ops: 0,
+            };
+        }
         for resource in Resource::ALL {
             let (bound, limit) = (bounds.get(resource), resource.limit(limits));
             if bound > limit {
@@ -368,6 +381,97 @@ fn check_counter(m: &Manifest, counter: &Counter, path: &str, diags: &mut Vec<Di
     }
     if let Some(filter) = &counter.filter {
         plan::check_row_predicate(m, &counter.of, filter, &format!("{path}.where"), diags);
+    }
+}
+
+fn check_auth_config(auth: &AuthConfig, diags: &mut Vec<Diagnostic>) {
+    let mut seen = HashSet::new();
+    for role in &auth.roles {
+        check_name(role, "auth.roles", diags);
+        if !seen.insert(role) {
+            diags.push(Diagnostic::new(
+                Code::InvalidAuth,
+                "auth.roles",
+                format!("role {role:?} is declared twice"),
+            ));
+        }
+    }
+    let mut seen = HashSet::new();
+    for scope in &auth.api_key_scopes {
+        let valid = (1..=64).contains(&scope.len())
+            && scope
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"_:.-".contains(&b));
+        if !valid {
+            diags.push(Diagnostic::new(
+                Code::InvalidAuth,
+                "auth.apiKeyScopes",
+                format!("{scope:?} isn't a valid scope: use 1-64 characters of [A-Za-z0-9_:.-]"),
+            ));
+        }
+        if !seen.insert(scope) {
+            diags.push(Diagnostic::new(
+                Code::InvalidAuth,
+                "auth.apiKeyScopes",
+                format!("scope {scope:?} is declared twice"),
+            ));
+        }
+    }
+}
+
+fn check_route_auth(config: &AuthConfig, route: &Route, path: &str, diags: &mut Vec<Diagnostic>) {
+    let Auth::Member {
+        org,
+        roles,
+        api_key_scopes,
+    } = &route.auth
+    else {
+        return;
+    };
+    let auth_path = format!("{path}.auth");
+    if !route.input.params.contains_key(org) {
+        diags.push(Diagnostic::new(
+            Code::InvalidAuth,
+            &auth_path,
+            format!("member auth names org param {org:?}, but the path has no :{org} parameter"),
+        ));
+    }
+    for role in roles.iter().filter(|r| !config.roles.contains(r)) {
+        diags.push(Diagnostic::new(
+            Code::UnknownRole,
+            &auth_path,
+            format!(
+                "role {role:?} isn't declared (auth.roles: {:?})",
+                config.roles
+            ),
+        ));
+    }
+    for scope in api_key_scopes
+        .iter()
+        .filter(|s| !config.api_key_scopes.contains(s))
+    {
+        diags.push(Diagnostic::new(
+            Code::UnknownScope,
+            &auth_path,
+            format!(
+                "scope {scope:?} isn't declared (auth.apiKeyScopes: {:?})",
+                config.api_key_scopes
+            ),
+        ));
+    }
+}
+
+fn check_idempotency(idempotency: Idempotency, path: &str, diags: &mut Vec<Diagnostic>) {
+    if idempotency.ttl_ms == 0 || idempotency.ttl_ms > Idempotency::MAX_TTL_MS {
+        diags.push(Diagnostic::new(
+            Code::InvalidIdempotency,
+            path,
+            format!(
+                "ttlMs must be between 1 and {} (7 days), got {}",
+                Idempotency::MAX_TTL_MS,
+                idempotency.ttl_ms
+            ),
+        ));
     }
 }
 

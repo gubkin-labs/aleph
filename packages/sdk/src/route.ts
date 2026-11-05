@@ -1,7 +1,15 @@
 /**
  * Routes: `a.route("POST /orgs/:orgId/projects").body({...}).errors({...}).handle(($, ctx) => ...)`.
  */
-import type { Auth, ErrorDecl, Field, InputSource, Method, Route } from "@aleph/manifest";
+import type {
+  Auth,
+  ErrorDecl,
+  Field,
+  Idempotency,
+  InputSource,
+  Method,
+  Route,
+} from "@aleph/manifest";
 import { ErrorRef, List } from "./data.js";
 import { $ } from "./dsl.js";
 import { Expr } from "./expr.js";
@@ -51,6 +59,21 @@ export type Handler<P extends Fields, Q extends Fields, B extends Fields, E exte
   ctx: HandlerContext<P, Q, B, E>,
 ) => unknown;
 
+/** A duration: milliseconds, or a number with a unit (`"30s"`, `"15m"`, `"24h"`, `"7d"`). */
+export type Duration = number | `${number}${"s" | "m" | "h" | "d"}`;
+
+const UNIT_MS = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 } as const;
+
+/** Converts a {@link Duration} to milliseconds. */
+export function durationMs(duration: Duration): number {
+  if (typeof duration === "number") return duration;
+  const match = /^(\d+)([smhd])$/.exec(duration);
+  const unit = match?.[2] as keyof typeof UNIT_MS | undefined;
+  if (!match?.[1] || !unit)
+    throw new AlephBuildError(`invalid duration ${JSON.stringify(duration)}`);
+  return Number(match[1]) * UNIT_MS[unit];
+}
+
 /** @internal What a route builder hands back to its app. */
 export type RouteSink = (route: Route) => void;
 
@@ -73,7 +96,14 @@ function defaultId(method: Method, path: string): string {
 }
 
 /** Builds one route. Nothing is registered until {@link RouteBuilder.handle} is called. */
-export class RouteBuilder<P extends Fields, Q extends Fields, B extends Fields, E extends string> {
+export class RouteBuilder<
+  P extends Fields,
+  Q extends Fields,
+  B extends Fields,
+  E extends string,
+  R extends string = string,
+  S extends string = string,
+> {
   readonly #sink: RouteSink;
   readonly #method: Method;
   readonly #path: string;
@@ -83,6 +113,7 @@ export class RouteBuilder<P extends Fields, Q extends Fields, B extends Fields, 
   #query: Fields = {};
   #body: Fields = {};
   #errors: Record<string, ErrorDecl> = {};
+  #idempotency: Idempotency | undefined;
 
   /** @internal */
   constructor(sink: RouteSink, spec: string) {
@@ -109,35 +140,64 @@ export class RouteBuilder<P extends Fields, Q extends Fields, B extends Fields, 
   }
 
   /** Who may call the route. Defaults to `"signedIn"`. */
-  auth(kind: Auth["kind"]): this {
+  auth(kind: "public" | "signedIn"): this {
     this.#auth = { kind };
+    return this;
+  }
+  /**
+   * Only members of the org in path param `org` may call the route, optionally only with some
+   * roles. API keys for that org are accepted only if `apiKeyScopes` is set, and only with all of
+   * those scopes.
+   */
+  member(
+    org: keyof P & string,
+    options: { roles?: readonly R[]; apiKeyScopes?: readonly S[] } = {},
+  ): this {
+    this.#auth = {
+      kind: "member",
+      org,
+      roles: [...(options.roles ?? [])],
+      apiKeyScopes: [...(options.apiKeyScopes ?? [])],
+    };
+    return this;
+  }
+
+  /**
+   * Replays the stored response when a request repeats its `Idempotency-Key` within `ttl`
+   * (`"30s"`, `"15m"`, `"24h"`, `"7d"`, or milliseconds).
+   */
+  idempotent(options: { ttl: Duration; required?: boolean }): this {
+    this.#idempotency = {
+      ttlMs: durationMs(options.ttl),
+      ...(options.required ? { required: true } : {}),
+    };
     return this;
   }
 
   /** Overrides the types of path params (they default to strings of at most 128 characters). */
   params<NP extends { [K in keyof P]: FieldBuilder<unknown, false, boolean> }>(
     fields: NP,
-  ): RouteBuilder<NP, Q, B, E> {
+  ): RouteBuilder<NP, Q, B, E, R, S> {
     this.#params = { ...this.#params, ...fields };
-    return this as unknown as RouteBuilder<NP, Q, B, E>;
+    return this as unknown as RouteBuilder<NP, Q, B, E, R, S>;
   }
 
   /** Declares query string parameters. */
-  query<NQ extends Fields>(fields: NQ): RouteBuilder<P, NQ, B, E> {
+  query<NQ extends Fields>(fields: NQ): RouteBuilder<P, NQ, B, E, R, S> {
     this.#query = fields;
-    return this as unknown as RouteBuilder<P, NQ, B, E>;
+    return this as unknown as RouteBuilder<P, NQ, B, E, R, S>;
   }
 
   /** Declares JSON body fields. */
-  body<NB extends Fields>(fields: NB): RouteBuilder<P, Q, NB, E> {
+  body<NB extends Fields>(fields: NB): RouteBuilder<P, Q, NB, E, R, S> {
     this.#body = fields;
-    return this as unknown as RouteBuilder<P, Q, NB, E>;
+    return this as unknown as RouteBuilder<P, Q, NB, E, R, S>;
   }
 
   /** Declares the business errors the handler may fail with. */
-  errors<NE extends string>(errors: Record<NE, ErrorDecl>): RouteBuilder<P, Q, B, NE> {
+  errors<NE extends string>(errors: Record<NE, ErrorDecl>): RouteBuilder<P, Q, B, NE, R, S> {
     this.#errors = errors;
-    return this as unknown as RouteBuilder<P, Q, B, NE>;
+    return this as unknown as RouteBuilder<P, Q, B, NE, R, S>;
   }
 
   /** Records the handler's plan and registers the route. */
@@ -172,6 +232,7 @@ export class RouteBuilder<P extends Fields, Q extends Fields, B extends Fields, 
       auth: this.#auth,
       input: { params: specs(this.#params), query: specs(this.#query), body: specs(this.#body) },
       errors: { ...this.#errors },
+      ...(this.#idempotency ? { idempotency: this.#idempotency } : {}),
       plan: { body: rec.body, output },
     });
   }

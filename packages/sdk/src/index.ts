@@ -18,7 +18,7 @@
  *   .handle(($, { body }) => Todo.insert({ ownerId: $.caller, title: body.title }));
  * ```
  */
-export { App, app } from "./app.js";
+export { App, type AppOptions, app } from "./app.js";
 export {
   Counter,
   type CounterDef,
@@ -28,6 +28,7 @@ export {
   type InsertValues,
   type KeyValues,
   List,
+  Page,
   type QueryOptions,
   type Row,
   type RowMethods,

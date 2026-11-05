@@ -148,4 +148,41 @@ describe("build", () => {
     );
     expect(() => app("x").route("FETCH /x")).toThrow(/must look like/);
   });
+
+  it("records member auth, idempotency, pages, and upserts", () => {
+    const a = app("org", { roles: ["owner", "member"], apiKeyScopes: ["read"] });
+    const Doc = a.entity("Doc", {
+      key: ["orgId", "docId"],
+      fields: { orgId: t.string().max(64), docId: t.id().generated(), title: t.string().max(80) },
+    });
+    a.route("GET /orgs/:orgId/docs")
+      .member("orgId", { roles: ["owner"], apiKeyScopes: ["read"] })
+      .idempotent({ ttl: "15m", required: true })
+      .query({ cursor: t.cursor() })
+      .handle(($, { params, query }) => {
+        Doc.upsert({ orgId: params.orgId, title: "x" });
+        return {
+          page: Doc.page({ prefix: [params.orgId], limit: 10, after: query.cursor }),
+          role: $.callerRole(params.orgId),
+        };
+      });
+    const m = a.build();
+    const route = m.routes[0];
+    expect(m.auth).toEqual({ roles: ["owner", "member"], apiKeyScopes: ["read"] });
+    expect(route?.auth).toEqual({
+      kind: "member",
+      org: "orgId",
+      roles: ["owner"],
+      apiKeyScopes: ["read"],
+    });
+    expect(route?.idempotency).toEqual({ ttlMs: 900_000, required: true });
+    const ops = route?.plan.body.map((s) => (s.kind === "let" ? s.op : undefined));
+    expect(ops?.[0]?.op).toBe("upsert");
+    expect(ops?.[1]).toMatchObject({
+      op: "query",
+      page: true,
+      after: { kind: "input", name: "cursor" },
+    });
+    expect(() => a.route("GET /x").idempotent({ ttl: "soon" as "1s" })).toThrow(/invalid duration/);
+  });
 });

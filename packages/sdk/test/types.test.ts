@@ -65,4 +65,15 @@ describe("types", () => {
       fields: { id: t.id(), text: t.string() },
     });
   });
+
+  it("types roles against the app and org params against the path", () => {
+    const b = app("typed", { roles: ["owner", "member"] });
+    b.route("GET /orgs/:orgId").member("orgId", { roles: ["owner"] });
+    const _typeErrors = () => {
+      // @ts-expect-error: "admin" isn't a declared role
+      b.route("GET /orgs/:orgId/a").member("orgId", { roles: ["admin"] });
+      // @ts-expect-error: the path has no :teamId param
+      b.route("GET /orgs/:orgId/b").member("teamId");
+    };
+  });
 });

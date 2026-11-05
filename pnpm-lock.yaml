@@ -197,6 +197,19 @@ importers:
         specifier: workspace:*
         version: link:../packages/sdk
 
+  packages/cli:
+    dependencies:
+      '@aleph/core':
+        specifier: workspace:*
+        version: link:../core-wasm
+      '@aleph/manifest':
+        specifier: workspace:*
+        version: link:../manifest
+    devDependencies:
+      '@aleph/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+
   packages/core-wasm:
     dependencies:
       '@aleph/manifest':

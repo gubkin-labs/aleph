@@ -44,6 +44,12 @@ const ROW_ENTITY: unique symbol = Symbol("aleph.rowEntity");
 /** @internal The shape of an SDK value. */
 export function shapeOf(value: unknown): Shape {
   if (value instanceof List) return { kind: "list", item: value.itemShape };
+  if (value instanceof Page) {
+    return {
+      kind: "object",
+      fields: { items: { kind: "list", item: value.items.itemShape }, cursor: SCALAR },
+    };
+  }
   if (typeof value === "object" && value !== null && ROW_ENTITY in value) {
     return {
       kind: "row",
@@ -231,6 +237,22 @@ export interface QueryOptions<I extends string> {
   limit: ExprLike<number>;
   /** Scan order. Defaults to ascending. */
   order?: "asc" | "desc";
+  /** Continue after a cursor from a previous page (`null` starts from the beginning). */
+  after?: ExprLike<string | null>;
+}
+
+/** One page of a query: its rows and a cursor for the next page (`null` if this one wasn't full). */
+export class Page<T> implements HasNode {
+  readonly "~node": Node;
+  readonly items: List<T>;
+  readonly cursor: Expr<string | null>;
+
+  /** @internal */
+  constructor(node: Node, itemShape: Shape) {
+    this["~node"] = node;
+    this.items = new List<T>({ kind: "field", of: node, name: "items" }, itemShape);
+    this.cursor = new Expr({ kind: "field", of: node, name: "cursor" });
+  }
 }
 
 /** A declared entity. Its methods record storage operations into the current handler. */
@@ -305,6 +327,24 @@ export class Entity<F extends Fields, K extends keyof F & string, I extends stri
     return makeRow(this, recorder().let({ op: "insert", entity: this.name, values: nodes }));
   }
 
+  /** Inserts a row, or updates the existing row with the same key. */
+  upsert(values: InsertValues<F>): Row<F> {
+    const node = recorder().let({ op: "upsert", entity: this.name, values: this.#values(values) });
+    return makeRow(this, node);
+  }
+
+  /** Inserts a row unless one with the same key exists. `true` if it inserted. */
+  insertIfAbsent(values: InsertValues<F>): Expr<boolean> {
+    const op = { op: "insertIfAbsent" as const, entity: this.name, values: this.#values(values) };
+    return new Expr(recorder().let(op));
+  }
+
+  #values(values: Partial<ValuesLike<F>>): Record<string, Node> {
+    const nodes: Record<string, Node> = {};
+    for (const [name, value] of Object.entries(values)) nodes[name] = toNode(value);
+    return nodes;
+  }
+
   /** Updates fields of an existing row. Fails the request with 404 if it doesn't exist. */
   update(key: KeyValues<F, K>, set: Partial<ValuesLike<F>>): Row<F> {
     const nodes: Record<string, Node> = {};
@@ -322,18 +362,29 @@ export class Entity<F extends Fields, K extends keyof F & string, I extends stri
 
   /** Reads a bounded, ordered range of rows. */
   query(options: QueryOptions<I>): List<Row<F>> {
-    const node = recorder().let({
+    return new List<Row<F>>(this.#scan(options, false), this.#rowShape());
+  }
+
+  /** Reads one page of rows: `{ items, cursor }`. Pass the cursor back as `after` for the next. */
+  page(options: QueryOptions<I>): Page<Row<F>> {
+    return new Page<Row<F>>(this.#scan(options, true), this.#rowShape());
+  }
+
+  #scan(options: QueryOptions<I>, page: boolean): Node {
+    return recorder().let({
       op: "query",
       entity: this.name,
       ...(options.index === undefined ? {} : { index: options.index }),
       prefix: (options.prefix ?? []).map(toNode),
       limit: toNode(options.limit),
       ...(options.order === "desc" ? { order: "desc" as const } : {}),
+      ...(options.after === undefined ? {} : { after: toNode(options.after) }),
+      ...(page ? { page: true } : {}),
     });
-    return new List<Row<F>>(node, {
-      kind: "row",
-      entity: this as unknown as Entity<Fields, string, string>,
-    });
+  }
+
+  #rowShape(): Shape {
+    return { kind: "row", entity: this as unknown as Entity<Fields, string, string> };
   }
 }
 

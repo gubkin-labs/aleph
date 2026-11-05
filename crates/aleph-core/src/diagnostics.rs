@@ -42,6 +42,10 @@ pub enum DiagnosticCode {
     InvalidFieldAccess,
     TypeMismatch,
     InvalidPredicate,
+    InvalidAuth,
+    UnknownRole,
+    UnknownScope,
+    InvalidIdempotency,
     OverBudget,
 }
 

@@ -68,6 +68,9 @@ describe.each(cases)("case %s", (name) => {
         const mismatch = subsetMismatch(step.expect.body, response.body);
         expect(mismatch, `${where}: ${JSON.stringify(response.body)}`).toBeUndefined();
       }
+      if (step.expect.replayed !== undefined) {
+        expect(response.replayed ?? false, `${where}: replayed`).toBe(step.expect.replayed);
+      }
       if (response.route !== undefined) {
         const bounds = report.routes[response.route]?.bounds;
         expect(bounds, `${where}: no bounds for ${response.route}`).toBeDefined();

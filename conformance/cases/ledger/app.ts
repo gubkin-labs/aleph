@@ -62,6 +62,7 @@ a.route("POST /accounts/:accountId/deposit")
 
 a.route("POST /transfers")
   .id("transfer")
+  .idempotent({ ttl: "24h", required: true })
   .body({ from: t.id(), to: t.id(), amount, memo: t.string().max(140).optional() })
   .errors({
     sameAccount: err.badRequest("Can't transfer to the same account"),

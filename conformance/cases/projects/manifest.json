@@ -2,6 +2,16 @@
   "app": {
     "name": "projects"
   },
+  "auth": {
+    "apiKeyScopes": [
+      "projects:read"
+    ],
+    "roles": [
+      "owner",
+      "admin",
+      "member"
+    ]
+  },
   "counters": {
     "activeProjects": {
       "groupBy": [
@@ -184,13 +194,47 @@
         "projectId",
         "taskId"
       ]
+    },
+    "Watcher": {
+      "fields": {
+        "orgId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 1
+          }
+        },
+        "projectId": {
+          "type": {
+            "kind": "id"
+          }
+        },
+        "userId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 0
+          }
+        }
+      },
+      "indexes": {},
+      "key": [
+        "orgId",
+        "projectId",
+        "userId"
+      ]
     }
   },
   "formatVersion": "0.1",
   "routes": [
     {
       "auth": {
-        "kind": "signedIn"
+        "apiKeyScopes": [],
+        "kind": "member",
+        "org": "orgId",
+        "roles": [
+          "owner"
+        ]
       },
       "errors": {},
       "id": "setPlan",
@@ -225,95 +269,38 @@
             "kind": "let",
             "op": {
               "entity": "OrgBilling",
-              "key": {
+              "op": "upsert",
+              "values": {
                 "orgId": {
                   "kind": "input",
                   "name": "orgId",
                   "source": "params"
+                },
+                "plan": {
+                  "kind": "input",
+                  "name": "plan",
+                  "source": "body"
                 }
-              },
-              "op": "get"
+              }
             },
             "var": 0
-          },
-          {
-            "cond": {
-              "arg": {
-                "kind": "isNull",
-                "of": {
-                  "id": 0,
-                  "kind": "var"
-                }
-              },
-              "kind": "not"
-            },
-            "else": [
-              {
-                "kind": "let",
-                "op": {
-                  "entity": "OrgBilling",
-                  "op": "insert",
-                  "values": {
-                    "orgId": {
-                      "kind": "input",
-                      "name": "orgId",
-                      "source": "params"
-                    },
-                    "plan": {
-                      "kind": "input",
-                      "name": "plan",
-                      "source": "body"
-                    }
-                  }
-                },
-                "var": 2
-              }
-            ],
-            "kind": "if",
-            "then": [
-              {
-                "kind": "let",
-                "op": {
-                  "entity": "OrgBilling",
-                  "key": {
-                    "orgId": {
-                      "kind": "field",
-                      "name": "orgId",
-                      "of": {
-                        "id": 0,
-                        "kind": "var"
-                      }
-                    }
-                  },
-                  "op": "update",
-                  "set": {
-                    "plan": {
-                      "kind": "input",
-                      "name": "plan",
-                      "source": "body"
-                    }
-                  }
-                },
-                "var": 1
-              }
-            ]
           }
         ],
         "output": {
-          "fields": {
-            "plan": {
-              "kind": "input",
-              "name": "plan",
-              "source": "body"
-            }
-          },
-          "kind": "object"
+          "id": 0,
+          "kind": "var"
         }
       }
     },
     {
       "auth": {
-        "kind": "signedIn"
+        "apiKeyScopes": [],
+        "kind": "member",
+        "org": "orgId",
+        "roles": [
+          "owner",
+          "admin"
+        ]
       },
       "errors": {
         "planLimit": {
@@ -456,7 +443,12 @@
     },
     {
       "auth": {
-        "kind": "signedIn"
+        "apiKeyScopes": [
+          "projects:read"
+        ],
+        "kind": "member",
+        "org": "orgId",
+        "roles": []
       },
       "errors": {},
       "id": "listProjects",
@@ -472,6 +464,14 @@
           }
         },
         "query": {
+          "cursor": {
+            "optional": true,
+            "type": {
+              "kind": "string",
+              "max": 4096,
+              "min": 0
+            }
+          },
           "limit": {
             "default": {
               "kind": "literal",
@@ -505,6 +505,11 @@
           {
             "kind": "let",
             "op": {
+              "after": {
+                "kind": "input",
+                "name": "cursor",
+                "source": "query"
+              },
               "entity": "Project",
               "index": "byStatus",
               "limit": {
@@ -514,6 +519,7 @@
               },
               "op": "query",
               "order": "desc",
+              "page": true,
               "prefix": [
                 {
                   "kind": "input",
@@ -531,19 +537,20 @@
           }
         ],
         "output": {
-          "fields": {
-            "projects": {
-              "id": 0,
-              "kind": "var"
-            }
-          },
-          "kind": "object"
+          "id": 0,
+          "kind": "var"
         }
       }
     },
     {
       "auth": {
-        "kind": "signedIn"
+        "apiKeyScopes": [],
+        "kind": "member",
+        "org": "orgId",
+        "roles": [
+          "owner",
+          "admin"
+        ]
       },
       "errors": {
         "notFound": {
@@ -649,7 +656,10 @@
     },
     {
       "auth": {
-        "kind": "signedIn"
+        "apiKeyScopes": [],
+        "kind": "member",
+        "org": "orgId",
+        "roles": []
       },
       "errors": {
         "archived": {
@@ -780,7 +790,10 @@
     },
     {
       "auth": {
-        "kind": "signedIn"
+        "apiKeyScopes": [],
+        "kind": "member",
+        "org": "orgId",
+        "roles": []
       },
       "errors": {},
       "id": "completeTasks",
@@ -1030,7 +1043,10 @@
     },
     {
       "auth": {
-        "kind": "signedIn"
+        "apiKeyScopes": [],
+        "kind": "member",
+        "org": "orgId",
+        "roles": []
       },
       "errors": {
         "notFound": {
@@ -1142,6 +1158,14 @@
         ],
         "output": {
           "fields": {
+            "myRole": {
+              "kind": "callerRole",
+              "org": {
+                "kind": "input",
+                "name": "orgId",
+                "source": "params"
+              }
+            },
             "openTasks": {
               "id": 1,
               "kind": "var"
@@ -1181,6 +1205,111 @@
             },
             "tasks": {
               "id": 2,
+              "kind": "var"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "apiKeyScopes": [],
+        "kind": "member",
+        "org": "orgId",
+        "roles": []
+      },
+      "errors": {
+        "notFound": {
+          "message": "Project not found",
+          "status": 404
+        }
+      },
+      "id": "watchProject",
+      "input": {
+        "body": {},
+        "params": {
+          "orgId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 1
+            }
+          },
+          "projectId": {
+            "type": {
+              "kind": "id"
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/orgs/:orgId/projects/:projectId/watch",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Project",
+              "key": {
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                },
+                "projectId": {
+                  "kind": "input",
+                  "name": "projectId",
+                  "source": "params"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Watcher",
+              "op": "insertIfAbsent",
+              "values": {
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                },
+                "projectId": {
+                  "kind": "input",
+                  "name": "projectId",
+                  "source": "params"
+                },
+                "userId": {
+                  "kind": "caller"
+                }
+              }
+            },
+            "var": 1
+          }
+        ],
+        "output": {
+          "fields": {
+            "added": {
+              "id": 1,
               "kind": "var"
             }
           },

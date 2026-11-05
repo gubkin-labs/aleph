@@ -23,6 +23,7 @@ const ESCAPE: u8 = 0xFF;
 const ROWS: &str = "r";
 const INDEXES: &str = "i";
 const COUNTERS: &str = "c";
+const IDEMPOTENCY: &str = "d";
 
 /// A tenant (app) identifier: 1–64 characters of `[A-Za-z0-9_-]`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -105,6 +106,53 @@ impl KeyRange {
     /// Whether the range contains `key`.
     pub fn contains(&self, key: &Key) -> bool {
         *key >= self.start && *key < self.end
+    }
+
+    /// An opaque cursor for resuming a scan of this range after `key`: the hex-encoded part of
+    /// the key after the range's start. `None` if `key` isn't in the range.
+    pub fn cursor_after(&self, key: &Key) -> Option<String> {
+        if !self.contains(key) {
+            return None;
+        }
+        let suffix = key.0.strip_prefix(self.start.0.as_slice())?;
+        Some(
+            suffix
+                .iter()
+                .fold(String::with_capacity(suffix.len() * 2), |mut out, byte| {
+                    use std::fmt::Write as _;
+                    let _ = write!(out, "{byte:02x}");
+                    out
+                }),
+        )
+    }
+
+    /// The rest of this range after the key a cursor points at, in scan order. `None` if the
+    /// cursor is malformed or points outside the range, so a forged cursor can never widen a
+    /// scan beyond the range (or the tenant).
+    pub fn resume(&self, cursor: &str, forward: bool) -> Option<Self> {
+        if !cursor.len().is_multiple_of(2) || cursor.len() > 4096 {
+            return None;
+        }
+        let mut bytes = self.start.0.clone();
+        for pair in cursor.as_bytes().chunks(2) {
+            let hex = std::str::from_utf8(pair).ok()?;
+            bytes.push(u8::from_str_radix(hex, 16).ok()?);
+        }
+        let key = Key(bytes);
+        if !self.contains(&key) {
+            return None;
+        }
+        Some(if forward {
+            Self {
+                start: key.successor(),
+                end: self.end.clone(),
+            }
+        } else {
+            Self {
+                start: self.start.clone(),
+                end: key,
+            }
+        })
     }
 }
 
@@ -217,6 +265,15 @@ impl Keyspace {
         ])
     }
 
+    /// The key of a stored idempotent response.
+    pub fn idempotency(&self, route: &str, key: &str) -> Key {
+        self.key(
+            &[KeyPart::Str(IDEMPOTENCY), KeyPart::Str(route)],
+            &[KeyPart::Str(key)],
+            &[],
+        )
+    }
+
     /// The key of one counter group.
     pub fn counter(&self, counter: &str, group: &[KeyPart<'_>]) -> Key {
         self.key(&[KeyPart::Str(COUNTERS), KeyPart::Str(counter)], group, &[])
@@ -298,6 +355,25 @@ mod tests {
             let range = ks.row_range("E", &[KeyPart::Str(&prefix)]);
             let key = ks.row("E", &[KeyPart::Str(&other), KeyPart::Int(suffix)]);
             prop_assert_eq!(range.contains(&key), prefix == other);
+        }
+
+        #[test]
+        fn cursors_round_trip_and_never_escape_their_range(
+            prefix in "[a-z]{1,4}", a in 0i64..1000, cursor in "[0-9a-f]{0,40}"
+        ) {
+            let ks = tenant("t");
+            let range = ks.row_range("E", &[KeyPart::Str(&prefix)]);
+            let key = ks.row("E", &[KeyPart::Str(&prefix), KeyPart::Int(a)]);
+            let token = range.cursor_after(&key).unwrap();
+            let rest = range.resume(&token, true).unwrap();
+            prop_assert!(!rest.contains(&key) && rest.contains(&ks.row("E", &[KeyPart::Str(&prefix), KeyPart::Int(a + 1)])));
+            // Any cursor, including forged ones, resumes inside the original range or is refused.
+            if let Some(resumed) = range.resume(&cursor, true) {
+                prop_assert!(resumed.start >= range.start && resumed.end <= range.end);
+            }
+            if let Some(resumed) = range.resume(&cursor, false) {
+                prop_assert!(resumed.start >= range.start && resumed.end <= range.end);
+            }
         }
 
         #[test]

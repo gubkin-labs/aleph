@@ -1,0 +1,32 @@
+{
+  "name": "@aleph/cli",
+  "version": "0.1.0",
+  "description": "The aleph CLI: build, check, and run Aleph apps locally",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "aleph": "./dist/cli.mjs"
+  },
+  "exports": {
+    ".": {
+      "@aleph/source": "./src/index.ts",
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aleph/core": "workspace:*",
+    "@aleph/manifest": "workspace:*"
+  },
+  "devDependencies": {
+    "@aleph/sdk": "workspace:*"
+  }
+}

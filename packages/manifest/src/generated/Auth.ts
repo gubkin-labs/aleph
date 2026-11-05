@@ -2,4 +2,16 @@
 /**
  * Route authorization.
  */
-export type Auth = { "kind": "public" } | { "kind": "signedIn" };
+export type Auth = { "kind": "public" } | { "kind": "signedIn" } | { "kind": "member", 
+/**
+ * The path parameter holding the org id.
+ */
+org: string, 
+/**
+ * Member roles allowed to call the route. Empty means any member.
+ */
+roles: Array<string>, 
+/**
+ * Scopes an API key needs to call the route. Empty means API keys aren't accepted.
+ */
+apiKeyScopes: Array<string>, };

@@ -6,16 +6,26 @@ import { stableStringify } from "./json.js";
 import { AlephBuildError } from "./recorder.js";
 import { type DefaultParams, RouteBuilder } from "./route.js";
 
-/** An app declaration: entities, counters, and routes. */
-export class App {
+/** App-level options. */
+export interface AppOptions<R extends string, S extends string> {
+  /** Org member roles routes may require, for example `["owner", "admin", "member"]`. */
+  roles?: readonly R[];
+  /** API key scopes routes may require, for example `["projects:read"]`. */
+  apiKeyScopes?: readonly S[];
+}
+
+/** An app declaration: entities, counters, and routes. `R` and `S` are its roles and scopes. */
+export class App<R extends string = string, S extends string = string> {
   readonly name: string;
+  readonly #options: AppOptions<R, S>;
   readonly #entities = new Map<string, Entity<Fields, string, string>>();
   readonly #counters = new Map<string, Counter<Fields, string>>();
   readonly #routes: Route[] = [];
 
   /** @internal */
-  constructor(name: string) {
+  constructor(name: string, options: AppOptions<R, S>) {
     this.name = name;
+    this.#options = options;
   }
 
   /** Declares an entity. */
@@ -43,13 +53,15 @@ export class App {
   }
 
   /** Starts a route: `a.route("GET /orgs/:orgId/projects")`. */
-  route<const S extends string>(
-    spec: S,
+  route<const Spec extends string>(
+    spec: Spec,
   ): RouteBuilder<
-    DefaultParams<S extends `${string} ${infer P}` ? P : never>,
+    DefaultParams<Spec extends `${string} ${infer P}` ? P : never>,
     Record<never, never>,
     Record<never, never>,
-    never
+    never,
+    R,
+    S
   > {
     return new RouteBuilder((route) => this.#routes.push(route), spec);
   }
@@ -63,6 +75,10 @@ export class App {
     return {
       formatVersion: FORMAT_VERSION,
       app: { name: this.name },
+      auth: {
+        roles: [...(this.#options.roles ?? [])],
+        apiKeyScopes: [...(this.#options.apiKeyScopes ?? [])],
+      },
       entities,
       counters,
       routes: structuredClone(this.#routes),
@@ -81,6 +97,9 @@ export class App {
 }
 
 /** Declares an Aleph app. */
-export function app(name: string): App {
-  return new App(name);
+export function app<const R extends string = never, const S extends string = never>(
+  name: string,
+  options: AppOptions<R, S> = {},
+): App<R, S> {
+  return new App(name, options);
 }

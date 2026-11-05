@@ -1,0 +1,49 @@
+{
+  "expect": ["invalid_auth", "unknown_role", "unknown_scope"],
+  "manifest": {
+    "formatVersion": "0.1",
+    "app": {
+      "name": "bad"
+    },
+    "auth": {
+      "roles": ["admin"],
+      "apiKeyScopes": ["read"]
+    },
+    "entities": {},
+    "counters": {},
+    "routes": [
+      {
+        "id": "a",
+        "method": "GET",
+        "path": "/orgs/:orgId",
+        "auth": {
+          "kind": "member",
+          "org": "teamId",
+          "roles": ["owner"],
+          "apiKeyScopes": ["write"]
+        },
+        "input": {
+          "params": {
+            "orgId": {
+              "type": {
+                "kind": "string",
+                "min": 0,
+                "max": 10
+              }
+            }
+          },
+          "query": {},
+          "body": {}
+        },
+        "errors": {},
+        "plan": {
+          "body": [],
+          "output": {
+            "kind": "lit",
+            "value": null
+          }
+        }
+      }
+    ]
+  }
+}

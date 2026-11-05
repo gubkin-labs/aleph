@@ -46,10 +46,59 @@ pub struct Request {
     #[serde(default)]
     #[cfg_attr(feature = "codegen", ts(optional, type = "unknown"))]
     pub body: Option<serde_json::Value>,
-    /// The authenticated caller's user id, if any. Authentication happens before the core.
+    /// Who is calling, as resolved by the platform. Authentication happens before the core;
+    /// the core only enforces each route's declared rule.
     #[serde(default)]
     #[cfg_attr(feature = "codegen", ts(optional))]
-    pub caller: Option<String>,
+    pub caller: Option<Caller>,
+    /// The client's idempotency key (from the `Idempotency-Key` header), if any.
+    #[serde(default)]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub idempotency_key: Option<String>,
+}
+
+/// An authenticated caller.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Caller {
+    /// The signed-in user, if any.
+    #[serde(default)]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub user_id: Option<String>,
+    /// The user's org memberships: org id → role.
+    #[serde(default)]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, String>>", optional)
+    )]
+    pub orgs: BTreeMap<String, String>,
+    /// The API key used, if the caller is a machine.
+    #[serde(default)]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub api_key: Option<ApiKey>,
+}
+
+impl Caller {
+    /// A signed-in user with no org memberships.
+    pub fn user(id: impl Into<String>) -> Self {
+        Self {
+            user_id: Some(id.into()),
+            ..Self::default()
+        }
+    }
+}
+
+/// An API key, as resolved by the platform.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ApiKey {
+    /// The org the key belongs to.
+    pub org_id: String,
+    /// The key's scopes.
+    #[serde(default)]
+    pub scopes: Vec<String>,
 }
 
 /// An HTTP-shaped response.
@@ -70,6 +119,10 @@ pub struct Response {
     pub usage: Cost,
     /// How many times the plan ran (more than 1 after transaction conflicts).
     pub attempts: u32,
+    /// `true` if this is a stored response replayed for a repeated idempotency key.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "codegen", ts(as = "Option<bool>", optional))]
+    pub replayed: bool,
 }
 
 impl Response {
@@ -93,6 +146,7 @@ impl Response {
             body,
             usage: Cost::default(),
             attempts: 0,
+            replayed: false,
         }
     }
 }
@@ -245,9 +299,29 @@ impl Engine {
         raw_params: &BTreeMap<String, String>,
         request: &Request,
     ) -> Response {
-        if route.auth == Auth::SignedIn && request.caller.is_none() {
-            return Response::error(401, "unauthorized", "sign in to call this route");
+        if let Err(response) = authorize(&route.auth, request.caller.as_ref(), raw_params) {
+            return response;
         }
+        let idempotency = match (route.idempotency, request.idempotency_key.as_deref()) {
+            (Some(cfg), None) if cfg.required => {
+                return Response::error(
+                    400,
+                    "idempotency_key_required",
+                    "this route needs an Idempotency-Key",
+                );
+            }
+            (None, _) | (Some(_), None) => None,
+            (Some(cfg), Some(key)) => {
+                if key.is_empty() || key.len() > 255 || !key.bytes().all(|b| b.is_ascii_graphic()) {
+                    return Response::error(
+                        400,
+                        "invalid_idempotency_key",
+                        "idempotency keys are 1-255 printable ASCII characters",
+                    );
+                }
+                Some((cfg, key))
+            }
+        };
 
         let now = self.env.now_ms();
         let env = self.env.as_ref();
@@ -287,23 +361,33 @@ impl Engine {
             );
         }
 
+        let keys = Keyspace::new(tenant);
+        let idempotency = idempotency.map(|(cfg, key)| Replay {
+            key: keys.idempotency(&route.id, key),
+            fingerprint: fingerprint(&inputs),
+            ttl_ms: i64::from(cfg.ttl_ms),
+        });
         self.execute(
-            &Keyspace::new(tenant),
+            &keys,
             route,
             &inputs,
-            request.caller.as_deref(),
+            request.caller.as_ref(),
             now,
+            idempotency.as_ref(),
         )
     }
 
-    /// Runs a route's plan, re-running it on transaction conflicts.
+    /// Runs a route's plan, re-running it on transaction conflicts. With `replay`, a stored
+    /// response for the same idempotency key is returned instead, and a new successful response
+    /// is stored in the same transaction as the plan's writes.
     fn execute(
         &self,
         keys: &Keyspace,
         route: &crate::manifest::Route,
         inputs: &Inputs,
-        caller: Option<&str>,
+        caller: Option<&Caller>,
         now: i64,
+        replay: Option<&Replay>,
     ) -> Response {
         let env = self.env.as_ref();
         let limits = self.limits;
@@ -311,34 +395,44 @@ impl Engine {
         let mut usage = Cost::default();
         for attempt in 1..=max_attempts {
             let mut tx = self.store.begin();
-            let result = {
-                let mut exec = Exec {
+            let mut meter = Meter::new(limits);
+            let response = match attempt_once(&mut *tx, &mut meter, replay, now, |tx, meter| {
+                Exec {
                     manifest: self.manifest.manifest(),
                     route,
-                    tx: tx.as_mut(),
+                    tx,
                     keys,
-                    meter: Meter::new(limits),
+                    meter,
                     env,
                     now,
                     caller,
                     inputs,
                     vars: HashMap::new(),
                     metered: true,
-                };
-                let result = exec.run();
-                usage = exec.meter.used();
-                result
-            };
-            let response = match result {
-                Ok(value) => match tx.commit() {
+                }
+                .run()
+            }) {
+                Ok(Outcome::Replayed(stored)) => Response {
+                    route: None,
+                    status: stored.status,
+                    body: stored.body,
+                    usage: Cost::default(),
+                    attempts: attempt,
+                    replayed: true,
+                },
+                Ok(Outcome::Ran(body)) => match tx.commit() {
                     Ok(()) => Response {
                         route: None,
                         status: 200,
-                        body: value.to_json(),
-                        usage,
+                        body,
+                        usage: Cost::default(),
                         attempts: attempt,
+                        replayed: false,
                     },
-                    Err(CommitError::Conflict) => continue,
+                    Err(CommitError::Conflict) => {
+                        usage = meter.used();
+                        continue;
+                    }
                     Err(CommitError::Store(e)) => {
                         Response::error(503, "storage_unavailable", e.to_string())
                     }
@@ -346,7 +440,7 @@ impl Engine {
                 Err(error) => error_response(route, error),
             };
             return Response {
-                usage,
+                usage: meter.used(),
                 attempts: attempt,
                 ..response
             };
@@ -363,6 +457,142 @@ impl Engine {
     }
 }
 
+/// Where and how to store a route's response for idempotent replay.
+struct Replay {
+    key: crate::keys::Key,
+    fingerprint: String,
+    ttl_ms: i64,
+}
+
+/// A stored idempotent response.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredResponse {
+    fingerprint: String,
+    status: u16,
+    body: serde_json::Value,
+    expires_at: i64,
+}
+
+enum Outcome {
+    Ran(serde_json::Value),
+    Replayed(StoredResponse),
+}
+
+/// One attempt: replay a stored response if there is one, otherwise run the plan and (for
+/// idempotent routes) store its response in the same transaction.
+fn attempt_once(
+    tx: &mut dyn crate::store::Transaction,
+    meter: &mut Meter,
+    replay: Option<&Replay>,
+    now: i64,
+    run: impl FnOnce(
+        &mut dyn crate::store::Transaction,
+        &mut Meter,
+    ) -> Result<crate::value::Value, ExecError>,
+) -> Result<Outcome, ExecError> {
+    if let Some(replay) = replay
+        && let Some(bytes) = tx.get(&replay.key)?
+    {
+        meter.read(bytes.len())?;
+        let stored: StoredResponse = serde_json::from_slice(&bytes)
+            .map_err(|e| ExecError::Runtime(format!("corrupt idempotency record: {e}")))?;
+        if stored.expires_at > now {
+            if stored.fingerprint != replay.fingerprint {
+                return Err(ExecError::KeyReused);
+            }
+            return Ok(Outcome::Replayed(stored));
+        }
+    } else if replay.is_some() {
+        meter.read(0)?;
+    }
+    let body = run(&mut *tx, &mut *meter)?.to_json();
+    if let Some(replay) = replay {
+        let stored = StoredResponse {
+            fingerprint: replay.fingerprint.clone(),
+            status: 200,
+            body,
+            expires_at: now.saturating_add(replay.ttl_ms),
+        };
+        let bytes = serde_json::to_vec(&stored).map_err(|e| ExecError::Runtime(e.to_string()))?;
+        if bytes.len() as u64 > meter.limits().max_row_bytes {
+            return Err(ExecError::Runtime(format!(
+                "idempotent responses must fit in {} bytes; this one is {}",
+                meter.limits().max_row_bytes,
+                bytes.len()
+            )));
+        }
+        tx.put(replay.key.clone(), bytes);
+        meter.write(1)?;
+        return Ok(Outcome::Ran(stored.body));
+    }
+    Ok(Outcome::Ran(body))
+}
+
+/// A stable fingerprint of a request's decoded inputs (FNV-1a over canonical JSON), so a reused
+/// idempotency key with different inputs is detected.
+fn fingerprint(inputs: &Inputs) -> String {
+    let canonical = serde_json::json!([
+        crate::value::Value::Object(inputs.params.clone()).to_json(),
+        crate::value::Value::Object(inputs.query.clone()).to_json(),
+        crate::value::Value::Object(inputs.body.clone()).to_json(),
+    ])
+    .to_string();
+    let hash = canonical.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    format!("{hash:016x}")
+}
+
+/// Enforces a route's auth rule. The caller's identity is already authenticated by the platform.
+fn authorize(
+    auth: &Auth,
+    caller: Option<&Caller>,
+    params: &BTreeMap<String, String>,
+) -> Result<(), Response> {
+    let unauthorized = || Response::error(401, "unauthorized", "sign in to call this route");
+    let forbidden = |message: &str| Response::error(403, "forbidden", message);
+    let caller = caller.filter(|c| c.user_id.is_some() || c.api_key.is_some());
+    match auth {
+        Auth::Public => Ok(()),
+        Auth::SignedIn => match caller.and_then(|c| c.user_id.as_ref()) {
+            Some(_) => Ok(()),
+            None => Err(unauthorized()),
+        },
+        Auth::Member {
+            org,
+            roles,
+            api_key_scopes,
+        } => {
+            let Some(caller) = caller else {
+                return Err(unauthorized());
+            };
+            let Some(org_id) = params.get(org) else {
+                return Err(forbidden("this route's org parameter is missing"));
+            };
+            if let Some(key) = &caller.api_key
+                && !api_key_scopes.is_empty()
+                && key.org_id == *org_id
+                && api_key_scopes
+                    .iter()
+                    .all(|scope| key.scopes.contains(scope))
+            {
+                return Ok(());
+            }
+            match caller.orgs.get(org_id) {
+                Some(role) if roles.is_empty() || roles.contains(role) => Ok(()),
+                Some(role) => Err(forbidden(&format!(
+                    "role {role:?} can't call this route (allowed: {roles:?})"
+                ))),
+                None if caller.api_key.is_some() && caller.user_id.is_none() => {
+                    Err(forbidden("this API key doesn't have access to this route"))
+                }
+                None => Err(forbidden("you aren't a member of this org")),
+            }
+        }
+    }
+}
+
 fn error_response(route: &crate::manifest::Route, error: ExecError) -> Response {
     match error {
         ExecError::Failed(name) => match route.errors.get(&name) {
@@ -370,6 +600,12 @@ fn error_response(route: &crate::manifest::Route, error: ExecError) -> Response 
             None => Response::error(500, "runtime_error", format!("undeclared error {name}")),
         },
         ExecError::OverBudget(e) => Response::error(500, "budget_exceeded", e.to_string()),
+        ExecError::BadInput(message) => Response::error(400, "invalid_input", message),
+        ExecError::KeyReused => Response::error(
+            422,
+            "idempotency_key_reused",
+            "this idempotency key was already used with different inputs",
+        ),
         ExecError::NotFound(entity) => {
             Response::error(404, "not_found", format!("{entity} not found"))
         }

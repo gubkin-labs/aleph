@@ -31,6 +31,12 @@ pub(crate) enum ExecError {
     Duplicate(String),
     #[error(transparent)]
     Store(#[from] StoreError),
+    /// The idempotency key was already used with different inputs.
+    #[error("idempotency key reused with different inputs")]
+    KeyReused,
+    /// A request value the plan used turned out to be invalid (for example a forged cursor).
+    #[error("{0}")]
+    BadInput(String),
     /// Something the static checks can't rule out, such as integer overflow or a value that
     /// violates its field's constraints.
     #[error("{0}")]
@@ -38,6 +44,14 @@ pub(crate) enum ExecError {
 }
 
 type R<T> = Result<T, ExecError>;
+
+/// What a query scans.
+struct Scan<'a> {
+    index: Option<&'a str>,
+    prefix: &'a [Expr],
+    limit: &'a Expr,
+    order: Order,
+}
 
 fn runtime(message: impl Into<String>) -> ExecError {
     ExecError::Runtime(message.into())
@@ -48,10 +62,10 @@ pub(crate) struct Exec<'a> {
     pub(crate) route: &'a Route,
     pub(crate) tx: &'a mut dyn Transaction,
     pub(crate) keys: &'a Keyspace,
-    pub(crate) meter: Meter,
+    pub(crate) meter: &'a mut Meter,
     pub(crate) env: &'a dyn Env,
     pub(crate) now: i64,
-    pub(crate) caller: Option<&'a str>,
+    pub(crate) caller: Option<&'a super::Caller>,
     pub(crate) inputs: &'a Inputs,
     pub(crate) vars: HashMap<VarId, Value>,
     /// Off while evaluating counter predicates, which are part of the write they belong to.
@@ -109,6 +123,7 @@ impl<'a> Exec<'a> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines, reason = "one arm per operation")]
     fn op(&mut self, op: &'a Op, pure: bool) -> R<Value> {
         self.meter.op()?;
         if pure && op.is_write() {
@@ -123,7 +138,18 @@ impl<'a> Exec<'a> {
                     .read_row(entity, &key)?
                     .map_or(Value::Null, |(_, row)| Value::Object(row)))
             }
-            Op::Insert { entity, values } => self.insert(entity, values),
+            Op::Insert { entity, values } => {
+                let row = self.new_row(entity, values)?;
+                if !self.insert_row(entity, &row)? {
+                    return Err(ExecError::Duplicate(entity.clone()));
+                }
+                Ok(Value::Object(row))
+            }
+            Op::InsertIfAbsent { entity, values } => {
+                let row = self.new_row(entity, values)?;
+                Ok(Value::Bool(self.insert_row(entity, &row)?))
+            }
+            Op::Upsert { entity, values } => self.upsert(entity, values),
             Op::Update { entity, key, set } => self.update(entity, key, set),
             Op::Delete { entity, key } => self.delete(entity, key),
             Op::Query {
@@ -132,7 +158,41 @@ impl<'a> Exec<'a> {
                 prefix,
                 limit,
                 order,
-            } => self.query(entity, index.as_deref(), prefix, limit, *order),
+                after,
+                page,
+            } => {
+                let after = match after {
+                    Some(expr) => match self.eval(expr)? {
+                        Value::Null => None,
+                        Value::String(cursor) => Some(cursor),
+                        other => {
+                            return Err(ExecError::BadInput(format!(
+                                "a cursor must be a string, got {}",
+                                other.type_name()
+                            )));
+                        }
+                    },
+                    None => None,
+                };
+                let scan = Scan {
+                    index: index.as_deref(),
+                    prefix,
+                    limit,
+                    order: *order,
+                };
+                let (rows, cursor) = self.query(entity, &scan, after.as_deref())?;
+                Ok(if *page {
+                    Value::Object(BTreeMap::from([
+                        ("items".to_owned(), Value::List(rows)),
+                        (
+                            "cursor".to_owned(),
+                            cursor.map_or(Value::Null, Value::String),
+                        ),
+                    ]))
+                } else {
+                    Value::List(rows)
+                })
+            }
             Op::CounterGet { counter, key } => {
                 let values = key.iter().map(|e| self.eval(e)).collect::<R<Vec<_>>>()?;
                 let key = self.keys.counter(counter, &parts(&values)?);
@@ -206,7 +266,8 @@ impl<'a> Exec<'a> {
         bytes.map(|b| Ok((row_key, decode_row(&b)?))).transpose()
     }
 
-    fn insert(&mut self, entity_name: &str, values: &'a BTreeMap<String, Expr>) -> R<Value> {
+    /// Builds a complete new row: given values, then defaults, then `null` for optional fields.
+    fn new_row(&mut self, entity_name: &str, values: &'a BTreeMap<String, Expr>) -> R<Row> {
         let entity = self.entity(entity_name)?;
         let mut row = Row::new();
         for (name, field) in &entity.fields {
@@ -219,18 +280,83 @@ impl<'a> Exec<'a> {
                 .map_err(|m| runtime(format!("{entity_name}.{name}: {m}")))?;
             row.insert(name.clone(), value);
         }
-        let key = row_key_values(entity, &row);
+        Ok(row)
+    }
+
+    /// Inserts `row` unless its key exists. Returns whether it inserted.
+    fn insert_row(&mut self, entity_name: &str, row: &Row) -> R<bool> {
+        let entity = self.entity(entity_name)?;
+        let key = row_key_values(entity, row);
         if self.read_row(entity_name, &key)?.is_some() {
-            return Err(ExecError::Duplicate(entity_name.to_owned()));
+            return Ok(false);
         }
-        self.write_row(entity_name, &key, &row)?;
+        self.write_new_row(entity_name, &key, row)?;
+        Ok(true)
+    }
+
+    /// Writes a row known to be absent, with its index entries and counter groups.
+    fn write_new_row(&mut self, entity_name: &str, key: &[Value], row: &Row) -> R<()> {
+        let entity = self.entity(entity_name)?;
+        self.write_row(entity_name, key, row)?;
         for index_name in entity.indexes.keys() {
-            let (index_key, pk) = self.index_entry(entity_name, entity, index_name, &row)?;
+            let (index_key, pk) = self.index_entry(entity_name, entity, index_name, row)?;
             self.tx.put(index_key, pk);
             self.meter.write(1)?;
         }
-        self.maintain_counters(entity_name, None, Some(&row))?;
-        Ok(Value::Object(row))
+        self.maintain_counters(entity_name, None, Some(row))
+    }
+
+    fn upsert(&mut self, entity_name: &str, values: &'a BTreeMap<String, Expr>) -> R<Value> {
+        let entity = self.entity(entity_name)?;
+        let mut given = BTreeMap::new();
+        for (name, expr) in values {
+            given.insert(name.clone(), self.eval(expr)?);
+        }
+        let key: Vec<Value> = entity
+            .key
+            .iter()
+            .map(|f| {
+                given
+                    .get(f)
+                    .cloned()
+                    .ok_or_else(|| runtime(format!("upsert needs key field {f}")))
+            })
+            .collect::<R<_>>()?;
+        match self.read_row(entity_name, &key)? {
+            Some((_, old)) => {
+                let mut new = old.clone();
+                for (name, value) in given {
+                    if entity.key.contains(&name) {
+                        continue;
+                    }
+                    let field = entity
+                        .fields
+                        .get(&name)
+                        .ok_or_else(|| runtime(format!("unknown field {entity_name}.{name}")))?;
+                    check_value(field, &value)
+                        .map_err(|m| runtime(format!("{entity_name}.{name}: {m}")))?;
+                    new.insert(name, value);
+                }
+                self.replace_row(entity_name, &key, &old, &new)?;
+                Ok(Value::Object(new))
+            }
+            None => {
+                let mut row = Row::new();
+                for (name, field) in &entity.fields {
+                    let value = match given.remove(name) {
+                        Some(value) => value,
+                        None => missing(field, self.env, self.now)
+                            .ok_or_else(|| runtime(format!("{entity_name}.{name} is required")))?,
+                    };
+                    check_value(field, &value)
+                        .map_err(|m| runtime(format!("{entity_name}.{name}: {m}")))?;
+                    row.insert(name.clone(), value);
+                }
+                // The read above already established the row is absent.
+                self.write_new_row(entity_name, &key, &row)?;
+                Ok(Value::Object(row))
+            }
+        }
     }
 
     fn update(
@@ -255,18 +381,25 @@ impl<'a> Exec<'a> {
                 .map_err(|m| runtime(format!("{entity_name}.{name}: {m}")))?;
             new.insert(name.clone(), value);
         }
-        self.write_row(entity_name, &key, &new)?;
+        self.replace_row(entity_name, &key, &old, &new)?;
+        Ok(Value::Object(new))
+    }
+
+    /// Writes an updated row and moves its index entries and counter groups.
+    fn replace_row(&mut self, entity_name: &str, key: &[Value], old: &Row, new: &Row) -> R<()> {
+        let entity = self.entity(entity_name)?;
+        self.write_row(entity_name, key, new)?;
         for index_name in entity.indexes.keys() {
-            let (old_key, _) = self.index_entry(entity_name, entity, index_name, &old)?;
-            let (new_key, pk) = self.index_entry(entity_name, entity, index_name, &new)?;
+            let (old_key, _) = self.index_entry(entity_name, entity, index_name, old)?;
+            let (new_key, pk) = self.index_entry(entity_name, entity, index_name, new)?;
             if old_key != new_key {
                 self.tx.delete(old_key);
                 self.tx.put(new_key, pk);
                 self.meter.write(2)?;
             }
         }
-        self.maintain_counters(entity_name, Some(&old), Some(&new))?;
-        Ok(Value::Object(new))
+        self.maintain_counters(entity_name, Some(old), Some(new))?;
+        Ok(())
     }
 
     fn delete(&mut self, entity_name: &str, key: &'a BTreeMap<String, Expr>) -> R<Value> {
@@ -383,44 +516,56 @@ impl<'a> Exec<'a> {
         Ok(())
     }
 
+    /// Scans a bounded range of rows, optionally resuming after a cursor. Returns the rows and,
+    /// if the page is full, a cursor for the next one.
     fn query(
         &mut self,
         entity_name: &str,
-        index: Option<&str>,
-        prefix: &'a [Expr],
-        limit: &'a Expr,
-        order: Order,
-    ) -> R<Value> {
-        let values = prefix.iter().map(|e| self.eval(e)).collect::<R<Vec<_>>>()?;
-        let limit = usize::try_from(self.eval_int(limit)?.max(0)).unwrap_or(usize::MAX);
-        let direction = match order {
-            Order::Asc => Direction::Forward,
-            Order::Desc => Direction::Reverse,
+        scan: &Scan<'a>,
+        after: Option<&str>,
+    ) -> R<(Vec<Value>, Option<String>)> {
+        let values = scan
+            .prefix
+            .iter()
+            .map(|e| self.eval(e))
+            .collect::<R<Vec<_>>>()?;
+        let limit = usize::try_from(self.eval_int(scan.limit)?.max(0)).unwrap_or(usize::MAX);
+        let (direction, forward) = match scan.order {
+            Order::Asc => (Direction::Forward, true),
+            Order::Desc => (Direction::Reverse, false),
         };
-        let mut rows = Vec::new();
-        match index {
-            None => {
-                let range = self.keys.row_range(entity_name, &parts(&values)?);
-                for (_, bytes) in self.tx.scan(&range, limit, direction)? {
-                    self.meter.read(bytes.len())?;
-                    rows.push(Value::Object(decode_row(&bytes)?));
-                }
-            }
-            Some(index) => {
-                let range = self.keys.index_range(entity_name, index, &parts(&values)?);
-                for (_, pk_bytes) in self.tx.scan(&range, limit, direction)? {
-                    let pk: Vec<Value> = serde_json::from_slice(&pk_bytes)
+        let full = match scan.index {
+            None => self.keys.row_range(entity_name, &parts(&values)?),
+            Some(index) => self.keys.index_range(entity_name, index, &parts(&values)?),
+        };
+        let range = match after {
+            None => full.clone(),
+            Some(cursor) => full
+                .resume(cursor, forward)
+                .ok_or_else(|| ExecError::BadInput("invalid cursor".into()))?,
+        };
+        let entries = self.tx.scan(&range, limit, direction)?;
+        let cursor = match entries.last() {
+            Some((last, _)) if entries.len() == limit => full.cursor_after(last),
+            _ => None,
+        };
+        let mut rows = Vec::with_capacity(entries.len());
+        for (_, bytes) in entries {
+            let bytes = match scan.index {
+                None => bytes,
+                Some(index) => {
+                    let pk: Vec<Value> = serde_json::from_slice(&bytes)
                         .map_err(|e| runtime(format!("corrupt index entry: {e}")))?;
                     let row_key = self.keys.row(entity_name, &parts(&pk)?);
-                    let bytes = self.tx.get(&row_key)?.ok_or_else(|| {
+                    self.tx.get(&row_key)?.ok_or_else(|| {
                         runtime(format!("index {index} points at a missing {entity_name}"))
-                    })?;
-                    self.meter.read(bytes.len())?;
-                    rows.push(Value::Object(decode_row(&bytes)?));
+                    })?
                 }
-            }
+            };
+            self.meter.read(bytes.len())?;
+            rows.push(Value::Object(decode_row(&bytes)?));
         }
-        Ok(Value::List(rows))
+        Ok((rows, cursor))
     }
 
     fn eval_bool(&mut self, expr: &'a Expr) -> R<bool> {
@@ -466,7 +611,19 @@ impl<'a> Exec<'a> {
             }
             Expr::Caller => self
                 .caller
-                .map_or(Value::Null, |c| Value::String(c.to_owned())),
+                .and_then(|c| c.user_id.clone())
+                .map_or(Value::Null, Value::String),
+            Expr::CallerRole { org } => {
+                let org = self.eval(org)?;
+                match (&org, self.caller) {
+                    (Value::String(org), Some(caller)) => caller
+                        .orgs
+                        .get(org)
+                        .cloned()
+                        .map_or(Value::Null, Value::String),
+                    _ => Value::Null,
+                }
+            }
             Expr::Now => Value::Int(self.now),
             Expr::Field { of, name } => match self.eval(of)? {
                 Value::Object(mut fields) => fields.remove(name).unwrap_or_default(),

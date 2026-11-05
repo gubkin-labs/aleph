@@ -1,0 +1,16 @@
+{
+  "expect": ["invalid_auth", "invalid_name"],
+  "manifest": {
+    "formatVersion": "0.1",
+    "app": {
+      "name": "bad"
+    },
+    "auth": {
+      "roles": ["admin", "admin", "bad role"],
+      "apiKeyScopes": ["has space"]
+    },
+    "entities": {},
+    "counters": {},
+    "routes": []
+  }
+}

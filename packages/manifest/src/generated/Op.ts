@@ -22,6 +22,23 @@ entity: string,
 /**
  * Field values. Missing fields take their default, or `null` if optional.
  */
+values: { [key in string]: Expr }, } | { "op": "upsert", 
+/**
+ * The entity.
+ */
+entity: string, 
+/**
+ * Field values. On insert, missing fields take their default. On update, missing fields
+ * keep their value.
+ */
+values: { [key in string]: Expr }, } | { "op": "insertIfAbsent", 
+/**
+ * The entity.
+ */
+entity: string, 
+/**
+ * Field values, as for `insert`.
+ */
 values: { [key in string]: Expr }, } | { "op": "update", 
 /**
  * The entity.
@@ -62,7 +79,16 @@ limit: Expr,
 /**
  * Scan order.
  */
-order?: Order, } | { "op": "counterGet", 
+order?: Order, 
+/**
+ * Continue after this cursor (a string from a previous page, or `null` for the start).
+ */
+after?: Expr, 
+/**
+ * Evaluate to `{ items, cursor }` instead of a plain list. `cursor` is `null` when the
+ * page wasn't full.
+ */
+page?: boolean, } | { "op": "counterGet", 
 /**
  * The counter.
  */

@@ -15,6 +15,7 @@ This repository is the open-source half of Aleph:
 | [`packages/manifest`](packages/manifest) | `@aleph/manifest`: generated TypeScript types for the manifest format |
 | [`packages/core-wasm`](packages/core-wasm) | `@aleph/core`: validation, cost analysis, and a local dev engine (the Rust core, via WASM) |
 | [`packages/sdk`](packages/sdk) | `@aleph/sdk`: the TypeScript builder that produces manifests |
+| [`packages/cli`](packages/cli) | `@aleph/cli`: the `aleph` command (`build`, `check`, `dev`) |
 | [`conformance`](conformance) | Golden apps, manifests, bounds, and request scenarios that the SDK, WASM, and native core must all agree on |
 | [`schema`](schema) | `manifest.schema.json`, for third-party SDKs and platforms |
 
@@ -23,7 +24,7 @@ This repository is the open-source half of Aleph:
 ```ts
 import { app, err, t } from "@aleph/sdk";
 
-const a = app("projects");
+const a = app("projects", { roles: ["owner", "admin", "member"], apiKeyScopes: ["projects:read"] });
 
 const Project = a.entity("Project", {
   key: ["orgId", "projectId"],
@@ -42,12 +43,21 @@ const activeProjects = a.counter("activeProjects", {
 });
 
 a.route("POST /orgs/:orgId/projects")
+  .member("orgId", { roles: ["owner", "admin"] })
+  .idempotent({ ttl: "24h" })
   .body({ name: t.string().min(1).max(120) })
   .errors({ planLimit: err.forbidden("Project limit reached") })
   .handle(($, { params, body, errors }) => {
     $.ensure(activeProjects.get({ orgId: params.orgId }).lt(3), errors.planLimit);
     return Project.insert({ orgId: params.orgId, name: body.name });
   });
+
+a.route("GET /orgs/:orgId/projects")
+  .member("orgId", { apiKeyScopes: ["projects:read"] })
+  .query({ cursor: t.cursor() })
+  .handle((_, { params, query }) =>
+    Project.page({ prefix: [params.orgId], limit: 20, after: query.cursor }),
+  );
 
 export default a;
 ```
@@ -57,11 +67,20 @@ plan, and the plan is what the platform runs. The core computes every route's wo
 it's deployed:
 
 ```
-createProject  reads ≤ 3  writes ≤ 3  ops ≤ 22  bytes read ≤ 1712
+$ aleph check app.ts
+✔ valid: worst-case cost per route (share of the route limit)
+
+route                       reads  writes      ops    bytes read
+get_orgs_orgId_projects   20 (8%)  0 (0%)   6 (0%)  24.0 KB (1%)
+post_orgs_orgId_projects   3 (1%)  3 (6%)  12 (1%)  65.2 KB (3%)
 ```
 
-It rejects anything over the limits, such as an unbounded query or a loop that could write too much,
+The core rejects anything over the limits, such as an unbounded query or a loop that could write too much,
 with a diagnostic an agent can act on. At runtime, the meter enforces the same limits.
+
+The create route's bounds include its idempotency record: one read, one write, and up to one row
+(64 KB) of stored response. `aleph dev app.ts` serves the app locally on the same core. Callers are faked with
+`x-aleph-user`, `x-aleph-orgs: acme=owner`, `x-aleph-api-key`, and `idempotency-key` headers.
 
 See [`conformance/cases`](conformance/cases) for complete apps: a SaaS backend with plan limits and
 bulk operations, and a ledger with transfers.
@@ -116,10 +135,14 @@ condition, so tests and typechecking don't need a build. Published packages use 
 
 ## Status
 
-This is v0 (manifest format `0.1`). It covers entities, indexes, counters, routes, guards, branches,
-bounded loops, `map`/`filter`, queries, and transactions. Not here yet: org roles and API keys in
-auth, queues, cron, workflows, integrations, realtime channels, source spans in diagnostics, and the
-`aleph` CLI. See the tickets in `aleph-infra/todo`.
+This is v0 (manifest format `0.1`). It covers:
+- Entities, indexes, counters, guards, branches, bounded loops, `map`/`filter`, and serializable transactions.
+- Auth: signed-in users, org members with roles, and API keys with scopes.
+- Cursor pagination, `upsert`, `insertIfAbsent`, and idempotency keys.
+- The `aleph` CLI (`build`, `check`, `dev`).
+
+Not here yet: effects (events, queues, cron, workflows), integrations, realtime channels, and
+source spans in diagnostics. See the tickets in `aleph-infra/todo`.
 
 ## License
 

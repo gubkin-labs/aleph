@@ -8,6 +8,14 @@
       "description": "Application metadata.",
       "$ref": "#/$defs/App"
     },
+    "auth": {
+      "description": "Roles and API key scopes the app's routes may require.",
+      "$ref": "#/$defs/AuthConfig",
+      "default": {
+        "apiKeyScopes": [],
+        "roles": []
+      }
+    },
     "counters": {
       "description": "Declared counters, by name. Counters are maintained on write and read in O(1).",
       "type": "object",
@@ -87,8 +95,66 @@
           "required": [
             "kind"
           ]
+        },
+        {
+          "description": "The caller must be a member of the org named by a path parameter, or present an API key\nfor that org.",
+          "type": "object",
+          "properties": {
+            "apiKeyScopes": {
+              "description": "Scopes an API key needs to call the route. Empty means API keys aren't accepted.",
+              "type": "array",
+              "default": [],
+              "items": {
+                "type": "string"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "member"
+            },
+            "org": {
+              "description": "The path parameter holding the org id.",
+              "type": "string"
+            },
+            "roles": {
+              "description": "Member roles allowed to call the route. Empty means any member.",
+              "type": "array",
+              "default": [],
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "org"
+          ]
         }
       ]
+    },
+    "AuthConfig": {
+      "description": "The roles and API key scopes an app declares. Routes may only require declared ones, so a typo\nis a validation error instead of a route nobody can call.",
+      "type": "object",
+      "properties": {
+        "apiKeyScopes": {
+          "description": "API key scopes, for example `[\"projects:read\"]`.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "roles": {
+          "description": "Org member roles, for example `[\"owner\", \"admin\", \"member\"]`.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "BinaryOp": {
       "description": "Binary operators.",
@@ -329,6 +395,25 @@
           "additionalProperties": false,
           "required": [
             "kind"
+          ]
+        },
+        {
+          "description": "The caller's role in an org (a declared role), or `null` if they aren't a member.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "callerRole"
+            },
+            "org": {
+              "description": "The org id.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "org"
           ]
         },
         {
@@ -807,6 +892,26 @@
         }
       ]
     },
+    "Idempotency": {
+      "description": "Idempotency settings for a route. A successful response is stored with the request's key in\nthe same transaction as the route's writes, and replayed for the same key within `ttl_ms`.",
+      "type": "object",
+      "properties": {
+        "required": {
+          "description": "Whether requests without an idempotency key are rejected.",
+          "type": "boolean"
+        },
+        "ttlMs": {
+          "description": "How long a stored response is replayed, in milliseconds (at most 7 days).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ttlMs"
+      ]
+    },
     "Index": {
       "description": "A secondary index over a list of fields.",
       "type": "object",
@@ -955,6 +1060,60 @@
           ]
         },
         {
+          "description": "Insert a row, or update it if one with the same key exists. Evaluates to the row.",
+          "type": "object",
+          "properties": {
+            "entity": {
+              "description": "The entity.",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "const": "upsert"
+            },
+            "values": {
+              "description": "Field values. On insert, missing fields take their default. On update, missing fields\nkeep their value.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "entity",
+            "values"
+          ]
+        },
+        {
+          "description": "Insert a row unless one with the same key exists. Evaluates to whether it inserted.",
+          "type": "object",
+          "properties": {
+            "entity": {
+              "description": "The entity.",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "const": "insertIfAbsent"
+            },
+            "values": {
+              "description": "Field values, as for `insert`.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "entity",
+            "values"
+          ]
+        },
+        {
           "description": "Update fields of an existing row. Evaluates to the updated row.",
           "type": "object",
           "properties": {
@@ -1020,6 +1179,17 @@
           "description": "Read a bounded, ordered range of rows. Evaluates to a list of rows.",
           "type": "object",
           "properties": {
+            "after": {
+              "description": "Continue after this cursor (a string from a previous page, or `null` for the start).",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Expr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "entity": {
               "description": "The entity.",
               "type": "string"
@@ -1042,6 +1212,10 @@
             "order": {
               "description": "Scan order.",
               "$ref": "#/$defs/Order"
+            },
+            "page": {
+              "description": "Evaluate to `{ items, cursor }` instead of a plain list. `cursor` is `null` when the\npage wasn't full.",
+              "type": "boolean"
             },
             "prefix": {
               "description": "Values for a prefix of the key (or index) fields.",
@@ -1241,6 +1415,17 @@
         "id": {
           "description": "Stable identifier, unique within the manifest.",
           "type": "string"
+        },
+        "idempotency": {
+          "description": "Replays successful responses for repeated idempotency keys.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Idempotency"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "input": {
           "description": "Declared inputs.",

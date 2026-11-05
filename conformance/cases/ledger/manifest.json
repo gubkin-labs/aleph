@@ -2,6 +2,10 @@
   "app": {
     "name": "ledger"
   },
+  "auth": {
+    "apiKeyScopes": [],
+    "roles": []
+  },
   "counters": {},
   "entities": {
     "Account": {
@@ -388,6 +392,10 @@
         }
       },
       "id": "transfer",
+      "idempotency": {
+        "required": true,
+        "ttlMs": 86400000
+      },
       "input": {
         "body": {
           "amount": {

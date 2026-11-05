@@ -8,7 +8,9 @@
       "request": {
         "method": "POST",
         "path": "/accounts",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1"
+        },
         "body": {
           "currency": "USD"
         }
@@ -30,7 +32,9 @@
       "request": {
         "method": "POST",
         "path": "/accounts",
-        "caller": "u2",
+        "caller": {
+          "userId": "u2"
+        },
         "body": {
           "currency": "USD"
         }
@@ -47,7 +51,9 @@
       "request": {
         "method": "POST",
         "path": "/accounts",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1"
+        },
         "body": {
           "currency": "EUR"
         }
@@ -64,7 +70,9 @@
       "request": {
         "method": "POST",
         "path": "/accounts/{{a}}/deposit",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1"
+        },
         "body": {
           "amount": 1000
         }
@@ -81,7 +89,9 @@
       "request": {
         "method": "POST",
         "path": "/accounts/{{a}}/deposit",
-        "caller": "u2",
+        "caller": {
+          "userId": "u2"
+        },
         "body": {
           "amount": 5
         }
@@ -94,23 +104,95 @@
       }
     },
     {
+      "name": "transfers need an idempotency key",
+      "request": {
+        "method": "POST",
+        "path": "/transfers",
+        "caller": {
+          "userId": "u1"
+        },
+        "body": {
+          "from": "{{a}}",
+          "to": "{{b}}",
+          "amount": 300
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": "idempotency_key_required"
+        }
+      }
+    },
+    {
       "name": "transfer",
       "request": {
         "method": "POST",
         "path": "/transfers",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1"
+        },
         "body": {
           "from": "{{a}}",
           "to": "{{b}}",
           "amount": 300,
           "memo": "rent"
-        }
+        },
+        "idempotencyKey": "t-1"
       },
       "expect": {
         "status": 200,
         "body": {
           "from": 700,
           "to": 300
+        },
+        "replayed": false
+      }
+    },
+    {
+      "name": "a retry with the same key replays the stored response",
+      "request": {
+        "method": "POST",
+        "path": "/transfers",
+        "caller": {
+          "userId": "u1"
+        },
+        "body": {
+          "from": "{{a}}",
+          "to": "{{b}}",
+          "amount": 300,
+          "memo": "rent"
+        },
+        "idempotencyKey": "t-1"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "from": 700,
+          "to": 300
+        },
+        "replayed": true
+      }
+    },
+    {
+      "name": "reusing a key with different inputs is refused",
+      "request": {
+        "method": "POST",
+        "path": "/transfers",
+        "caller": {
+          "userId": "u1"
+        },
+        "body": {
+          "from": "{{a}}",
+          "to": "{{b}}",
+          "amount": 301
+        },
+        "idempotencyKey": "t-1"
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "error": "idempotency_key_reused"
         }
       }
     },
@@ -119,12 +201,15 @@
       "request": {
         "method": "POST",
         "path": "/transfers",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1"
+        },
         "body": {
           "from": "{{a}}",
           "to": "{{a}}",
           "amount": 1
-        }
+        },
+        "idempotencyKey": "t-2"
       },
       "expect": {
         "status": 400,
@@ -138,12 +223,15 @@
       "request": {
         "method": "POST",
         "path": "/transfers",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1"
+        },
         "body": {
           "from": "{{a}}",
           "to": "{{b}}",
           "amount": 5000
-        }
+        },
+        "idempotencyKey": "t-3"
       },
       "expect": {
         "status": 422,
@@ -157,12 +245,15 @@
       "request": {
         "method": "POST",
         "path": "/transfers",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1"
+        },
         "body": {
           "from": "{{b}}",
           "to": "{{a}}",
           "amount": 1
-        }
+        },
+        "idempotencyKey": "t-4"
       },
       "expect": {
         "status": 403,
@@ -176,12 +267,15 @@
       "request": {
         "method": "POST",
         "path": "/transfers",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1"
+        },
         "body": {
           "from": "{{a}}",
           "to": "{{e}}",
           "amount": 1
-        }
+        },
+        "idempotencyKey": "t-5"
       },
       "expect": {
         "status": 400,
@@ -195,12 +289,15 @@
       "request": {
         "method": "POST",
         "path": "/transfers",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1"
+        },
         "body": {
           "from": "{{a}}",
           "to": "{{b}}",
           "amount": 0
-        }
+        },
+        "idempotencyKey": "t-6"
       },
       "expect": {
         "status": 400,
@@ -210,11 +307,13 @@
       }
     },
     {
-      "name": "entries are append-only and newest first",
+      "name": "entries show the transfer once, newest first",
       "request": {
         "method": "GET",
         "path": "/accounts/{{a}}/entries",
-        "caller": "u1"
+        "caller": {
+          "userId": "u1"
+        }
       },
       "expect": {
         "status": 200,
@@ -239,7 +338,9 @@
       "request": {
         "method": "GET",
         "path": "/accounts/{{b}}/entries",
-        "caller": "u2"
+        "caller": {
+          "userId": "u2"
+        }
       },
       "expect": {
         "status": 200,
@@ -258,7 +359,9 @@
       "request": {
         "method": "GET",
         "path": "/accounts",
-        "caller": "u1"
+        "caller": {
+          "userId": "u1"
+        }
       },
       "expect": {
         "status": 200,

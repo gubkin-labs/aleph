@@ -47,6 +47,7 @@ struct Step {
 struct Expectation {
     status: u16,
     body: Option<Json>,
+    replayed: Option<bool>,
 }
 
 fn substitute(value: &Json, vars: &BTreeMap<String, String>) -> Json {
@@ -154,6 +155,9 @@ fn scenarios_behave_as_expected_within_bounds() {
                 && let Some(mismatch) = subset_mismatch(expected, body, "body")
             {
                 panic!("{at}: {mismatch}\n{body}");
+            }
+            if let Some(replayed) = step.expect.replayed {
+                assert_eq!(response.replayed, replayed, "{at}: replayed");
             }
             if let Some(route) = &response.route {
                 let bounds = report.routes[route].bounds;

@@ -10,7 +10,9 @@ use std::thread;
 use aleph_core::check::ValidatedManifest;
 use aleph_core::keys::{Keyspace, TenantId};
 use aleph_core::manifest::Method;
-use aleph_core::{Engine, FixedEnv, Limits, MemoryStore, Request, Response, parse_and_validate};
+use aleph_core::{
+    Caller, Engine, FixedEnv, Limits, MemoryStore, Request, Response, parse_and_validate,
+};
 use proptest::prelude::*;
 use serde_json::{Value as Json, json};
 
@@ -26,7 +28,11 @@ fn request(method: Method, path: &str, body: Option<Json>) -> Request {
         path: path.to_owned(),
         query: BTreeMap::new(),
         body,
-        caller: Some("u1".into()),
+        caller: Some(Caller {
+            orgs: BTreeMap::from([("acme".into(), "owner".into())]),
+            ..Caller::user("u1")
+        }),
+        idempotency_key: None,
     }
 }
 
@@ -61,7 +67,7 @@ fn tenants_are_isolated_in_one_shared_store() {
     // Tenant b's plan limit and listings are untouched by tenant a's data, with the same org id.
     assert_eq!(create_project(&engine, &b, "B1").status, 200);
     let listed = engine.handle(&b, &request(Method::Get, "/orgs/acme/projects", None));
-    assert_eq!(listed.body["projects"].as_array().unwrap().len(), 1);
+    assert_eq!(listed.body["items"].as_array().unwrap().len(), 1);
 
     // Every stored key belongs to exactly one tenant's keyspace.
     let (ka, kb) = (Keyspace::new(&a).all(), Keyspace::new(&b).all());
@@ -134,6 +140,67 @@ fn concurrent_deposits_serialize_with_conflict_retries() {
 }
 
 #[test]
+fn concurrent_retries_of_one_idempotent_transfer_apply_once() {
+    let engine = Arc::new(Engine::new(
+        load("ledger"),
+        Arc::new(MemoryStore::new()),
+        Arc::new(FixedEnv::new(1, 1)),
+    ));
+    let t = tenant("bank");
+    let open = |user: &str| {
+        let r = engine.handle(
+            &t,
+            &Request {
+                caller: Some(Caller::user(user)),
+                ..request(
+                    Method::Post,
+                    "/accounts",
+                    Some(json!({ "currency": "USD" })),
+                )
+            },
+        );
+        r.body["accountId"].as_str().unwrap().to_owned()
+    };
+    let (from, to) = (open("u1"), open("u2"));
+    let deposit = Request {
+        caller: Some(Caller::user("u1")),
+        ..request(
+            Method::Post,
+            &format!("/accounts/{from}/deposit"),
+            Some(json!({ "amount": 100 })),
+        )
+    };
+    assert_eq!(engine.handle(&t, &deposit).status, 200);
+
+    let transfer = Request {
+        caller: Some(Caller::user("u1")),
+        idempotency_key: Some("same-key".into()),
+        ..request(
+            Method::Post,
+            "/transfers",
+            Some(json!({ "from": from, "to": to, "amount": 60 })),
+        )
+    };
+    let responses: Vec<Response> = thread::scope(|scope| {
+        let handles: Vec<_> = (0..8)
+            .map(|_| scope.spawn(|| engine.handle(&t, &transfer)))
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+
+    // Every retry got the same answer, and exactly one actually ran: 100 - 60 = 40. A second
+    // execution would have failed with insufficient funds instead of replaying.
+    for r in &responses {
+        assert_eq!(
+            (r.status, &r.body),
+            (200, &json!({ "from": 40, "to": 60 })),
+            "{r:?}"
+        );
+    }
+    assert_eq!(responses.iter().filter(|r| !r.replayed).count(), 1);
+}
+
+#[test]
 fn the_meter_stops_executions_the_analysis_allowed() {
     let engine = Engine::new(
         load("projects"),
@@ -150,7 +217,7 @@ fn the_meter_stops_executions_the_analysis_allowed() {
     assert_eq!(response.body["error"], "budget_exceeded");
     // The aborted transaction left nothing behind.
     let listed = engine.handle(&t, &request(Method::Get, "/orgs/acme/projects", None));
-    assert_eq!(listed.body["projects"], json!([]));
+    assert_eq!(listed.body["items"], json!([]));
 }
 
 #[derive(Debug, Clone)]
@@ -231,7 +298,7 @@ proptest! {
             query: BTreeMap::from([("limit".into(), "50".into())]),
             ..request(Method::Get, "/orgs/acme/projects", None)
         });
-        let listed = active.body["projects"].as_array().unwrap().len();
+        let listed = active.body["items"].as_array().unwrap().len();
         // Creating a project when the counter disagrees would expose drift; read it via a route.
         if listed < 50 {
             let before = create_project(&engine, &t, "probe");
@@ -240,7 +307,7 @@ proptest! {
                 query: BTreeMap::from([("limit".into(), "50".into())]),
                 ..request(Method::Get, "/orgs/acme/projects", None)
             });
-            prop_assert_eq!(after.body["projects"].as_array().unwrap().len(), listed + 1);
+            prop_assert_eq!(after.body["items"].as_array().unwrap().len(), listed + 1);
         }
     }
 }

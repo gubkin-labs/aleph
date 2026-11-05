@@ -142,6 +142,8 @@ export const t = {
   id: (): IdField => new IdField({ type: { kind: "id" } }),
   /** Milliseconds since the Unix epoch. */
   timestamp: (): TimestampField => new TimestampField({ type: { kind: "timestamp" } }),
+  /** An optional pagination cursor, as returned in a page's `cursor`. */
+  cursor: (): FieldBuilder<string, true, false> => new StringNeedsMax().max(4096).optional(),
   /** A list of at most `max` items. */
   array: <V>(items: FieldBuilder<V>, max: number): FieldBuilder<V[]> => {
     if (items.spec.optional || items.spec.default) {

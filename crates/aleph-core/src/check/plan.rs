@@ -66,7 +66,7 @@ pub(crate) fn check_row_predicate(
 fn impurity(expr: &Expr) -> Option<&'static str> {
     match expr {
         Expr::Input { .. } => Some("a route input"),
-        Expr::Caller => Some("the caller"),
+        Expr::Caller | Expr::CallerRole { .. } => Some("the caller"),
         Expr::Now => Some("the current time"),
         Expr::Lit { .. } | Expr::Var { .. } => None,
         Expr::Field { of, .. }
@@ -283,8 +283,16 @@ impl<'a> Checker<'a> {
                 (Ty::OptRow(entity.clone()), own + key_cost + read)
             }
             Op::Insert { entity, values } => {
-                let (ty, cost) = self.insert(entity, values, path);
+                let (ty, cost) = self.insert(entity, values, path, 1);
                 (ty, own + cost)
+            }
+            Op::Upsert { entity, values } => {
+                let (ty, cost) = self.insert(entity, values, path, 2);
+                (ty, own + cost)
+            }
+            Op::InsertIfAbsent { entity, values } => {
+                let (_, cost) = self.insert(entity, values, path, 1);
+                (Ty::Bool, own + cost)
             }
             Op::Update { entity, key, set } => {
                 let (ty, cost) = self.update(entity, key, set, path);
@@ -304,8 +312,25 @@ impl<'a> Checker<'a> {
                 prefix,
                 limit,
                 order: _,
+                after,
+                page,
             } => {
-                let (ty, cost) = self.query(entity, index.as_deref(), prefix, limit, path);
+                let (list, mut cost) = self.query(entity, index.as_deref(), prefix, limit, path);
+                if let Some(after) = after {
+                    let (ty, after_cost) = self.expr(after, &format!("{path}.after"));
+                    if !matches!(ty, Ty::String | Ty::Null | Ty::Unknown) {
+                        self.type_mismatch(&format!("{path}.after"), "cursor string or null", &ty);
+                    }
+                    cost += after_cost;
+                }
+                let ty = if *page {
+                    Ty::Object(BTreeMap::from([
+                        ("items".to_owned(), list),
+                        ("cursor".to_owned(), Ty::String),
+                    ]))
+                } else {
+                    list
+                };
                 (ty, own + cost)
             }
             Op::CounterGet { counter, key } => (
@@ -370,11 +395,18 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn insert(&mut self, entity: &str, values: &BTreeMap<String, Expr>, path: &str) -> (Ty, Cost) {
+    /// Checks an insert-like operation. `per_index` is 2 for upserts, which may update.
+    fn insert(
+        &mut self,
+        entity: &str,
+        values: &BTreeMap<String, Expr>,
+        path: &str,
+        per_index: u64,
+    ) -> (Ty, Cost) {
         let Some(e) = self.entity(entity, &format!("{path}.entity")) else {
             return (Ty::Unknown, Cost::default());
         };
-        let mut cost = self.write_cost(entity, 1);
+        let mut cost = self.write_cost(entity, per_index);
         for (name, value) in values {
             let value_path = format!("{path}.values.{name}");
             if !e.fields.contains_key(name) {
@@ -621,6 +653,16 @@ impl<'a> Checker<'a> {
                 }
             }
             Expr::Caller => (Ty::String, own),
+            Expr::CallerRole { org } => {
+                let (_, cost) = self.expr(org, &format!("{path}.org"));
+                let roles = &self.m.auth.roles;
+                let ty = if roles.is_empty() {
+                    Ty::String
+                } else {
+                    Ty::Enum(roles.clone())
+                };
+                (ty, own + cost)
+            }
             Expr::Now => (Ty::Int { max: None }, own),
             Expr::Field { of, name } => {
                 let (of_ty, cost) = self.expr(of, &format!("{path}.of"));

@@ -8,6 +8,9 @@
     },
     "Task": {
       "maxRowBytes": 1700
+    },
+    "Watcher": {
+      "maxRowBytes": 834
     }
   },
   "routes": {
@@ -47,7 +50,7 @@
       "bounds": {
         "reads": 22,
         "writes": 0,
-        "ops": 28,
+        "ops": 30,
         "bytesRead": 35281
       }
     },
@@ -61,10 +64,18 @@
     },
     "setPlan": {
       "bounds": {
+        "reads": 1,
+        "writes": 1,
+        "ops": 5,
+        "bytesRead": 431
+      }
+    },
+    "watchProject": {
+      "bounds": {
         "reads": 2,
         "writes": 1,
-        "ops": 14,
-        "bytesRead": 862
+        "ops": 15,
+        "bytesRead": 2095
       }
     }
   }

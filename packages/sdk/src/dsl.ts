@@ -136,6 +136,11 @@ export const $ = {
     return new Expr({ kind: "caller" });
   },
 
+  /** The caller's role in an org, or `null` if they aren't a member. */
+  callerRole(org: ExprLike<string>): Expr<string | null> {
+    return new Expr({ kind: "callerRole", org: toNode(org) });
+  },
+
   /** The current time in milliseconds. Fixed for the whole request. */
   now(): Expr<number> {
     return new Expr({ kind: "now" });

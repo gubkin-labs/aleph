@@ -24,4 +24,8 @@ usage: Cost,
 /**
  * How many times the plan ran (more than 1 after transaction conflicts).
  */
-attempts: number, };
+attempts: number, 
+/**
+ * `true` if this is a stored response replayed for a repeated idempotency key.
+ */
+replayed?: boolean, };

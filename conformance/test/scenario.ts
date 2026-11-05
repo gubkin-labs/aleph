@@ -21,6 +21,8 @@ export interface Step {
     status: number;
     /** A subset of the response body: objects match by the listed keys, arrays item by item. */
     body?: unknown;
+    /** Whether the response must (or must not) be an idempotent replay. */
+    replayed?: boolean;
   };
   /** Variables to capture from the response, by dot path (`body.items.0.id`). */
   capture?: Record<string, string>;

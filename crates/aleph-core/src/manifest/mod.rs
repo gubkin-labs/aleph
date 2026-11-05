@@ -31,6 +31,10 @@ pub struct Manifest {
     pub format_version: String,
     /// Application metadata.
     pub app: App,
+    /// Roles and API key scopes the app's routes may require.
+    #[serde(default)]
+    #[cfg_attr(feature = "codegen", ts(as = "Option<AuthConfig>", optional))]
+    pub auth: AuthConfig,
     /// Declared entities, by name.
     #[serde(default)]
     pub entities: BTreeMap<String, Entity>,
@@ -49,6 +53,20 @@ pub struct Manifest {
 pub struct App {
     /// Application name.
     pub name: String,
+}
+
+/// The roles and API key scopes an app declares. Routes may only require declared ones, so a typo
+/// is a validation error instead of a route nobody can call.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AuthConfig {
+    /// Org member roles, for example `["owner", "admin", "member"]`.
+    #[serde(default)]
+    pub roles: Vec<String>,
+    /// API key scopes, for example `["projects:read"]`.
+    #[serde(default)]
+    pub api_key_scopes: Vec<String>,
 }
 
 /// A stored entity: a schema plus an ordered primary key.
@@ -200,8 +218,31 @@ pub struct Route {
     /// Declared business errors the plan may fail with, by name.
     #[serde(default)]
     pub errors: BTreeMap<String, ErrorDecl>,
+    /// Replays successful responses for repeated idempotency keys.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub idempotency: Option<Idempotency>,
     /// The route's logic.
     pub plan: Plan,
+}
+
+/// Idempotency settings for a route. A successful response is stored with the request's key in
+/// the same transaction as the route's writes, and replayed for the same key within `ttl_ms`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Idempotency {
+    /// How long a stored response is replayed, in milliseconds (at most 7 days).
+    pub ttl_ms: u32,
+    /// Whether requests without an idempotency key are rejected.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "codegen", ts(as = "Option<bool>", optional))]
+    pub required: bool,
+}
+
+impl Idempotency {
+    /// The longest allowed TTL: 7 days.
+    pub const MAX_TTL_MS: u32 = 7 * 24 * 60 * 60 * 1000;
 }
 
 /// HTTP methods.
@@ -233,13 +274,29 @@ impl Method {
 /// Route authorization.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 #[serde(deny_unknown_fields)]
 pub enum Auth {
     /// Anyone may call the route.
     Public,
     /// The caller must be signed in.
     SignedIn,
+    /// The caller must be a member of the org named by a path parameter, or present an API key
+    /// for that org.
+    Member {
+        /// The path parameter holding the org id.
+        org: String,
+        /// Member roles allowed to call the route. Empty means any member.
+        #[serde(default)]
+        roles: Vec<String>,
+        /// Scopes an API key needs to call the route. Empty means API keys aren't accepted.
+        #[serde(default)]
+        api_key_scopes: Vec<String>,
+    },
 }
 
 /// Route inputs. Every input is validated before the plan runs.

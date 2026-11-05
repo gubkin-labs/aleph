@@ -42,10 +42,10 @@
     },
     "transfer": {
       "bounds": {
-        "reads": 6,
-        "writes": 8,
+        "reads": 7,
+        "writes": 9,
         "ops": 78,
-        "bytesRead": 4008
+        "bytesRead": 69544
       }
     }
   }

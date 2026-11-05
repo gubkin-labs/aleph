@@ -107,6 +107,21 @@ pub enum Op {
         /// Field values. Missing fields take their default, or `null` if optional.
         values: BTreeMap<String, Expr>,
     },
+    /// Insert a row, or update it if one with the same key exists. Evaluates to the row.
+    Upsert {
+        /// The entity.
+        entity: String,
+        /// Field values. On insert, missing fields take their default. On update, missing fields
+        /// keep their value.
+        values: BTreeMap<String, Expr>,
+    },
+    /// Insert a row unless one with the same key exists. Evaluates to whether it inserted.
+    InsertIfAbsent {
+        /// The entity.
+        entity: String,
+        /// Field values, as for `insert`.
+        values: BTreeMap<String, Expr>,
+    },
     /// Update fields of an existing row. Evaluates to the updated row.
     Update {
         /// The entity.
@@ -140,6 +155,15 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Order::is_asc")]
         #[cfg_attr(feature = "codegen", ts(as = "Option<Order>", optional))]
         order: Order,
+        /// Continue after this cursor (a string from a previous page, or `null` for the start).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        after: Option<Box<Expr>>,
+        /// Evaluate to `{ items, cursor }` instead of a plain list. `cursor` is `null` when the
+        /// page wasn't full.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        #[cfg_attr(feature = "codegen", ts(as = "Option<bool>", optional))]
+        page: bool,
     },
     /// Read a counter value. Evaluates to an integer (0 if never incremented).
     CounterGet {
@@ -186,7 +210,11 @@ impl Op {
     pub fn is_write(&self) -> bool {
         matches!(
             self,
-            Self::Insert { .. } | Self::Update { .. } | Self::Delete { .. }
+            Self::Insert { .. }
+                | Self::Upsert { .. }
+                | Self::InsertIfAbsent { .. }
+                | Self::Update { .. }
+                | Self::Delete { .. }
         )
     }
 }

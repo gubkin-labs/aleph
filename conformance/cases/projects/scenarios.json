@@ -4,7 +4,7 @@
   "stepMs": 1000,
   "steps": [
     {
-      "name": "billing needs a signed-in caller",
+      "name": "billing needs a caller",
       "request": {
         "method": "PUT",
         "path": "/orgs/acme/billing",
@@ -20,11 +20,38 @@
       }
     },
     {
+      "name": "only owners set the plan",
+      "request": {
+        "method": "PUT",
+        "path": "/orgs/acme/billing",
+        "caller": {
+          "userId": "u2",
+          "orgs": {
+            "acme": "member"
+          }
+        },
+        "body": {
+          "plan": "pro"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "error": "forbidden"
+        }
+      }
+    },
+    {
       "name": "create the first project",
       "request": {
         "method": "POST",
         "path": "/orgs/acme/projects",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
         "body": {
           "name": "Alpha"
         }
@@ -46,7 +73,12 @@
       "request": {
         "method": "POST",
         "path": "/orgs/acme/projects",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
         "body": {
           "name": "Beta"
         }
@@ -63,7 +95,12 @@
       "request": {
         "method": "POST",
         "path": "/orgs/acme/projects",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
         "body": {
           "name": "Gamma"
         }
@@ -77,7 +114,12 @@
       "request": {
         "method": "POST",
         "path": "/orgs/acme/projects",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
         "body": {
           "name": "Delta"
         }
@@ -91,11 +133,16 @@
       }
     },
     {
-      "name": "upgrade to pro",
+      "name": "upgrade to pro (upsert)",
       "request": {
         "method": "PUT",
         "path": "/orgs/acme/billing",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
         "body": {
           "plan": "pro"
         }
@@ -103,6 +150,7 @@
       "expect": {
         "status": 200,
         "body": {
+          "orgId": "acme",
           "plan": "pro"
         }
       }
@@ -112,7 +160,12 @@
       "request": {
         "method": "POST",
         "path": "/orgs/acme/projects",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
         "body": {
           "name": "Delta"
         }
@@ -122,16 +175,62 @@
       }
     },
     {
-      "name": "list active projects, newest first",
+      "name": "members can't create projects",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects",
+        "caller": {
+          "userId": "u2",
+          "orgs": {
+            "acme": "member"
+          }
+        },
+        "body": {
+          "name": "Nope"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "error": "forbidden"
+        }
+      }
+    },
+    {
+      "name": "non-members can't list",
       "request": {
         "method": "GET",
         "path": "/orgs/acme/projects",
-        "caller": "u1"
+        "caller": {
+          "userId": "u3",
+          "orgs": {
+            "other": "owner"
+          }
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "error": "forbidden"
+        }
+      }
+    },
+    {
+      "name": "members list active projects, newest first",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/projects",
+        "caller": {
+          "userId": "u2",
+          "orgs": {
+            "acme": "member"
+          }
+        }
       },
       "expect": {
         "status": 200,
         "body": {
-          "projects": [
+          "items": [
             {
               "name": "Delta"
             },
@@ -144,7 +243,158 @@
             {
               "name": "Alpha"
             }
+          ],
+          "cursor": null
+        }
+      }
+    },
+    {
+      "name": "an API key with the read scope can list",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/projects",
+        "caller": {
+          "apiKey": {
+            "orgId": "acme",
+            "scopes": ["projects:read"]
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "items": [{}, {}, {}, {}]
+        }
+      }
+    },
+    {
+      "name": "an API key without the scope can't",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/projects",
+        "caller": {
+          "apiKey": {
+            "orgId": "acme",
+            "scopes": []
+          }
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "error": "forbidden"
+        }
+      }
+    },
+    {
+      "name": "page 1",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/projects",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
+        "query": {
+          "limit": "2"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "items": [
+            {
+              "name": "Delta"
+            },
+            {
+              "name": "Gamma"
+            }
           ]
+        }
+      },
+      "capture": {
+        "page2": "body.cursor"
+      }
+    },
+    {
+      "name": "page 2 continues after the cursor",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/projects",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
+        "query": {
+          "limit": "2",
+          "cursor": "{{page2}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "items": [
+            {
+              "name": "Beta"
+            },
+            {
+              "name": "Alpha"
+            }
+          ]
+        }
+      },
+      "capture": {
+        "page3": "body.cursor"
+      }
+    },
+    {
+      "name": "page 3 is empty and has no cursor",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/projects",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
+        "query": {
+          "limit": "2",
+          "cursor": "{{page3}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "items": [],
+          "cursor": null
+        }
+      }
+    },
+    {
+      "name": "a forged cursor is rejected",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/projects",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
+        "query": {
+          "cursor": "ff00"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "error": "invalid_input",
+          "message": "invalid cursor"
         }
       }
     },
@@ -153,7 +403,12 @@
       "request": {
         "method": "POST",
         "path": "/orgs/acme/projects/{{alpha}}/archive",
-        "caller": "u1"
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        }
       },
       "expect": {
         "status": 200,
@@ -168,7 +423,12 @@
       "request": {
         "method": "GET",
         "path": "/orgs/acme/projects",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
         "query": {
           "status": "archived"
         }
@@ -176,33 +436,9 @@
       "expect": {
         "status": 200,
         "body": {
-          "projects": [
+          "items": [
             {
               "name": "Alpha"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "name": "limits page the list",
-      "request": {
-        "method": "GET",
-        "path": "/orgs/acme/projects",
-        "caller": "u1",
-        "query": {
-          "limit": "2"
-        }
-      },
-      "expect": {
-        "status": 200,
-        "body": {
-          "projects": [
-            {
-              "name": "Delta"
-            },
-            {
-              "name": "Gamma"
             }
           ]
         }
@@ -213,7 +449,12 @@
       "request": {
         "method": "GET",
         "path": "/orgs/acme/projects",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
         "query": {
           "limit": "500"
         }
@@ -235,7 +476,12 @@
       "request": {
         "method": "POST",
         "path": "/orgs/acme/projects/{{alpha}}/tasks",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
         "body": {
           "title": "Too late"
         }
@@ -248,11 +494,16 @@
       }
     },
     {
-      "name": "add a task",
+      "name": "members add tasks",
       "request": {
         "method": "POST",
         "path": "/orgs/acme/projects/{{beta}}/tasks",
-        "caller": "u1",
+        "caller": {
+          "userId": "u2",
+          "orgs": {
+            "acme": "member"
+          }
+        },
         "body": {
           "title": "Write spec"
         }
@@ -269,7 +520,12 @@
       "request": {
         "method": "POST",
         "path": "/orgs/acme/projects/{{beta}}/tasks",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
         "body": {
           "title": "Build core"
         }
@@ -286,7 +542,12 @@
       "request": {
         "method": "POST",
         "path": "/orgs/acme/projects/{{beta}}/tasks",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
         "body": {
           "title": "Ship"
         }
@@ -300,7 +561,12 @@
       "request": {
         "method": "POST",
         "path": "/orgs/acme/projects/{{beta}}/tasks/complete",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
         "body": {
           "taskIds": ["{{t1}}", "{{t2}}", "{{alpha}}"]
         }
@@ -318,7 +584,12 @@
       "request": {
         "method": "POST",
         "path": "/orgs/acme/projects/{{beta}}/tasks/complete",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
         "body": {
           "taskIds": ["{{t1}}"]
         }
@@ -332,11 +603,16 @@
       }
     },
     {
-      "name": "read a project with its tasks and counters",
+      "name": "read a project with its tasks, counters, and the caller's role",
       "request": {
         "method": "GET",
         "path": "/orgs/acme/projects/{{beta}}",
-        "caller": "u1"
+        "caller": {
+          "userId": "u2",
+          "orgs": {
+            "acme": "member"
+          }
+        }
       },
       "expect": {
         "status": 200,
@@ -346,6 +622,7 @@
           },
           "openTasks": 1,
           "summary": "Beta (active)",
+          "myRole": "member",
           "tasks": [
             {
               "title": "Write spec",
@@ -364,11 +641,54 @@
       }
     },
     {
+      "name": "watch a project",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects/{{beta}}/watch",
+        "caller": {
+          "userId": "u2",
+          "orgs": {
+            "acme": "member"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "added": true
+        }
+      }
+    },
+    {
+      "name": "watching again inserts nothing",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects/{{beta}}/watch",
+        "caller": {
+          "userId": "u2",
+          "orgs": {
+            "acme": "member"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "added": false
+        }
+      }
+    },
+    {
       "name": "a missing project is a declared 404",
       "request": {
         "method": "POST",
         "path": "/orgs/acme/projects/01ARZ3NDEKTSV4RRFFQ69G5FAV/archive",
-        "caller": "u1"
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        }
       },
       "expect": {
         "status": 404,
@@ -383,7 +703,12 @@
       "request": {
         "method": "POST",
         "path": "/orgs/acme/projects/nope/archive",
-        "caller": "u1"
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        }
       },
       "expect": {
         "status": 400,
@@ -397,7 +722,12 @@
       "request": {
         "method": "POST",
         "path": "/orgs/acme/projects",
-        "caller": "u1",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
         "body": {
           "name": "X",
           "color": "red"
@@ -420,7 +750,12 @@
       "request": {
         "method": "GET",
         "path": "/nope",
-        "caller": "u1"
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        }
       },
       "expect": {
         "status": 404,
@@ -434,7 +769,12 @@
       "request": {
         "method": "DELETE",
         "path": "/orgs/acme/projects",
-        "caller": "u1"
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        }
       },
       "expect": {
         "status": 405,

@@ -89,6 +89,11 @@ pub enum Expr {
     },
     /// The signed-in caller's user id, or `null`.
     Caller,
+    /// The caller's role in an org (a declared role), or `null` if they aren't a member.
+    CallerRole {
+        /// The org id.
+        org: Box<Expr>,
+    },
     /// The current time in milliseconds.
     Now,
     /// A field of a row or object.
