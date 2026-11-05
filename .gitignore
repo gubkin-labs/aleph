@@ -1,0 +1,9 @@
+node_modules/
+dist/
+target/
+.turbo/
+coverage/
+*.log
+.DS_Store
+# wasm-bindgen output is built, not committed
+packages/core-wasm/wasm/

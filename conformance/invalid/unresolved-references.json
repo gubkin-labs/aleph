@@ -1,0 +1,101 @@
+{
+  "expect": ["unknown_entity", "undefined_var", "unknown_error", "unknown_field"],
+  "manifest": {
+    "formatVersion": "0.1",
+    "app": {
+      "name": "bad"
+    },
+    "entities": {
+      "Item": {
+        "key": ["id"],
+        "fields": {
+          "id": {
+            "type": {
+              "kind": "id"
+            },
+            "default": {
+              "kind": "newId"
+            }
+          },
+          "name": {
+            "type": {
+              "kind": "string",
+              "min": 0,
+              "max": 50
+            }
+          }
+        },
+        "indexes": {}
+      }
+    },
+    "counters": {},
+    "routes": [
+      {
+        "id": "bad",
+        "method": "POST",
+        "path": "/x",
+        "auth": {
+          "kind": "public"
+        },
+        "input": {
+          "params": {},
+          "query": {},
+          "body": {}
+        },
+        "errors": {},
+        "plan": {
+          "body": [
+            {
+              "kind": "let",
+              "var": 0,
+              "op": {
+                "op": "get",
+                "entity": "Nope",
+                "key": {}
+              }
+            },
+            {
+              "kind": "ensure",
+              "cond": {
+                "kind": "lit",
+                "value": true
+              },
+              "error": "missing"
+            },
+            {
+              "kind": "let",
+              "var": 1,
+              "op": {
+                "op": "get",
+                "entity": "Item",
+                "key": {
+                  "id": {
+                    "kind": "lit",
+                    "value": "x"
+                  }
+                }
+              }
+            }
+          ],
+          "output": {
+            "kind": "object",
+            "fields": {
+              "a": {
+                "kind": "var",
+                "id": 9
+              },
+              "b": {
+                "kind": "field",
+                "of": {
+                  "kind": "var",
+                  "id": 1
+                },
+                "name": "color"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

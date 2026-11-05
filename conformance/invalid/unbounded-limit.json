@@ -1,0 +1,78 @@
+{
+  "expect": ["unbounded_limit"],
+  "manifest": {
+    "formatVersion": "0.1",
+    "app": {
+      "name": "bad"
+    },
+    "entities": {
+      "Item": {
+        "key": ["id"],
+        "fields": {
+          "id": {
+            "type": {
+              "kind": "id"
+            },
+            "default": {
+              "kind": "newId"
+            }
+          },
+          "name": {
+            "type": {
+              "kind": "string",
+              "min": 0,
+              "max": 50
+            }
+          }
+        },
+        "indexes": {}
+      }
+    },
+    "counters": {},
+    "routes": [
+      {
+        "id": "list",
+        "method": "GET",
+        "path": "/x",
+        "auth": {
+          "kind": "public"
+        },
+        "input": {
+          "params": {},
+          "query": {
+            "limit": {
+              "type": {
+                "kind": "int",
+                "min": 1
+              }
+            }
+          },
+          "body": {}
+        },
+        "errors": {},
+        "plan": {
+          "body": [
+            {
+              "kind": "let",
+              "var": 0,
+              "op": {
+                "op": "query",
+                "entity": "Item",
+                "prefix": [],
+                "limit": {
+                  "kind": "input",
+                  "source": "query",
+                  "name": "limit"
+                }
+              }
+            }
+          ],
+          "output": {
+            "kind": "var",
+            "id": 0
+          }
+        }
+      }
+    ]
+  }
+}

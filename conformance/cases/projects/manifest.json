@@ -1,0 +1,1192 @@
+{
+  "app": {
+    "name": "projects"
+  },
+  "counters": {
+    "activeProjects": {
+      "groupBy": [
+        "orgId"
+      ],
+      "of": "Project",
+      "where": {
+        "expr": {
+          "kind": "binary",
+          "lhs": {
+            "kind": "field",
+            "name": "status",
+            "of": {
+              "id": 0,
+              "kind": "var"
+            }
+          },
+          "op": "eq",
+          "rhs": {
+            "kind": "lit",
+            "value": "active"
+          }
+        },
+        "var": 0
+      }
+    },
+    "openTasks": {
+      "groupBy": [
+        "orgId",
+        "projectId"
+      ],
+      "of": "Task",
+      "where": {
+        "expr": {
+          "arg": {
+            "kind": "field",
+            "name": "done",
+            "of": {
+              "id": 0,
+              "kind": "var"
+            }
+          },
+          "kind": "not"
+        },
+        "var": 0
+      }
+    }
+  },
+  "entities": {
+    "OrgBilling": {
+      "fields": {
+        "orgId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 1
+          }
+        },
+        "plan": {
+          "default": {
+            "kind": "literal",
+            "value": "free"
+          },
+          "type": {
+            "kind": "enum",
+            "values": [
+              "free",
+              "pro"
+            ]
+          }
+        }
+      },
+      "indexes": {},
+      "key": [
+        "orgId"
+      ]
+    },
+    "Project": {
+      "fields": {
+        "createdAt": {
+          "default": {
+            "kind": "now"
+          },
+          "type": {
+            "kind": "timestamp"
+          }
+        },
+        "name": {
+          "type": {
+            "kind": "string",
+            "max": 120,
+            "min": 1
+          }
+        },
+        "orgId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 1
+          }
+        },
+        "projectId": {
+          "default": {
+            "kind": "newId"
+          },
+          "type": {
+            "kind": "id"
+          }
+        },
+        "status": {
+          "default": {
+            "kind": "literal",
+            "value": "active"
+          },
+          "type": {
+            "kind": "enum",
+            "values": [
+              "active",
+              "archived"
+            ]
+          }
+        }
+      },
+      "indexes": {
+        "byStatus": {
+          "fields": [
+            "orgId",
+            "status",
+            "createdAt"
+          ]
+        }
+      },
+      "key": [
+        "orgId",
+        "projectId"
+      ]
+    },
+    "Task": {
+      "fields": {
+        "done": {
+          "default": {
+            "kind": "literal",
+            "value": false
+          },
+          "type": {
+            "kind": "bool"
+          }
+        },
+        "orgId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 1
+          }
+        },
+        "projectId": {
+          "type": {
+            "kind": "id"
+          }
+        },
+        "taskId": {
+          "default": {
+            "kind": "newId"
+          },
+          "type": {
+            "kind": "id"
+          }
+        },
+        "title": {
+          "type": {
+            "kind": "string",
+            "max": 200,
+            "min": 1
+          }
+        }
+      },
+      "indexes": {},
+      "key": [
+        "orgId",
+        "projectId",
+        "taskId"
+      ]
+    }
+  },
+  "formatVersion": "0.1",
+  "routes": [
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {},
+      "id": "setPlan",
+      "input": {
+        "body": {
+          "plan": {
+            "type": {
+              "kind": "enum",
+              "values": [
+                "free",
+                "pro"
+              ]
+            }
+          }
+        },
+        "params": {
+          "orgId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 1
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "PUT",
+      "path": "/orgs/:orgId/billing",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "OrgBilling",
+              "key": {
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "else": [
+              {
+                "kind": "let",
+                "op": {
+                  "entity": "OrgBilling",
+                  "op": "insert",
+                  "values": {
+                    "orgId": {
+                      "kind": "input",
+                      "name": "orgId",
+                      "source": "params"
+                    },
+                    "plan": {
+                      "kind": "input",
+                      "name": "plan",
+                      "source": "body"
+                    }
+                  }
+                },
+                "var": 2
+              }
+            ],
+            "kind": "if",
+            "then": [
+              {
+                "kind": "let",
+                "op": {
+                  "entity": "OrgBilling",
+                  "key": {
+                    "orgId": {
+                      "kind": "field",
+                      "name": "orgId",
+                      "of": {
+                        "id": 0,
+                        "kind": "var"
+                      }
+                    }
+                  },
+                  "op": "update",
+                  "set": {
+                    "plan": {
+                      "kind": "input",
+                      "name": "plan",
+                      "source": "body"
+                    }
+                  }
+                },
+                "var": 1
+              }
+            ]
+          }
+        ],
+        "output": {
+          "fields": {
+            "plan": {
+              "kind": "input",
+              "name": "plan",
+              "source": "body"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {
+        "planLimit": {
+          "message": "Your plan's project limit is reached",
+          "status": 403
+        }
+      },
+      "id": "createProject",
+      "input": {
+        "body": {
+          "name": {
+            "type": {
+              "kind": "string",
+              "max": 120,
+              "min": 1
+            }
+          }
+        },
+        "params": {
+          "orgId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 1
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/orgs/:orgId/projects",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "OrgBilling",
+              "key": {
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "kind": "let",
+            "op": {
+              "counter": "activeProjects",
+              "key": [
+                {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                }
+              ],
+              "op": "counterGet"
+            },
+            "var": 1
+          },
+          {
+            "cond": {
+              "kind": "binary",
+              "lhs": {
+                "id": 1,
+                "kind": "var"
+              },
+              "op": "lt",
+              "rhs": {
+                "cases": {
+                  "free": {
+                    "kind": "lit",
+                    "value": 3
+                  },
+                  "pro": {
+                    "kind": "lit",
+                    "value": 1000
+                  }
+                },
+                "kind": "match",
+                "on": {
+                  "cond": {
+                    "arg": {
+                      "kind": "isNull",
+                      "of": {
+                        "id": 0,
+                        "kind": "var"
+                      }
+                    },
+                    "kind": "not"
+                  },
+                  "else": {
+                    "kind": "lit",
+                    "value": "free"
+                  },
+                  "kind": "select",
+                  "then": {
+                    "kind": "field",
+                    "name": "plan",
+                    "of": {
+                      "id": 0,
+                      "kind": "var"
+                    }
+                  }
+                }
+              }
+            },
+            "error": "planLimit",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Project",
+              "op": "insert",
+              "values": {
+                "name": {
+                  "kind": "input",
+                  "name": "name",
+                  "source": "body"
+                },
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                }
+              }
+            },
+            "var": 2
+          }
+        ],
+        "output": {
+          "id": 2,
+          "kind": "var"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {},
+      "id": "listProjects",
+      "input": {
+        "body": {},
+        "params": {
+          "orgId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 1
+            }
+          }
+        },
+        "query": {
+          "limit": {
+            "default": {
+              "kind": "literal",
+              "value": 20
+            },
+            "type": {
+              "kind": "int",
+              "max": 50,
+              "min": 1
+            }
+          },
+          "status": {
+            "default": {
+              "kind": "literal",
+              "value": "active"
+            },
+            "type": {
+              "kind": "enum",
+              "values": [
+                "active",
+                "archived"
+              ]
+            }
+          }
+        }
+      },
+      "method": "GET",
+      "path": "/orgs/:orgId/projects",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Project",
+              "index": "byStatus",
+              "limit": {
+                "kind": "input",
+                "name": "limit",
+                "source": "query"
+              },
+              "op": "query",
+              "order": "desc",
+              "prefix": [
+                {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                },
+                {
+                  "kind": "input",
+                  "name": "status",
+                  "source": "query"
+                }
+              ]
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "fields": {
+            "projects": {
+              "id": 0,
+              "kind": "var"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {
+        "notFound": {
+          "message": "Project not found",
+          "status": 404
+        }
+      },
+      "id": "archiveProject",
+      "input": {
+        "body": {},
+        "params": {
+          "orgId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 1
+            }
+          },
+          "projectId": {
+            "type": {
+              "kind": "id"
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/orgs/:orgId/projects/:projectId/archive",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Project",
+              "key": {
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                },
+                "projectId": {
+                  "kind": "input",
+                  "name": "projectId",
+                  "source": "params"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Project",
+              "key": {
+                "orgId": {
+                  "kind": "field",
+                  "name": "orgId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                },
+                "projectId": {
+                  "kind": "field",
+                  "name": "projectId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              },
+              "op": "update",
+              "set": {
+                "status": {
+                  "kind": "lit",
+                  "value": "archived"
+                }
+              }
+            },
+            "var": 1
+          }
+        ],
+        "output": {
+          "id": 1,
+          "kind": "var"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {
+        "archived": {
+          "message": "Project is archived",
+          "status": 409
+        },
+        "notFound": {
+          "message": "Project not found",
+          "status": 404
+        }
+      },
+      "id": "createTask",
+      "input": {
+        "body": {
+          "title": {
+            "type": {
+              "kind": "string",
+              "max": 200,
+              "min": 1
+            }
+          }
+        },
+        "params": {
+          "orgId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 1
+            }
+          },
+          "projectId": {
+            "type": {
+              "kind": "id"
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/orgs/:orgId/projects/:projectId/tasks",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Project",
+              "key": {
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                },
+                "projectId": {
+                  "kind": "input",
+                  "name": "projectId",
+                  "source": "params"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          },
+          {
+            "cond": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "field",
+                "name": "status",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "op": "eq",
+              "rhs": {
+                "kind": "lit",
+                "value": "active"
+              }
+            },
+            "error": "archived",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Task",
+              "op": "insert",
+              "values": {
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                },
+                "projectId": {
+                  "kind": "input",
+                  "name": "projectId",
+                  "source": "params"
+                },
+                "title": {
+                  "kind": "input",
+                  "name": "title",
+                  "source": "body"
+                }
+              }
+            },
+            "var": 1
+          }
+        ],
+        "output": {
+          "id": 1,
+          "kind": "var"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {},
+      "id": "completeTasks",
+      "input": {
+        "body": {
+          "taskIds": {
+            "type": {
+              "items": {
+                "kind": "id"
+              },
+              "kind": "array",
+              "max": 16
+            }
+          }
+        },
+        "params": {
+          "orgId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 1
+            }
+          },
+          "projectId": {
+            "type": {
+              "kind": "id"
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/orgs/:orgId/projects/:projectId/tasks/complete",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "body": [],
+              "item": 0,
+              "list": {
+                "kind": "input",
+                "name": "taskIds",
+                "source": "body"
+              },
+              "op": "map",
+              "yield": {
+                "fields": {
+                  "orgId": {
+                    "kind": "input",
+                    "name": "orgId",
+                    "source": "params"
+                  },
+                  "projectId": {
+                    "kind": "input",
+                    "name": "projectId",
+                    "source": "params"
+                  },
+                  "taskId": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                },
+                "kind": "object"
+              }
+            },
+            "var": 1
+          },
+          {
+            "kind": "let",
+            "op": {
+              "body": [
+                {
+                  "kind": "let",
+                  "op": {
+                    "entity": "Task",
+                    "key": {
+                      "orgId": {
+                        "kind": "field",
+                        "name": "orgId",
+                        "of": {
+                          "id": 2,
+                          "kind": "var"
+                        }
+                      },
+                      "projectId": {
+                        "kind": "field",
+                        "name": "projectId",
+                        "of": {
+                          "id": 2,
+                          "kind": "var"
+                        }
+                      },
+                      "taskId": {
+                        "kind": "field",
+                        "name": "taskId",
+                        "of": {
+                          "id": 2,
+                          "kind": "var"
+                        }
+                      }
+                    },
+                    "op": "get"
+                  },
+                  "var": 3
+                }
+              ],
+              "item": 2,
+              "list": {
+                "id": 1,
+                "kind": "var"
+              },
+              "op": "map",
+              "yield": {
+                "id": 3,
+                "kind": "var"
+              }
+            },
+            "var": 4
+          },
+          {
+            "kind": "let",
+            "op": {
+              "body": [],
+              "item": 5,
+              "keep": {
+                "kind": "binary",
+                "lhs": {
+                  "arg": {
+                    "kind": "isNull",
+                    "of": {
+                      "id": 5,
+                      "kind": "var"
+                    }
+                  },
+                  "kind": "not"
+                },
+                "op": "and",
+                "rhs": {
+                  "arg": {
+                    "kind": "field",
+                    "name": "done",
+                    "of": {
+                      "id": 5,
+                      "kind": "var"
+                    }
+                  },
+                  "kind": "not"
+                }
+              },
+              "list": {
+                "id": 4,
+                "kind": "var"
+              },
+              "op": "filter"
+            },
+            "var": 6
+          },
+          {
+            "body": [
+              {
+                "kind": "let",
+                "op": {
+                  "entity": "Task",
+                  "key": {
+                    "orgId": {
+                      "kind": "field",
+                      "name": "orgId",
+                      "of": {
+                        "id": 7,
+                        "kind": "var"
+                      }
+                    },
+                    "projectId": {
+                      "kind": "field",
+                      "name": "projectId",
+                      "of": {
+                        "id": 7,
+                        "kind": "var"
+                      }
+                    },
+                    "taskId": {
+                      "kind": "field",
+                      "name": "taskId",
+                      "of": {
+                        "id": 7,
+                        "kind": "var"
+                      }
+                    }
+                  },
+                  "op": "update",
+                  "set": {
+                    "done": {
+                      "kind": "lit",
+                      "value": true
+                    }
+                  }
+                },
+                "var": 8
+              }
+            ],
+            "item": 7,
+            "kind": "forEach",
+            "list": {
+              "id": 6,
+              "kind": "var"
+            }
+          },
+          {
+            "kind": "let",
+            "op": {
+              "counter": "openTasks",
+              "key": [
+                {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                },
+                {
+                  "kind": "input",
+                  "name": "projectId",
+                  "source": "params"
+                }
+              ],
+              "op": "counterGet"
+            },
+            "var": 9
+          }
+        ],
+        "output": {
+          "fields": {
+            "completed": {
+              "kind": "length",
+              "of": {
+                "id": 6,
+                "kind": "var"
+              }
+            },
+            "stillOpen": {
+              "id": 9,
+              "kind": "var"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {
+        "notFound": {
+          "message": "Project not found",
+          "status": 404
+        }
+      },
+      "id": "getProject",
+      "input": {
+        "body": {},
+        "params": {
+          "orgId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 1
+            }
+          },
+          "projectId": {
+            "type": {
+              "kind": "id"
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "GET",
+      "path": "/orgs/:orgId/projects/:projectId",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Project",
+              "key": {
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                },
+                "projectId": {
+                  "kind": "input",
+                  "name": "projectId",
+                  "source": "params"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "counter": "openTasks",
+              "key": [
+                {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                },
+                {
+                  "kind": "input",
+                  "name": "projectId",
+                  "source": "params"
+                }
+              ],
+              "op": "counterGet"
+            },
+            "var": 1
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Task",
+              "limit": {
+                "kind": "lit",
+                "value": 20
+              },
+              "op": "query",
+              "prefix": [
+                {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                },
+                {
+                  "kind": "input",
+                  "name": "projectId",
+                  "source": "params"
+                }
+              ]
+            },
+            "var": 2
+          }
+        ],
+        "output": {
+          "fields": {
+            "openTasks": {
+              "id": 1,
+              "kind": "var"
+            },
+            "project": {
+              "id": 0,
+              "kind": "var"
+            },
+            "summary": {
+              "kind": "concat",
+              "parts": [
+                {
+                  "kind": "field",
+                  "name": "name",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                },
+                {
+                  "kind": "lit",
+                  "value": " ("
+                },
+                {
+                  "kind": "field",
+                  "name": "status",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                },
+                {
+                  "kind": "lit",
+                  "value": ")"
+                }
+              ]
+            },
+            "tasks": {
+              "id": 2,
+              "kind": "var"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    }
+  ]
+}

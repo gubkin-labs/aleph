@@ -1,0 +1,1441 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Manifest",
+  "description": "A complete application manifest.",
+  "type": "object",
+  "properties": {
+    "app": {
+      "description": "Application metadata.",
+      "$ref": "#/$defs/App"
+    },
+    "counters": {
+      "description": "Declared counters, by name. Counters are maintained on write and read in O(1).",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/Counter"
+      },
+      "default": {}
+    },
+    "entities": {
+      "description": "Declared entities, by name.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/Entity"
+      },
+      "default": {}
+    },
+    "formatVersion": {
+      "description": "Manifest format version, for example `\"0.1\"`.",
+      "type": "string"
+    },
+    "routes": {
+      "description": "Declared HTTP routes.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Route"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "app"
+  ],
+  "$defs": {
+    "App": {
+      "description": "Application metadata.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Application name.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    },
+    "Auth": {
+      "description": "Route authorization.",
+      "oneOf": [
+        {
+          "description": "Anyone may call the route.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "public"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "The caller must be signed in.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "signedIn"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "BinaryOp": {
+      "description": "Binary operators.",
+      "type": "string",
+      "enum": [
+        "eq",
+        "neq",
+        "lt",
+        "lte",
+        "gt",
+        "gte",
+        "and",
+        "or",
+        "add",
+        "sub",
+        "mul",
+        "div",
+        "min",
+        "max"
+      ]
+    },
+    "Counter": {
+      "description": "A counter over the rows of an entity, grouped by some of its fields.",
+      "type": "object",
+      "properties": {
+        "groupBy": {
+          "description": "Fields the count is grouped by.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "of": {
+          "description": "The counted entity.",
+          "type": "string"
+        },
+        "where": {
+          "description": "Only rows matching this predicate are counted.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RowPredicate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "of",
+        "groupBy"
+      ]
+    },
+    "DefaultValue": {
+      "description": "How a missing field gets its value.",
+      "oneOf": [
+        {
+          "description": "A constant value.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "literal"
+            },
+            "value": {
+              "description": "The value.",
+              "$ref": "#/$defs/Literal"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "The current time (timestamp fields only).",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "now"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "A newly generated id (id fields only).",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "newId"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "Entity": {
+      "description": "A stored entity: a schema plus an ordered primary key.",
+      "type": "object",
+      "properties": {
+        "fields": {
+          "description": "Fields, by name.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Field"
+          }
+        },
+        "indexes": {
+          "description": "Secondary indexes, by name.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Index"
+          },
+          "default": {}
+        },
+        "key": {
+          "description": "Primary key fields, in order. Rows are stored sorted by this key, so a prefix of the key\nselects a contiguous range.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "fields"
+      ]
+    },
+    "ErrorDecl": {
+      "description": "A declared business error.",
+      "type": "object",
+      "properties": {
+        "message": {
+          "description": "Human-readable message returned to the client.",
+          "type": "string"
+        },
+        "status": {
+          "description": "HTTP status, 400–599.",
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "message"
+      ]
+    },
+    "Expr": {
+      "description": "An expression.",
+      "oneOf": [
+        {
+          "description": "A constant.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "lit"
+            },
+            "value": {
+              "description": "The value.",
+              "$ref": "#/$defs/Literal"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A variable.",
+          "type": "object",
+          "properties": {
+            "id": {
+              "description": "The variable.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "var"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "id"
+          ]
+        },
+        {
+          "description": "A validated route input.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "input"
+            },
+            "name": {
+              "description": "The input name.",
+              "type": "string"
+            },
+            "source": {
+              "description": "Params, query, or body.",
+              "$ref": "#/$defs/InputSource"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "source",
+            "name"
+          ]
+        },
+        {
+          "description": "The signed-in caller's user id, or `null`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "caller"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "The current time in milliseconds.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "now"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "A field of a row or object.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "field"
+            },
+            "name": {
+              "description": "The field name.",
+              "type": "string"
+            },
+            "of": {
+              "description": "The row or object.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of",
+            "name"
+          ]
+        },
+        {
+          "description": "`true` if the value is `null`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "isNull"
+            },
+            "of": {
+              "description": "The value.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of"
+          ]
+        },
+        {
+          "description": "Boolean negation.",
+          "type": "object",
+          "properties": {
+            "arg": {
+              "description": "The operand.",
+              "$ref": "#/$defs/Expr"
+            },
+            "kind": {
+              "type": "string",
+              "const": "not"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "arg"
+          ]
+        },
+        {
+          "description": "Integer negation.",
+          "type": "object",
+          "properties": {
+            "arg": {
+              "description": "The operand.",
+              "$ref": "#/$defs/Expr"
+            },
+            "kind": {
+              "type": "string",
+              "const": "neg"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "arg"
+          ]
+        },
+        {
+          "description": "A binary operation.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "binary"
+            },
+            "lhs": {
+              "description": "Left operand.",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "description": "The operator.",
+              "$ref": "#/$defs/BinaryOp"
+            },
+            "rhs": {
+              "description": "Right operand.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "op",
+            "lhs",
+            "rhs"
+          ]
+        },
+        {
+          "description": "`true` if the value equals one of the constants.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "in"
+            },
+            "list": {
+              "description": "The constants.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Literal"
+              }
+            },
+            "value": {
+              "description": "The value.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value",
+            "list"
+          ]
+        },
+        {
+          "description": "Choose between two values.",
+          "type": "object",
+          "properties": {
+            "cond": {
+              "description": "The condition.",
+              "$ref": "#/$defs/Expr"
+            },
+            "else": {
+              "description": "Value when `cond` is false.",
+              "$ref": "#/$defs/Expr"
+            },
+            "kind": {
+              "type": "string",
+              "const": "select"
+            },
+            "then": {
+              "description": "Value when `cond` is true.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "cond",
+            "then",
+            "else"
+          ]
+        },
+        {
+          "description": "Choose a value by matching a string. `_` is the default case.",
+          "type": "object",
+          "properties": {
+            "cases": {
+              "description": "Cases, by value.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "match"
+            },
+            "on": {
+              "description": "The value matched.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "on",
+            "cases"
+          ]
+        },
+        {
+          "description": "An object built from named values.",
+          "type": "object",
+          "properties": {
+            "fields": {
+              "description": "The fields.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "object"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "fields"
+          ]
+        },
+        {
+          "description": "A list built from values.",
+          "type": "object",
+          "properties": {
+            "items": {
+              "description": "The items.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "list"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "items"
+          ]
+        },
+        {
+          "description": "The length of a list or string.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "length"
+            },
+            "of": {
+              "description": "The list or string.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of"
+          ]
+        },
+        {
+          "description": "String concatenation. Non-string parts are formatted.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "concat"
+            },
+            "parts": {
+              "description": "The parts.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expr"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "parts"
+          ]
+        }
+      ]
+    },
+    "Field": {
+      "description": "A field declaration: a type, optionality, and an optional default.",
+      "type": "object",
+      "properties": {
+        "default": {
+          "description": "Value used when the field isn't provided.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DefaultValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "optional": {
+          "description": "Whether the field may be absent (stored as `null`).",
+          "type": "boolean"
+        },
+        "type": {
+          "description": "The field's type.",
+          "$ref": "#/$defs/FieldType"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ]
+    },
+    "FieldType": {
+      "description": "Field types. Every type has a statically known maximum size.",
+      "oneOf": [
+        {
+          "description": "A UTF-8 string with a length range in characters. `max` is required.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "string"
+            },
+            "max": {
+              "description": "Maximum length in characters.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "min": {
+              "description": "Minimum length in characters.",
+              "type": "integer",
+              "format": "uint32",
+              "default": 0,
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "max"
+          ]
+        },
+        {
+          "description": "A 64-bit signed integer with an optional range.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "int"
+            },
+            "max": {
+              "description": "Inclusive maximum.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            },
+            "min": {
+              "description": "Inclusive minimum.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "A boolean.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "bool"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "One of a fixed set of string values.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "enum"
+            },
+            "values": {
+              "description": "Allowed values.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "values"
+          ]
+        },
+        {
+          "description": "A generated, time-ordered identifier (26-character ULID).",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "id"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "Milliseconds since the Unix epoch.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "timestamp"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "A list with a maximum length.",
+          "type": "object",
+          "properties": {
+            "items": {
+              "description": "Item type.",
+              "$ref": "#/$defs/FieldType"
+            },
+            "kind": {
+              "type": "string",
+              "const": "array"
+            },
+            "max": {
+              "description": "Maximum number of items.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "items",
+            "max"
+          ]
+        }
+      ]
+    },
+    "Index": {
+      "description": "A secondary index over a list of fields.",
+      "type": "object",
+      "properties": {
+        "fields": {
+          "description": "Indexed fields, in order. Queries may filter on a prefix of these.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "fields"
+      ]
+    },
+    "Input": {
+      "description": "Route inputs. Every input is validated before the plan runs.",
+      "type": "object",
+      "properties": {
+        "body": {
+          "description": "JSON body fields.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Field"
+          },
+          "default": {}
+        },
+        "params": {
+          "description": "Path parameters. Must match the `:name` segments of the path exactly.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Field"
+          },
+          "default": {}
+        },
+        "query": {
+          "description": "Query string parameters.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Field"
+          },
+          "default": {}
+        }
+      },
+      "additionalProperties": false
+    },
+    "InputSource": {
+      "description": "Where an input value comes from.",
+      "type": "string",
+      "enum": [
+        "params",
+        "query",
+        "body"
+      ]
+    },
+    "Literal": {
+      "description": "A constant value in a manifest.",
+      "anyOf": [
+        {
+          "description": "`null`.",
+          "type": "null"
+        },
+        {
+          "description": "A boolean.",
+          "type": "boolean"
+        },
+        {
+          "description": "An integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "description": "A string.",
+          "type": "string"
+        }
+      ]
+    },
+    "Method": {
+      "description": "HTTP methods.",
+      "type": "string",
+      "enum": [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE"
+      ]
+    },
+    "Op": {
+      "description": "An operation. Operations are the only way a plan touches storage.",
+      "oneOf": [
+        {
+          "description": "Read one row by its full primary key. Evaluates to the row or `null`.",
+          "type": "object",
+          "properties": {
+            "entity": {
+              "description": "The entity.",
+              "type": "string"
+            },
+            "key": {
+              "description": "A value for every primary key field.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "op": {
+              "type": "string",
+              "const": "get"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "entity",
+            "key"
+          ]
+        },
+        {
+          "description": "Insert a new row. Fails if a row with the same key exists. Evaluates to the row.",
+          "type": "object",
+          "properties": {
+            "entity": {
+              "description": "The entity.",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "const": "insert"
+            },
+            "values": {
+              "description": "Field values. Missing fields take their default, or `null` if optional.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "entity",
+            "values"
+          ]
+        },
+        {
+          "description": "Update fields of an existing row. Evaluates to the updated row.",
+          "type": "object",
+          "properties": {
+            "entity": {
+              "description": "The entity.",
+              "type": "string"
+            },
+            "key": {
+              "description": "A value for every primary key field.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "op": {
+              "type": "string",
+              "const": "update"
+            },
+            "set": {
+              "description": "New field values. Key fields can't be changed.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "entity",
+            "key",
+            "set"
+          ]
+        },
+        {
+          "description": "Delete a row if it exists. Evaluates to `null`.",
+          "type": "object",
+          "properties": {
+            "entity": {
+              "description": "The entity.",
+              "type": "string"
+            },
+            "key": {
+              "description": "A value for every primary key field.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "op": {
+              "type": "string",
+              "const": "delete"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "entity",
+            "key"
+          ]
+        },
+        {
+          "description": "Read a bounded, ordered range of rows. Evaluates to a list of rows.",
+          "type": "object",
+          "properties": {
+            "entity": {
+              "description": "The entity.",
+              "type": "string"
+            },
+            "index": {
+              "description": "Scan this secondary index instead of the primary key.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "limit": {
+              "description": "Maximum number of rows. Must have a statically known upper bound.",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "type": "string",
+              "const": "query"
+            },
+            "order": {
+              "description": "Scan order.",
+              "$ref": "#/$defs/Order"
+            },
+            "prefix": {
+              "description": "Values for a prefix of the key (or index) fields.",
+              "type": "array",
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/Expr"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "entity",
+            "limit"
+          ]
+        },
+        {
+          "description": "Read a counter value. Evaluates to an integer (0 if never incremented).",
+          "type": "object",
+          "properties": {
+            "counter": {
+              "description": "The counter.",
+              "type": "string"
+            },
+            "key": {
+              "description": "Values for the counter's `groupBy` fields, in order.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "op": {
+              "type": "string",
+              "const": "counterGet"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "counter",
+            "key"
+          ]
+        },
+        {
+          "description": "Transform each item of a bounded list. The body may read but never write.",
+          "type": "object",
+          "properties": {
+            "body": {
+              "description": "Read-only statements run per item.",
+              "type": "array",
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/Stmt"
+              }
+            },
+            "item": {
+              "description": "The variable each item is bound to.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "list": {
+              "description": "The list.",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "type": "string",
+              "const": "map"
+            },
+            "yield": {
+              "description": "The new item.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "list",
+            "item",
+            "yield"
+          ]
+        },
+        {
+          "description": "Keep the items of a bounded list for which `keep` is true. The body may read but never\nwrite.",
+          "type": "object",
+          "properties": {
+            "body": {
+              "description": "Read-only statements run per item.",
+              "type": "array",
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/Stmt"
+              }
+            },
+            "item": {
+              "description": "The variable each item is bound to.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "keep": {
+              "description": "The predicate.",
+              "$ref": "#/$defs/Expr"
+            },
+            "list": {
+              "description": "The list.",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "type": "string",
+              "const": "filter"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "list",
+            "item",
+            "keep"
+          ]
+        },
+        {
+          "description": "Evaluate a pure expression.",
+          "type": "object",
+          "properties": {
+            "expr": {
+              "description": "The expression.",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "type": "string",
+              "const": "eval"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "expr"
+          ]
+        }
+      ]
+    },
+    "Order": {
+      "description": "Scan order for queries.",
+      "oneOf": [
+        {
+          "description": "Ascending key order.",
+          "type": "string",
+          "const": "asc"
+        },
+        {
+          "description": "Descending key order.",
+          "type": "string",
+          "const": "desc"
+        }
+      ]
+    },
+    "Plan": {
+      "description": "A route's logic: statements followed by the value returned to the caller.\n\nA plan runs as **one optimistic transaction**. A statement that fails rolls it back.",
+      "type": "object",
+      "properties": {
+        "body": {
+          "description": "Statements, executed in order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Stmt"
+          }
+        },
+        "output": {
+          "description": "The response body.",
+          "$ref": "#/$defs/Expr"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "body",
+        "output"
+      ]
+    },
+    "Route": {
+      "description": "An HTTP route.",
+      "type": "object",
+      "properties": {
+        "auth": {
+          "description": "Who may call the route.",
+          "$ref": "#/$defs/Auth"
+        },
+        "errors": {
+          "description": "Declared business errors the plan may fail with, by name.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ErrorDecl"
+          },
+          "default": {}
+        },
+        "id": {
+          "description": "Stable identifier, unique within the manifest.",
+          "type": "string"
+        },
+        "input": {
+          "description": "Declared inputs.",
+          "$ref": "#/$defs/Input",
+          "default": {
+            "body": {},
+            "params": {},
+            "query": {}
+          }
+        },
+        "method": {
+          "description": "HTTP method.",
+          "$ref": "#/$defs/Method"
+        },
+        "path": {
+          "description": "Path template, for example `/orgs/:orgId/projects`.",
+          "type": "string"
+        },
+        "plan": {
+          "description": "The route's logic.",
+          "$ref": "#/$defs/Plan"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "method",
+        "path",
+        "auth",
+        "plan"
+      ]
+    },
+    "RowPredicate": {
+      "description": "A boolean expression over one row, bound to `var`.",
+      "type": "object",
+      "properties": {
+        "expr": {
+          "description": "The predicate.",
+          "$ref": "#/$defs/Expr"
+        },
+        "var": {
+          "description": "The variable the row is bound to inside `expr`.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "var",
+        "expr"
+      ]
+    },
+    "Stmt": {
+      "description": "A statement.",
+      "oneOf": [
+        {
+          "description": "Run an operation and bind its result to a new variable.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "let"
+            },
+            "op": {
+              "description": "The operation.",
+              "$ref": "#/$defs/Op"
+            },
+            "var": {
+              "description": "The variable to bind. Must not already be defined.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "var",
+            "op"
+          ]
+        },
+        {
+          "description": "Fail with a declared error unless `cond` is true.",
+          "type": "object",
+          "properties": {
+            "cond": {
+              "description": "The condition that must hold.",
+              "$ref": "#/$defs/Expr"
+            },
+            "error": {
+              "description": "The declared error to fail with.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "ensure"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "cond",
+            "error"
+          ]
+        },
+        {
+          "description": "Fail with a declared error.",
+          "type": "object",
+          "properties": {
+            "error": {
+              "description": "The declared error.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "fail"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "error"
+          ]
+        },
+        {
+          "description": "Conditional execution. Variables defined inside a branch aren't visible after it.",
+          "type": "object",
+          "properties": {
+            "cond": {
+              "description": "The condition.",
+              "$ref": "#/$defs/Expr"
+            },
+            "else": {
+              "description": "Statements run when `cond` is false.",
+              "type": "array",
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/Stmt"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "if"
+            },
+            "then": {
+              "description": "Statements run when `cond` is true.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Stmt"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "cond",
+            "then"
+          ]
+        },
+        {
+          "description": "Run `body` once per item of a list with a statically bounded length.",
+          "type": "object",
+          "properties": {
+            "body": {
+              "description": "Statements run per item.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Stmt"
+              }
+            },
+            "item": {
+              "description": "The variable each item is bound to.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "forEach"
+            },
+            "list": {
+              "description": "The list.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "list",
+            "item",
+            "body"
+          ]
+        }
+      ]
+    }
+  }
+}

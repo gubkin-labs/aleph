@@ -1,0 +1,94 @@
+{
+  "expect": ["over_budget"],
+  "manifest": {
+    "formatVersion": "0.1",
+    "app": {
+      "name": "bad"
+    },
+    "entities": {
+      "Item": {
+        "key": ["id"],
+        "fields": {
+          "id": {
+            "type": {
+              "kind": "id"
+            },
+            "default": {
+              "kind": "newId"
+            }
+          },
+          "name": {
+            "type": {
+              "kind": "string",
+              "min": 0,
+              "max": 50
+            }
+          }
+        },
+        "indexes": {}
+      }
+    },
+    "counters": {},
+    "routes": [
+      {
+        "id": "bulk",
+        "method": "POST",
+        "path": "/x",
+        "auth": {
+          "kind": "public"
+        },
+        "input": {
+          "params": {},
+          "query": {},
+          "body": {
+            "names": {
+              "type": {
+                "kind": "array",
+                "items": {
+                  "kind": "string",
+                  "min": 0,
+                  "max": 50
+                },
+                "max": 100
+              }
+            }
+          }
+        },
+        "errors": {},
+        "plan": {
+          "body": [
+            {
+              "kind": "forEach",
+              "list": {
+                "kind": "input",
+                "source": "body",
+                "name": "names"
+              },
+              "item": 0,
+              "body": [
+                {
+                  "kind": "let",
+                  "var": 1,
+                  "op": {
+                    "op": "insert",
+                    "entity": "Item",
+                    "values": {
+                      "name": {
+                        "kind": "var",
+                        "id": 0
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "output": {
+            "kind": "lit",
+            "value": null
+          }
+        }
+      }
+    ]
+  }
+}

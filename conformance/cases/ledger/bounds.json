@@ -1,0 +1,52 @@
+{
+  "entities": {
+    "Account": {
+      "maxRowBytes": 503
+    },
+    "Entry": {
+      "maxRowBytes": 998
+    }
+  },
+  "routes": {
+    "deposit": {
+      "bounds": {
+        "reads": 3,
+        "writes": 4,
+        "ops": 31,
+        "bytesRead": 2004
+      }
+    },
+    "entries": {
+      "bounds": {
+        "reads": 101,
+        "writes": 0,
+        "ops": 18,
+        "bytesRead": 100303
+      }
+    },
+    "myAccounts": {
+      "bounds": {
+        "reads": 10,
+        "writes": 0,
+        "ops": 6,
+        "bytesRead": 5030
+      }
+    },
+    "openAccount": {
+      "bounds": {
+        "reads": 1,
+        "writes": 2,
+        "ops": 5,
+        "bytesRead": 503
+      }
+    },
+    "transfer": {
+      "bounds": {
+        "reads": 6,
+        "writes": 8,
+        "ops": 78,
+        "bytesRead": 4008
+      }
+    }
+  }
+}

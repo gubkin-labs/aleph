@@ -1,0 +1,21 @@
+[package]
+name = "aleph-core-wasm"
+description = "WASM bindings for aleph-core, used by the Aleph CLI and @aleph/core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+aleph-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+wasm-bindgen.workspace = true
+
+[lints]
+workspace = true
