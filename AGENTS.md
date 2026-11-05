@@ -26,19 +26,17 @@ pnpm fix && cargo fmt --all
 ```
 
 ```bash
-pnpm check
+pnpm verify
 ```
 
-```bash
-cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace && pnpm codegen:check
-```
+There's no hosted CI: `pnpm verify` (`scripts/ci.sh`) is the gate, so run it before every push.
 
 If you intentionally changed SDK output or analysis results, update the golden files with
 `pnpm --filter @aleph/conformance update`, then review the diff.
 
 ## Conventions
 
-- Rust: edition 2024. `clippy::pedantic` with warnings denied in CI. No `unsafe`. No
+- Rust: edition 2024. `clippy::pedantic` with warnings denied (`pnpm verify`). No `unsafe`. No
   `unwrap`/`expect`/`panic` outside tests. Every public item is documented.
 - TypeScript: strict, with `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, and
   `isolatedDeclarations`. Biome for lint and format. Vitest for tests. `tsdown` for builds.

@@ -77,7 +77,7 @@ app.ts ──@aleph/sdk──▶ manifest.json ──aleph-core──▶ validat
 - **One core, everywhere.** `aleph-core` runs natively in the platform and as WASM in the toolchain
   (`@aleph/core`), so local results and production results come from the same code.
 - **One source of truth for the format.** The Rust types generate the JSON Schema and the TypeScript
-  types. CI fails if the generated files are stale.
+  types. `pnpm verify` fails if the generated files are stale.
 - **One conformance suite.** The same golden files run through the SDK, the WASM build, and the
   native core.
 
@@ -99,12 +99,10 @@ pnpm build        # builds the WASM core and all packages (Turborepo)
 ```
 
 ```bash
-pnpm check        # Biome lint + format check, typecheck, all TS tests
+pnpm verify       # every check: rustfmt, clippy, cargo test, codegen check, Biome, build, typecheck, TS tests
 ```
 
-```bash
-cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
-```
+There's no hosted CI for now: run `pnpm verify` before pushing.
 
 | Task | Command |
 |---|---|

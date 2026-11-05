@@ -4,7 +4,7 @@
 //! - `schema/manifest.schema.json`: JSON Schema for third-party SDKs and platforms
 //! - `packages/manifest/src/generated/` and `generated.ts`: TypeScript types for `@aleph/manifest`
 //!
-//! `cargo xtask codegen --check` fails if the committed files are stale (used in CI).
+//! `cargo xtask codegen --check` fails if the committed files are stale (used by `pnpm verify`).
 
 use std::fmt::Write as _;
 use std::fs;

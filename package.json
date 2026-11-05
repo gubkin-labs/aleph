@@ -15,7 +15,8 @@
     "fix": "biome check --write .",
     "codegen": "cargo run -q -p xtask -- codegen",
     "codegen:check": "cargo run -q -p xtask -- codegen --check",
-    "check": "pnpm lint && pnpm typecheck && pnpm test"
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "verify": "scripts/ci.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.5",
