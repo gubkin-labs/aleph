@@ -46,6 +46,16 @@ pub enum DiagnosticCode {
     UnknownRole,
     UnknownScope,
     InvalidIdempotency,
+    ImmutableEntity,
+    UnknownEvent,
+    UnknownQueue,
+    UnknownChannel,
+    UnknownIntegration,
+    UnknownOperation,
+    InvalidPayload,
+    InvalidHandler,
+    InvalidDeclaration,
+    InvalidRoute,
     OverBudget,
 }
 
@@ -60,6 +70,10 @@ pub struct Diagnostic {
     pub message: String,
     /// Location in the manifest, for example `routes[0].plan.body[2].op`.
     pub path: String,
+    /// Location in the source, for example `app.ts:41:5`, when the manifest has a source map.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub location: Option<String>,
 }
 
 impl Diagnostic {
@@ -69,6 +83,7 @@ impl Diagnostic {
             code,
             message: message.into(),
             path: path.into(),
+            location: None,
         }
     }
 }

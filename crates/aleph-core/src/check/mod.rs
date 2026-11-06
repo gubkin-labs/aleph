@@ -15,6 +15,7 @@ use crate::manifest::{
     Literal, Manifest, Route,
 };
 
+mod handlers;
 mod plan;
 mod size;
 mod types;
@@ -31,6 +32,13 @@ pub struct CheckReport {
     pub entities: BTreeMap<String, EntityReport>,
     /// Per-route facts, by route id.
     pub routes: BTreeMap<String, RouteReport>,
+    /// Per-handler facts, by handler id. Handlers are checked against the job limits.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, RouteReport>>", optional)
+    )]
+    pub handlers: BTreeMap<String, RouteReport>,
 }
 
 /// Static facts about an entity.
@@ -99,6 +107,9 @@ pub fn parse_and_validate(
 pub fn validate(manifest: Manifest, limits: &Limits) -> Result<ValidatedManifest, Vec<Diagnostic>> {
     let mut diags = Vec::new();
     let report = check_manifest(&manifest, limits, &mut diags);
+    for diag in &mut diags {
+        diag.location = locate(&manifest.source_map, &diag.path);
+    }
     if diags.is_empty() {
         Ok(ValidatedManifest {
             manifest,
@@ -109,6 +120,18 @@ pub fn validate(manifest: Manifest, limits: &Limits) -> Result<ValidatedManifest
         diags.sort_by(|a, b| a.path.cmp(&b.path).then(a.code.cmp(&b.code)));
         Err(diags)
     }
+}
+
+/// The source location of the deepest mapped path that contains `path`.
+fn locate(source_map: &BTreeMap<String, String>, path: &str) -> Option<String> {
+    source_map
+        .iter()
+        .filter(|(prefix, _)| {
+            path.strip_prefix(prefix.as_str())
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with(['.', '[']))
+        })
+        .max_by_key(|(prefix, _)| prefix.len())
+        .map(|(_, location)| location.clone())
 }
 
 /// Facts about entities that plan checking needs.
@@ -137,6 +160,18 @@ fn check_manifest(m: &Manifest, limits: &Limits, diags: &mut Vec<Diagnostic>) ->
         let path = format!("entities.{name}");
         check_name(name, &path, diags);
         let row_bytes = check_entity(entity, &path, limits, diags);
+        for (invariant, predicate) in &entity.invariants {
+            let invariant_path = format!("{path}.invariants.{invariant}");
+            check_name(invariant, &invariant_path, diags);
+            plan::check_row_predicate(
+                m,
+                name,
+                predicate,
+                &invariant_path,
+                plan::RowExprKind::Bool,
+                diags,
+            );
+        }
         let counter_count = m.counters.values().filter(|c| &c.of == name).count() as u64;
         infos.insert(
             name.clone(),
@@ -173,7 +208,7 @@ fn check_manifest(m: &Manifest, limits: &Limits, diags: &mut Vec<Diagnostic>) ->
                 reads: 1,
                 writes: 1,
                 bytes_read: limits.max_row_bytes,
-                ops: 0,
+                ..Cost::ZERO
             };
         }
         for resource in Resource::ALL {
@@ -194,6 +229,7 @@ fn check_manifest(m: &Manifest, limits: &Limits, diags: &mut Vec<Diagnostic>) ->
             .routes
             .insert(route.id.clone(), RouteReport { bounds });
     }
+    handlers::check_all(m, &infos, &mut report.handlers, diags);
     report
 }
 
@@ -292,7 +328,7 @@ fn check_entity(entity: &Entity, path: &str, limits: &Limits, diags: &mut Vec<Di
     row_bytes
 }
 
-fn is_keyable(ty: &FieldType) -> bool {
+pub(crate) fn is_keyable(ty: &FieldType) -> bool {
     !matches!(ty, FieldType::Array { .. })
 }
 
@@ -380,7 +416,24 @@ fn check_counter(m: &Manifest, counter: &Counter, path: &str, diags: &mut Vec<Di
         }
     }
     if let Some(filter) = &counter.filter {
-        plan::check_row_predicate(m, &counter.of, filter, &format!("{path}.where"), diags);
+        plan::check_row_predicate(
+            m,
+            &counter.of,
+            filter,
+            &format!("{path}.where"),
+            plan::RowExprKind::Bool,
+            diags,
+        );
+    }
+    if let Some(sum) = &counter.sum {
+        plan::check_row_predicate(
+            m,
+            &counter.of,
+            sum,
+            &format!("{path}.sum"),
+            plan::RowExprKind::Int,
+            diags,
+        );
     }
 }
 
@@ -476,6 +529,7 @@ fn check_idempotency(idempotency: Idempotency, path: &str, diags: &mut Vec<Diagn
 }
 
 fn check_route_table(routes: &[Route], diags: &mut Vec<Diagnostic>) {
+    let mut tools = HashSet::new();
     let mut ids = HashSet::new();
     let mut shapes = HashSet::new();
     for (i, route) in routes.iter().enumerate() {
@@ -541,6 +595,25 @@ fn check_route_table(routes: &[Route], diags: &mut Vec<Diagnostic>) {
                 let field_path = format!("{path}.input.{source}.{name}");
                 check_name(name, &field_path, diags);
                 check_field(field, &field_path, diags);
+            }
+        }
+        if let Some(limit) = route.rate_limit
+            && (limit.max == 0 || !(1_000..=86_400_000).contains(&limit.window_ms))
+        {
+            diags.push(Diagnostic::new(
+                Code::InvalidRoute,
+                format!("{path}.rateLimit"),
+                "a rate limit needs max ≥ 1 and a window between 1 second and 1 day",
+            ));
+        }
+        if let Some(tool) = &route.mcp {
+            check_name(&tool.name, &format!("{path}.mcp.name"), diags);
+            if !tools.insert(&tool.name) {
+                diags.push(Diagnostic::new(
+                    Code::InvalidRoute,
+                    format!("{path}.mcp.name"),
+                    format!("MCP tool name {:?} is used twice", tool.name),
+                ));
             }
         }
         for (name, error) in &route.errors {

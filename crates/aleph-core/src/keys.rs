@@ -24,6 +24,8 @@ const ROWS: &str = "r";
 const INDEXES: &str = "i";
 const COUNTERS: &str = "c";
 const IDEMPOTENCY: &str = "d";
+const OUTBOX: &str = "o";
+const SCHEDULES: &str = "s";
 
 /// A tenant (app) identifier: 1–64 characters of `[A-Za-z0-9_-]`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -208,6 +210,7 @@ impl<'a> KeyPart<'a> {
 /// Builds every key for one tenant.
 #[derive(Debug, Clone)]
 pub struct Keyspace {
+    tenant: TenantId,
     prefix: Vec<u8>,
 }
 
@@ -216,7 +219,15 @@ impl Keyspace {
     pub fn new(tenant: &TenantId) -> Self {
         let mut prefix = Vec::new();
         KeyPart::Str(tenant.as_str()).encode_into(&mut prefix);
-        Self { prefix }
+        Self {
+            tenant: tenant.clone(),
+            prefix,
+        }
+    }
+
+    /// The tenant this keyspace belongs to.
+    pub fn tenant(&self) -> &TenantId {
+        &self.tenant
     }
 
     /// The range holding all of the tenant's keys.
@@ -263,6 +274,34 @@ impl Keyspace {
             ],
             prefix,
         ])
+    }
+
+    /// The key of an outbox entry due at `deliver_at`. Entries sort by due time.
+    pub fn outbox(&self, deliver_at: i64, id: &str) -> Key {
+        self.key(
+            &[KeyPart::Str(OUTBOX)],
+            &[KeyPart::Int(deliver_at), KeyPart::Str(id)],
+            &[],
+        )
+    }
+
+    /// The range of outbox entries due at or before `now`.
+    pub fn outbox_due(&self, now: i64) -> KeyRange {
+        let all = self.range(&[&[KeyPart::Str(OUTBOX)]]);
+        let end = self.key(
+            &[KeyPart::Str(OUTBOX)],
+            &[KeyPart::Int(now.saturating_add(1))],
+            &[],
+        );
+        KeyRange {
+            start: all.start,
+            end,
+        }
+    }
+
+    /// The key of a schedule's state (the last tick a cron fired at).
+    pub fn schedule(&self, handler: &str) -> Key {
+        self.key(&[KeyPart::Str(SCHEDULES)], &[KeyPart::Str(handler)], &[])
     }
 
     /// The key of a stored idempotent response.

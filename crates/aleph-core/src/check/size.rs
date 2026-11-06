@@ -72,6 +72,8 @@ mod tests {
                 ),
             ]),
             indexes: BTreeMap::new(),
+            invariants: BTreeMap::new(),
+            mutable: true,
         };
         let worst = Value::Object(BTreeMap::from([
             ("id".into(), Value::String("01J".repeat(9)[..26].to_owned())),

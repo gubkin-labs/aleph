@@ -32,6 +32,7 @@ fn request(method: Method, path: &str, body: Option<Json>) -> Request {
             orgs: BTreeMap::from([("acme".into(), "owner".into())]),
             ..Caller::user("u1")
         }),
+        ip: None,
         idempotency_key: None,
     }
 }

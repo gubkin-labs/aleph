@@ -1,15 +1,17 @@
-//! The plan interpreter. Runs one attempt of one route inside one transaction, charging the meter
-//! for everything it does.
+//! The plan interpreter. Runs one attempt of one plan (a route's or a handler's) inside one
+//! transaction, charging the meter for everything it does.
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 
+use super::effects::{Delivery, DeliveryKind, Integrations, Journal, OutboxItem, Pending};
 use super::env::Env;
 use super::input::{Inputs, check_value, missing};
 use super::meter::{Meter, OverBudget};
-use crate::keys::{Key, KeyPart, Keyspace};
+use crate::keys::{Key, KeyPart, Keyspace, TenantId};
 use crate::manifest::{
-    BinaryOp, Counter, Entity, Expr, InputSource, Manifest, Op, Order, Route, Stmt, VarId,
+    BinaryOp, Change, Counter, Entity, Expr, Field, InputSource, Manifest, Op, Order, Plan, Stmt,
+    StrOp, StrTest, Trigger, VarId,
 };
 use crate::store::{Direction, StoreError, Transaction};
 use crate::value::Value;
@@ -31,6 +33,12 @@ pub(crate) enum ExecError {
     Duplicate(String),
     #[error(transparent)]
     Store(#[from] StoreError),
+    /// A write would break an entity invariant (`Entity.name`).
+    #[error("invariant {0} would be violated")]
+    Invariant(String),
+    /// An integration call failed.
+    #[error("integration call failed: {0}")]
+    CallFailed(String),
     /// The idempotency key was already used with different inputs.
     #[error("idempotency key reused with different inputs")]
     KeyReused,
@@ -59,7 +67,12 @@ fn runtime(message: impl Into<String>) -> ExecError {
 
 pub(crate) struct Exec<'a> {
     pub(crate) manifest: &'a Manifest,
-    pub(crate) route: &'a Route,
+    pub(crate) plan: &'a Plan,
+    pub(crate) tenant: &'a TenantId,
+    pub(crate) integrations: &'a dyn Integrations,
+    pub(crate) journal: &'a mut Journal,
+    /// Effects buffered until commit.
+    pub(crate) effects: Vec<Pending>,
     pub(crate) tx: &'a mut dyn Transaction,
     pub(crate) keys: &'a Keyspace,
     pub(crate) meter: &'a mut Meter,
@@ -73,11 +86,11 @@ pub(crate) struct Exec<'a> {
 }
 
 impl<'a> Exec<'a> {
-    /// Runs the route's plan and evaluates its output.
+    /// Runs the plan and evaluates its output.
     pub(crate) fn run(&mut self) -> R<Value> {
-        let route = self.route;
-        self.block(&route.plan.body, false)?;
-        self.eval(&route.plan.output)
+        let plan = self.plan;
+        self.block(&plan.body, false)?;
+        self.eval(&plan.output)
     }
 
     fn block(&mut self, stmts: &'a [Stmt], pure: bool) -> R<()> {
@@ -234,8 +247,204 @@ impl<'a> Exec<'a> {
                 }
                 Ok(Value::List(out))
             }
+            Op::Emit { event, payload } => {
+                let manifest = self.manifest;
+                let decl = manifest
+                    .events
+                    .get(event)
+                    .ok_or_else(|| runtime(format!("unknown event {event}")))?;
+                let payload = self.field_values(&decl.payload, payload, event)?;
+                for handler in manifest
+                    .handlers
+                    .iter()
+                    .filter(|h| matches!(&h.trigger, Trigger::Event { event: e } if e == event))
+                {
+                    self.release(
+                        0,
+                        OutboxItem::Run {
+                            handler: handler.id.clone(),
+                            payload: payload.clone(),
+                            attempt: 0,
+                        },
+                    )?;
+                }
+                Ok(Value::Null)
+            }
+            Op::Enqueue {
+                queue,
+                payload,
+                delay_ms,
+            } => {
+                const MAX_DELAY_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+                let manifest = self.manifest;
+                let decl = manifest
+                    .queues
+                    .get(queue)
+                    .ok_or_else(|| runtime(format!("unknown queue {queue}")))?;
+                let payload = self.field_values(&decl.payload, payload, queue)?;
+                let delay = match delay_ms {
+                    Some(expr) => self.eval_int(expr)?,
+                    None => 0,
+                };
+                if !(0..=MAX_DELAY_MS).contains(&delay) {
+                    return Err(runtime(format!(
+                        "enqueue delay must be between 0 and {MAX_DELAY_MS} ms, got {delay}"
+                    )));
+                }
+                let handler = manifest
+                    .handlers
+                    .iter()
+                    .find(|h| matches!(&h.trigger, Trigger::Queue { queue: q } if q == queue))
+                    .ok_or_else(|| runtime(format!("queue {queue} has no handler")))?;
+                self.release(
+                    delay,
+                    OutboxItem::Run {
+                        handler: handler.id.clone(),
+                        payload,
+                        attempt: 0,
+                    },
+                )?;
+                Ok(Value::Null)
+            }
+            Op::Publish {
+                channel,
+                key,
+                message,
+            } => {
+                let manifest = self.manifest;
+                let decl = manifest
+                    .channels
+                    .get(channel)
+                    .ok_or_else(|| runtime(format!("unknown channel {channel}")))?;
+                let key = self.field_values(&decl.key, key, channel)?;
+                let message = self.field_values(&decl.message, message, channel)?;
+                let data = serde_json::json!({
+                    "key": Value::Object(key).to_json(),
+                    "message": Value::Object(message).to_json(),
+                });
+                let delivery = Delivery {
+                    kind: DeliveryKind::Publish,
+                    target: channel.clone(),
+                    operation: None,
+                    data,
+                };
+                self.release(
+                    0,
+                    OutboxItem::Deliver {
+                        delivery,
+                        attempt: 0,
+                    },
+                )?;
+                Ok(Value::Null)
+            }
+            Op::Send {
+                integration,
+                operation,
+                input,
+            } => {
+                let decl = self.operation(integration, operation)?;
+                let input =
+                    Value::Object(self.field_values(&decl.input, input, operation)?).to_json();
+                let delivery = Delivery {
+                    kind: DeliveryKind::Send,
+                    target: integration.clone(),
+                    operation: Some(operation.clone()),
+                    data: input,
+                };
+                self.release(
+                    0,
+                    OutboxItem::Deliver {
+                        delivery,
+                        attempt: 0,
+                    },
+                )?;
+                Ok(Value::Null)
+            }
+            Op::Call {
+                integration,
+                operation,
+                input,
+            } => {
+                let decl = self.operation(integration, operation)?;
+                let input =
+                    Value::Object(self.field_values(&decl.input, input, operation)?).to_json();
+                self.meter.call()?;
+                let fingerprint = format!("{integration}.{operation}:{input}");
+                let result = match self.journal.replay(&fingerprint) {
+                    Some(result) => result,
+                    None => {
+                        let result = self
+                            .integrations
+                            .call(self.tenant, integration, operation, &input)
+                            .and_then(|output| {
+                                validate_output(&decl.output, output, integration, operation)
+                            });
+                        self.journal.record(fingerprint, result.clone());
+                        result
+                    }
+                };
+                result.map_err(ExecError::CallFailed)
+            }
             Op::Eval { expr } => self.eval(expr),
         }
+    }
+
+    /// Buffers an effect until commit.
+    fn release(&mut self, delay_ms: i64, item: OutboxItem) -> R<()> {
+        self.meter.effect()?;
+        self.effects.push(Pending { delay_ms, item });
+        Ok(())
+    }
+
+    /// Evaluates values for declared fields, filling defaults and validating each.
+    fn field_values(
+        &mut self,
+        fields: &'a BTreeMap<String, Field>,
+        given: &'a BTreeMap<String, Expr>,
+        context: &str,
+    ) -> R<BTreeMap<String, Value>> {
+        let mut out = BTreeMap::new();
+        for (name, field) in fields {
+            let value = match given.get(name) {
+                Some(expr) => self.eval(expr)?,
+                None => missing(field, self.env, self.now)
+                    .ok_or_else(|| runtime(format!("{context}.{name} is required")))?,
+            };
+            check_value(field, &value).map_err(|m| runtime(format!("{context}.{name}: {m}")))?;
+            out.insert(name.clone(), value);
+        }
+        Ok(out)
+    }
+
+    fn operation(
+        &self,
+        integration: &str,
+        operation: &str,
+    ) -> R<&'a crate::manifest::IntegrationOp> {
+        self.manifest
+            .integrations
+            .get(integration)
+            .and_then(|i| i.operations.get(operation))
+            .ok_or_else(|| runtime(format!("unknown operation {integration}.{operation}")))
+    }
+
+    /// Releases one effect per handler of a row change.
+    fn changed(
+        &mut self,
+        entity: &str,
+        change: Change,
+        before: Option<&Row>,
+        after: Option<&Row>,
+    ) -> R<()> {
+        let manifest = self.manifest;
+        for handler in manifest.handlers.iter().filter(|h| {
+            matches!(&h.trigger, Trigger::Entity { entity: e, change: c } if e == entity && *c == change)
+        }) {
+            let row = |r: Option<&Row>| r.map_or(Value::Null, |r| Value::Object(r.clone()));
+            let payload = BTreeMap::from([("before".to_owned(), row(before)), ("after".to_owned(), row(after))]);
+            self.release(0, OutboxItem::Run { handler: handler.id.clone(), payload, attempt: 0 })?;
+        }
+        Ok(())
     }
 
     fn entity(&self, name: &str) -> R<&'a Entity> {
@@ -303,7 +512,8 @@ impl<'a> Exec<'a> {
             self.tx.put(index_key, pk);
             self.meter.write(1)?;
         }
-        self.maintain_counters(entity_name, None, Some(row))
+        self.maintain_counters(entity_name, None, Some(row))?;
+        self.changed(entity_name, Change::Inserted, None, Some(row))
     }
 
     fn upsert(&mut self, entity_name: &str, values: &'a BTreeMap<String, Expr>) -> R<Value> {
@@ -399,7 +609,7 @@ impl<'a> Exec<'a> {
             }
         }
         self.maintain_counters(entity_name, Some(old), Some(new))?;
-        Ok(())
+        self.changed(entity_name, Change::Updated, Some(old), Some(new))
     }
 
     fn delete(&mut self, entity_name: &str, key: &'a BTreeMap<String, Expr>) -> R<Value> {
@@ -416,10 +626,19 @@ impl<'a> Exec<'a> {
             self.meter.write(1)?;
         }
         self.maintain_counters(entity_name, Some(&old), None)?;
+        self.changed(entity_name, Change::Deleted, Some(&old), None)?;
         Ok(Value::Null)
     }
 
     fn write_row(&mut self, entity: &str, key: &[Value], row: &Row) -> R<()> {
+        let manifest = self.manifest;
+        if let Some(declared) = manifest.entities.get(entity) {
+            for (name, invariant) in &declared.invariants {
+                if self.eval_on_row(invariant.var, &invariant.expr, row)? != Value::Bool(true) {
+                    return Err(ExecError::Invariant(format!("{entity}.{name}")));
+                }
+            }
+        }
         let bytes = serde_json::to_vec(row).map_err(|e| runtime(e.to_string()))?;
         self.tx.put(self.keys.row(entity, &parts(key)?), bytes);
         self.meter.write(1)?;
@@ -453,47 +672,80 @@ impl<'a> Exec<'a> {
     fn maintain_counters(&mut self, entity: &str, old: Option<&Row>, new: Option<&Row>) -> R<()> {
         let manifest = self.manifest;
         for (name, counter) in manifest.counters.iter().filter(|(_, c)| c.of == entity) {
-            let old_group = old
+            let old_part = old
                 .map(|row| self.group(counter, row))
                 .transpose()?
                 .flatten();
-            let new_group = new
+            let new_part = new
                 .map(|row| self.group(counter, row))
                 .transpose()?
                 .flatten();
-            if old_group == new_group {
-                continue;
-            }
-            if let Some(group) = old_group {
-                self.bump(name, &group, -1)?;
-            }
-            if let Some(group) = new_group {
-                self.bump(name, &group, 1)?;
+            match (old_part, new_part) {
+                (Some((g1, a1)), Some((g2, a2))) if g1 == g2 => {
+                    if a1 != a2 {
+                        let delta = a2
+                            .checked_sub(a1)
+                            .ok_or_else(|| runtime("counter overflow"))?;
+                        self.bump(name, &g1, delta)?;
+                    }
+                }
+                (old_part, new_part) => {
+                    if let Some((group, amount)) = old_part {
+                        self.bump(
+                            name,
+                            &group,
+                            amount
+                                .checked_neg()
+                                .ok_or_else(|| runtime("counter overflow"))?,
+                        )?;
+                    }
+                    if let Some((group, amount)) = new_part {
+                        self.bump(name, &group, amount)?;
+                    }
+                }
             }
         }
         Ok(())
     }
 
-    /// The counter group a row belongs to, or `None` if the counter's predicate excludes it.
-    fn group(&mut self, counter: &'a Counter, row: &Row) -> R<Option<Vec<Value>>> {
-        if let Some(predicate) = &counter.filter {
-            let saved = std::mem::take(&mut self.vars);
-            self.vars.insert(predicate.var, Value::Object(row.clone()));
-            self.metered = false;
-            let included = self.eval_bool(&predicate.expr);
-            self.metered = true;
-            self.vars = saved;
-            if !included? {
-                return Ok(None);
-            }
+    /// Evaluates a row expression without metering: it's part of the write it belongs to.
+    fn eval_on_row(&mut self, var: VarId, expr: &'a Expr, row: &Row) -> R<Value> {
+        let saved = std::mem::take(&mut self.vars);
+        self.vars.insert(var, Value::Object(row.clone()));
+        self.metered = false;
+        let value = self.eval(expr);
+        self.metered = true;
+        self.vars = saved;
+        value
+    }
+
+    /// The counter group a row belongs to and its contribution (1, or the `sum` expression), or
+    /// `None` if the counter's predicate excludes it.
+    fn group(&mut self, counter: &'a Counter, row: &Row) -> R<Option<(Vec<Value>, i64)>> {
+        if let Some(predicate) = &counter.filter
+            && self.eval_on_row(predicate.var, &predicate.expr, row)? != Value::Bool(true)
+        {
+            return Ok(None);
         }
-        Ok(Some(
-            counter
-                .group_by
-                .iter()
-                .map(|f| row.get(f).cloned().unwrap_or_default())
-                .collect(),
-        ))
+        let amount = match &counter.sum {
+            None => 1,
+            Some(sum) => match self.eval_on_row(sum.var, &sum.expr, row)? {
+                Value::Int(i) => i,
+                Value::Null => 0,
+                other => {
+                    return Err(runtime(format!(
+                        "counter sum must be an int, got {}",
+                        other.type_name()
+                    )));
+                }
+            },
+        };
+        let group = counter
+            .group_by
+            .iter()
+            .map(|f| row.get(f).cloned().unwrap_or_default())
+            .collect();
+        Ok(Some((group, amount)))
     }
 
     fn bump(&mut self, counter: &str, group: &[Value], delta: i64) -> R<()> {
@@ -575,6 +827,17 @@ impl<'a> Exec<'a> {
         }
     }
 
+    fn eval_string(&mut self, expr: &'a Expr) -> R<String> {
+        match self.eval(expr)? {
+            Value::String(s) => Ok(s),
+            Value::Null => Ok(String::new()),
+            other => Err(runtime(format!(
+                "expected string, got {}",
+                other.type_name()
+            ))),
+        }
+    }
+
     fn eval_int(&mut self, expr: &'a Expr) -> R<i64> {
         match self.eval(expr)? {
             Value::Int(i) => Ok(i),
@@ -606,6 +869,7 @@ impl<'a> Exec<'a> {
                     InputSource::Params => &self.inputs.params,
                     InputSource::Query => &self.inputs.query,
                     InputSource::Body => &self.inputs.body,
+                    InputSource::Payload => &self.inputs.payload,
                 };
                 inputs.get(name).cloned().unwrap_or_default()
             }
@@ -699,6 +963,31 @@ impl<'a> Exec<'a> {
                 };
                 Value::Int(i64::try_from(len).unwrap_or(i64::MAX))
             }
+            Expr::Str { op, of } => {
+                let text = self.eval_string(of)?;
+                Value::String(match op {
+                    StrOp::Lower => text.to_lowercase(),
+                    StrOp::Upper => text.to_uppercase(),
+                    StrOp::Trim => text.trim().to_owned(),
+                })
+            }
+            Expr::StrTest { op, of, arg } => {
+                let (text, other) = (self.eval_string(of)?, self.eval_string(arg)?);
+                Value::Bool(match op {
+                    StrTest::StartsWith => text.starts_with(&other),
+                    StrTest::EndsWith => text.ends_with(&other),
+                    StrTest::Contains => text.contains(&other),
+                })
+            }
+            Expr::Truncate { of, max } => {
+                let text = self.eval_string(of)?;
+                Value::String(text.chars().take(*max as usize).collect())
+            }
+            Expr::Abs { arg } => Value::Int(
+                self.eval_int(arg)?
+                    .checked_abs()
+                    .ok_or_else(|| runtime("integer overflow"))?,
+            ),
             Expr::Concat { parts } => {
                 let mut out = String::new();
                 for part in parts {
@@ -790,4 +1079,30 @@ fn decode_counter(bytes: &[u8]) -> R<i64> {
         .ok()
         .and_then(|s| s.parse().ok())
         .ok_or_else(|| runtime("corrupt counter value"))
+}
+
+/// Validates an integration's raw output against the declared output fields.
+fn validate_output(
+    fields: &BTreeMap<String, Field>,
+    output: serde_json::Value,
+    integration: &str,
+    operation: &str,
+) -> Result<Value, String> {
+    let serde_json::Value::Object(mut object) = output else {
+        return Err(format!(
+            "{integration}.{operation} returned something other than an object"
+        ));
+    };
+    let mut out = BTreeMap::new();
+    for (name, field) in fields {
+        let value = match object.remove(name) {
+            Some(json) => Value::from_json(json)
+                .map_err(|e| format!("{integration}.{operation} output {name}: {e}"))?,
+            None => Value::Null,
+        };
+        check_value(field, &value)
+            .map_err(|e| format!("{integration}.{operation} output {name}: {e}"))?;
+        out.insert(name.clone(), value);
+    }
+    Ok(Value::Object(out))
 }

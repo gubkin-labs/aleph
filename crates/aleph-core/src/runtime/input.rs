@@ -24,6 +24,8 @@ pub(crate) struct Inputs {
     pub(crate) params: BTreeMap<String, Value>,
     pub(crate) query: BTreeMap<String, Value>,
     pub(crate) body: BTreeMap<String, Value>,
+    /// A handler's payload.
+    pub(crate) payload: BTreeMap<String, Value>,
 }
 
 /// Decodes string inputs (path params, query string) according to their declared fields.

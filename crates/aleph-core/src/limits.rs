@@ -20,6 +20,12 @@ pub struct Limits {
     /// Maximum bytes read from storage.
     #[cfg_attr(feature = "codegen", ts(type = "number"))]
     pub bytes_read: u64,
+    /// Maximum effects (events, jobs, messages, sends, change triggers) released.
+    #[cfg_attr(feature = "codegen", ts(type = "number"))]
+    pub effects: u64,
+    /// Maximum integration calls.
+    #[cfg_attr(feature = "codegen", ts(type = "number"))]
+    pub calls: u64,
     /// Maximum encoded size of a single row.
     #[cfg_attr(feature = "codegen", ts(type = "number"))]
     pub max_row_bytes: u64,
@@ -34,6 +40,20 @@ impl Limits {
         writes: 50,
         ops: 2_000,
         bytes_read: 2 * 1024 * 1024,
+        effects: 50,
+        calls: 3,
+        max_row_bytes: 64 * 1024,
+        max_conflict_retries: 5,
+    };
+
+    /// The v1 limits for handlers: queue jobs, triggers, and cron runs (one scan batch each).
+    pub const JOB: Self = Self {
+        reads: 500,
+        writes: 200,
+        ops: 5_000,
+        bytes_read: 8 * 1024 * 1024,
+        effects: 200,
+        calls: 5,
         max_row_bytes: 64 * 1024,
         max_conflict_retries: 5,
     };
@@ -55,11 +75,20 @@ pub enum Resource {
     Writes,
     Ops,
     BytesRead,
+    Effects,
+    Calls,
 }
 
 impl Resource {
     /// All resources, in reporting order.
-    pub const ALL: [Self; 4] = [Self::Reads, Self::Writes, Self::Ops, Self::BytesRead];
+    pub const ALL: [Self; 6] = [
+        Self::Reads,
+        Self::Writes,
+        Self::Ops,
+        Self::BytesRead,
+        Self::Effects,
+        Self::Calls,
+    ];
 
     /// The resource's limit.
     pub fn limit(self, limits: &Limits) -> u64 {
@@ -68,6 +97,8 @@ impl Resource {
             Self::Writes => limits.writes,
             Self::Ops => limits.ops,
             Self::BytesRead => limits.bytes_read,
+            Self::Effects => limits.effects,
+            Self::Calls => limits.calls,
         }
     }
 }
@@ -79,6 +110,8 @@ impl std::fmt::Display for Resource {
             Self::Writes => "writes",
             Self::Ops => "ops",
             Self::BytesRead => "bytes read",
+            Self::Effects => "effects",
+            Self::Calls => "integration calls",
         })
     }
 }
@@ -100,18 +133,32 @@ pub struct Cost {
     /// Bytes read from storage.
     #[cfg_attr(feature = "codegen", ts(type = "number"))]
     pub bytes_read: u64,
+    /// Effects released.
+    #[cfg_attr(feature = "codegen", ts(type = "number"))]
+    pub effects: u64,
+    /// Integration calls.
+    #[cfg_attr(feature = "codegen", ts(type = "number"))]
+    pub calls: u64,
 }
 
 impl Cost {
     /// The cost of evaluating `n` plan operations.
     pub const fn ops(n: u64) -> Self {
         Self {
-            reads: 0,
-            writes: 0,
             ops: n,
-            bytes_read: 0,
+            ..Self::ZERO
         }
     }
+
+    /// No cost.
+    pub const ZERO: Self = Self {
+        reads: 0,
+        writes: 0,
+        ops: 0,
+        bytes_read: 0,
+        effects: 0,
+        calls: 0,
+    };
 
     /// The amount of one resource.
     pub fn get(&self, resource: Resource) -> u64 {
@@ -120,6 +167,8 @@ impl Cost {
             Resource::Writes => self.writes,
             Resource::Ops => self.ops,
             Resource::BytesRead => self.bytes_read,
+            Resource::Effects => self.effects,
+            Resource::Calls => self.calls,
         }
     }
 
@@ -131,6 +180,8 @@ impl Cost {
             writes: self.writes.saturating_add(other.writes),
             ops: self.ops.saturating_add(other.ops),
             bytes_read: self.bytes_read.saturating_add(other.bytes_read),
+            effects: self.effects.saturating_add(other.effects),
+            calls: self.calls.saturating_add(other.calls),
         }
     }
 
@@ -142,6 +193,8 @@ impl Cost {
             writes: self.writes.max(other.writes),
             ops: self.ops.max(other.ops),
             bytes_read: self.bytes_read.max(other.bytes_read),
+            effects: self.effects.max(other.effects),
+            calls: self.calls.max(other.calls),
         }
     }
 
@@ -153,6 +206,8 @@ impl Cost {
             writes: self.writes.saturating_mul(n),
             ops: self.ops.saturating_mul(n),
             bytes_read: self.bytes_read.saturating_mul(n),
+            effects: self.effects.saturating_mul(n),
+            calls: self.calls.saturating_mul(n),
         }
     }
 

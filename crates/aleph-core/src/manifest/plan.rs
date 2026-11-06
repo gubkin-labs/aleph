@@ -90,7 +90,7 @@ impl Order {
 /// An operation. Operations are the only way a plan touches storage.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
-#[serde(tag = "op", rename_all = "camelCase")]
+#[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[serde(deny_unknown_fields)]
 pub enum Op {
     /// Read one row by its full primary key. Evaluates to the row or `null`.
@@ -198,6 +198,51 @@ pub enum Op {
         /// The predicate.
         keep: Expr,
     },
+    /// Emit an event. Released after commit.
+    Emit {
+        /// The event.
+        event: String,
+        /// Payload values.
+        payload: BTreeMap<String, Expr>,
+    },
+    /// Put a job on a queue, optionally delayed (at most 30 days). Released after commit.
+    Enqueue {
+        /// The queue.
+        queue: String,
+        /// Payload values.
+        payload: BTreeMap<String, Expr>,
+        /// Delay in milliseconds.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        delay_ms: Option<Box<Expr>>,
+    },
+    /// Publish a message to a realtime channel. Released after commit.
+    Publish {
+        /// The channel.
+        channel: String,
+        /// Values for the channel's key fields.
+        key: BTreeMap<String, Expr>,
+        /// Message values.
+        message: BTreeMap<String, Expr>,
+    },
+    /// Run an integration call and evaluate to its (validated) output. Journaled.
+    Call {
+        /// The integration.
+        integration: String,
+        /// The operation (mode `call`).
+        operation: String,
+        /// Input values.
+        input: BTreeMap<String, Expr>,
+    },
+    /// Send an integration effect. Released after commit.
+    Send {
+        /// The integration.
+        integration: String,
+        /// The operation (mode `effect`).
+        operation: String,
+        /// Input values.
+        input: BTreeMap<String, Expr>,
+    },
     /// Evaluate a pure expression.
     Eval {
         /// The expression.
@@ -206,6 +251,14 @@ pub enum Op {
 }
 
 impl Op {
+    /// Whether the operation produces an effect released after commit.
+    pub fn is_effect(&self) -> bool {
+        matches!(
+            self,
+            Self::Emit { .. } | Self::Enqueue { .. } | Self::Publish { .. } | Self::Send { .. }
+        )
+    }
+
     /// Whether the operation writes to storage.
     pub fn is_write(&self) -> bool {
         matches!(

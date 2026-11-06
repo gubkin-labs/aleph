@@ -12,15 +12,22 @@ use crate::limits::Cost;
 use crate::manifest::{Auth, Method};
 use crate::store::{CommitError, Store};
 
+mod effects;
 mod env;
 mod exec;
 mod input;
 mod meter;
+mod process;
 
+pub use effects::{
+    Delivery, DeliveryKind, Integrations, MemorySink, MockIntegrations, NoIntegrations, NullSink,
+    RecordedCall, Sink,
+};
 #[cfg(not(target_arch = "wasm32"))]
 pub use env::SystemEnv;
 pub use env::{Env, FixedEnv};
 pub use input::InputProblem;
+pub use process::ProcessReport;
 
 use exec::{Exec, ExecError};
 use input::Inputs;
@@ -51,6 +58,10 @@ pub struct Request {
     #[serde(default)]
     #[cfg_attr(feature = "codegen", ts(optional))]
     pub caller: Option<Caller>,
+    /// The client's IP address, for rate limits.
+    #[serde(default)]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub ip: Option<String>,
     /// The client's idempotency key (from the `Idempotency-Key` header), if any.
     #[serde(default)]
     #[cfg_attr(feature = "codegen", ts(optional))]
@@ -195,8 +206,44 @@ pub struct Engine {
     manifest: Arc<ValidatedManifest>,
     store: Arc<dyn Store>,
     env: Arc<dyn Env>,
+    sink: Arc<dyn Sink>,
+    integrations: Arc<dyn Integrations>,
     patterns: Vec<RoutePattern>,
     limits: crate::limits::Limits,
+    rate_limiter: RateLimiter,
+}
+
+/// Fixed-window rate limit counters, in memory. On the platform, rate limits are enforced at the
+/// edge before requests reach an engine; this keeps a single engine (and `aleph dev`) faithful.
+#[derive(Debug, Default)]
+struct RateLimiter {
+    counts: std::sync::Mutex<HashMap<(String, String, String, i64), u32>>,
+}
+
+impl RateLimiter {
+    /// Counts a call. `Err` carries how long until the window resets.
+    fn hit(
+        &self,
+        key: (String, String, String),
+        limit: crate::manifest::RateLimit,
+        now: i64,
+    ) -> Result<(), i64> {
+        let window_ms = i64::from(limit.window_ms);
+        let window = now.div_euclid(window_ms);
+        let mut counts = self
+            .counts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if counts.len() > 10_000 {
+            counts.retain(|(_, _, _, w), _| *w >= window - 1);
+        }
+        let count = counts.entry((key.0, key.1, key.2, window)).or_insert(0);
+        if *count >= limit.max {
+            return Err((window + 1) * window_ms - now);
+        }
+        *count += 1;
+        Ok(())
+    }
 }
 
 impl std::fmt::Debug for Engine {
@@ -232,9 +279,26 @@ impl Engine {
             manifest: Arc::new(manifest),
             store,
             env,
+            sink: Arc::new(NullSink),
+            integrations: Arc::new(NoIntegrations),
             patterns,
             limits,
+            rate_limiter: RateLimiter::default(),
         }
+    }
+
+    /// Delivers integration sends and channel messages to `sink` (the default discards them).
+    #[must_use]
+    pub fn with_sink(mut self, sink: Arc<dyn Sink>) -> Self {
+        self.sink = sink;
+        self
+    }
+
+    /// Runs integration calls with `integrations` (the default fails every call).
+    #[must_use]
+    pub fn with_integrations(mut self, integrations: Arc<dyn Integrations>) -> Self {
+        self.integrations = integrations;
+        self
     }
 
     /// Runs with tighter runtime limits than the manifest was validated against. The meter then
@@ -302,6 +366,18 @@ impl Engine {
         if let Err(response) = authorize(&route.auth, request.caller.as_ref(), raw_params) {
             return response;
         }
+        if let Some(limit) = route.rate_limit {
+            let subject = rate_subject(limit.per, request);
+            let key = (tenant.as_str().to_owned(), route.id.clone(), subject);
+            if let Err(retry_after_ms) = self.rate_limiter.hit(key, limit, self.env.now_ms()) {
+                return Response::error_with(
+                    429,
+                    "rate_limited",
+                    "too many requests: slow down and retry later",
+                    Some(serde_json::json!({ "retryAfterMs": retry_after_ms })),
+                );
+            }
+        }
         let idempotency = match (route.idempotency, request.idempotency_key.as_deref()) {
             (Some(cfg), None) if cfg.required => {
                 return Response::error(
@@ -350,6 +426,7 @@ impl Engine {
                 now,
                 &mut problems,
             ),
+            payload: BTreeMap::new(),
         };
         if !problems.is_empty() {
             let details = serde_json::to_value(&problems).ok();
@@ -393,13 +470,19 @@ impl Engine {
         let limits = self.limits;
         let max_attempts = limits.max_conflict_retries.saturating_add(1);
         let mut usage = Cost::default();
+        let mut journal = effects::Journal::default();
         for attempt in 1..=max_attempts {
             let mut tx = self.store.begin();
             let mut meter = Meter::new(limits);
+            journal.rewind();
             let response = match attempt_once(&mut *tx, &mut meter, replay, now, |tx, meter| {
-                Exec {
+                let mut exec = Exec {
                     manifest: self.manifest.manifest(),
-                    route,
+                    plan: &route.plan,
+                    tenant: keys.tenant(),
+                    integrations: self.integrations.as_ref(),
+                    journal: &mut journal,
+                    effects: Vec::new(),
                     tx,
                     keys,
                     meter,
@@ -409,8 +492,11 @@ impl Engine {
                     inputs,
                     vars: HashMap::new(),
                     metered: true,
-                }
-                .run()
+                };
+                let value = exec.run()?;
+                let effects = std::mem::take(&mut exec.effects);
+                process::write_outbox(exec.tx, keys, env, now, effects)?;
+                Ok(value)
             }) {
                 Ok(Outcome::Replayed(stored)) => Response {
                     route: None,
@@ -544,6 +630,23 @@ fn fingerprint(inputs: &Inputs) -> String {
     format!("{hash:016x}")
 }
 
+/// Who a rate-limited call counts for.
+fn rate_subject(per: crate::manifest::RateSubject, request: &Request) -> String {
+    use crate::manifest::RateSubject;
+    let ip = || format!("ip:{}", request.ip.as_deref().unwrap_or("unknown"));
+    let caller = request.caller.as_ref();
+    match per {
+        RateSubject::Global => "*".to_owned(),
+        RateSubject::Ip => ip(),
+        RateSubject::User => caller
+            .and_then(|c| c.user_id.clone())
+            .map_or_else(ip, |u| format!("user:{u}")),
+        RateSubject::ApiKey => caller
+            .and_then(|c| c.api_key.as_ref())
+            .map_or_else(ip, |k| format!("key:{}", k.org_id)),
+    }
+}
+
 /// Enforces a route's auth rule. The caller's identity is already authenticated by the platform.
 fn authorize(
     auth: &Auth,
@@ -601,6 +704,12 @@ fn error_response(route: &crate::manifest::Route, error: ExecError) -> Response 
         },
         ExecError::OverBudget(e) => Response::error(500, "budget_exceeded", e.to_string()),
         ExecError::BadInput(message) => Response::error(400, "invalid_input", message),
+        ExecError::CallFailed(message) => Response::error(502, "integration_error", message),
+        ExecError::Invariant(name) => Response::error(
+            422,
+            "invariant_violation",
+            format!("this change would break the invariant {name}"),
+        ),
         ExecError::KeyReused => Response::error(
             422,
             "idempotency_key_reused",

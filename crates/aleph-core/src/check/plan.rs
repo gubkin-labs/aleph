@@ -11,7 +11,8 @@ use super::{EntityInfo, Ty, unknown_entity, unknown_field};
 use crate::diagnostics::{Diagnostic, DiagnosticCode as Code};
 use crate::limits::Cost;
 use crate::manifest::{
-    BinaryOp, Entity, Expr, InputSource, Manifest, Op, Route, RowPredicate, Stmt, VarId,
+    BinaryOp, Change, Entity, ErrorDecl, Expr, Field, Handler, Input, InputSource, Manifest, Op,
+    OpMode, Route, RowPredicate, Stmt, Trigger, VarId,
 };
 
 /// The match case that catches every other value.
@@ -25,7 +26,9 @@ pub(crate) fn check_route(
     path: &str,
     diags: &mut Vec<Diagnostic>,
 ) -> Cost {
-    let mut checker = Checker::new(m, infos, Some(route), diags);
+    let mut checker = Checker::new(m, infos, diags);
+    checker.errors = Some(&route.errors);
+    checker.input = Some(&route.input);
     let plan_path = format!("{path}.plan");
     checker.scopes.push(HashMap::new());
     let mut cost = Cost::default();
@@ -36,16 +39,62 @@ pub(crate) fn check_route(
     cost + output_cost
 }
 
+/// Checks a handler's plan against its payload and returns its worst-case cost.
+pub(crate) fn check_handler(
+    m: &Manifest,
+    infos: &BTreeMap<String, EntityInfo>,
+    handler: &Handler,
+    payload: BTreeMap<String, Ty>,
+    path: &str,
+    diags: &mut Vec<Diagnostic>,
+) -> Cost {
+    let mut checker = Checker::new(m, infos, diags);
+    checker.errors = Some(&handler.errors);
+    checker.payload = Some(payload);
+    let plan_path = format!("{path}.plan");
+    checker.scopes.push(HashMap::new());
+    let mut cost = Cost::default();
+    for (i, stmt) in handler.plan.body.iter().enumerate() {
+        cost += checker.stmt(stmt, &format!("{plan_path}.body[{i}]"), false);
+    }
+    let (_, output_cost) = checker.expr(&handler.plan.output, &format!("{plan_path}.output"));
+    cost + output_cost
+}
+
+/// How many handlers react to a change of an entity's rows.
+pub(crate) fn change_handlers(m: &Manifest, entity: &str, change: Change) -> u64 {
+    m.handlers
+        .iter()
+        .filter(|h| matches!(&h.trigger, Trigger::Entity { entity: e, change: c } if e == entity && *c == change))
+        .count() as u64
+}
+
+/// How many handlers react to an event.
+pub(crate) fn event_handlers(m: &Manifest, event: &str) -> u64 {
+    m.handlers
+        .iter()
+        .filter(|h| matches!(&h.trigger, Trigger::Event { event: e } if e == event))
+        .count() as u64
+}
+
 /// Checks a counter's `where` predicate: a pure boolean expression over one row.
+/// What a row expression must evaluate to.
+#[derive(Clone, Copy)]
+pub(crate) enum RowExprKind {
+    Bool,
+    Int,
+}
+
 pub(crate) fn check_row_predicate(
     m: &Manifest,
     entity: &str,
     predicate: &RowPredicate,
     path: &str,
+    kind: RowExprKind,
     diags: &mut Vec<Diagnostic>,
 ) {
     let infos = BTreeMap::new();
-    let mut checker = Checker::new(m, &infos, None, diags);
+    let mut checker = Checker::new(m, &infos, diags);
     checker.scopes.push(HashMap::new());
     checker.bind(predicate.var, Ty::Row(entity.to_owned()), path);
     let expr_path = format!("{path}.expr");
@@ -53,12 +102,14 @@ pub(crate) fn check_row_predicate(
         checker.diag(
             Code::InvalidPredicate,
             &expr_path,
-            format!("a counter predicate must depend only on the row, but it uses {problem}"),
+            format!("a row expression must depend only on the row, but it uses {problem}"),
         );
     }
     let (ty, _) = checker.expr(&predicate.expr, &expr_path);
-    if !ty.is_boolish() {
-        checker.type_mismatch(&expr_path, "bool", &ty);
+    match kind {
+        RowExprKind::Bool if !ty.is_boolish() => checker.type_mismatch(&expr_path, "bool", &ty),
+        RowExprKind::Int if !ty.is_intish() => checker.type_mismatch(&expr_path, "int", &ty),
+        _ => {}
     }
 }
 
@@ -72,10 +123,16 @@ fn impurity(expr: &Expr) -> Option<&'static str> {
         Expr::Field { of, .. }
         | Expr::IsNull { of }
         | Expr::Length { of }
+        | Expr::Str { of, .. }
+        | Expr::Truncate { of, .. }
+        | Expr::Abs { arg: of }
         | Expr::Not { arg: of }
         | Expr::Neg { arg: of }
         | Expr::In { value: of, .. } => impurity(of),
-        Expr::Binary { lhs, rhs, .. } => impurity(lhs).or_else(|| impurity(rhs)),
+        Expr::Binary { lhs, rhs, .. }
+        | Expr::StrTest {
+            of: lhs, arg: rhs, ..
+        } => impurity(lhs).or_else(|| impurity(rhs)),
         Expr::Select {
             cond,
             then,
@@ -92,7 +149,12 @@ fn impurity(expr: &Expr) -> Option<&'static str> {
 struct Checker<'a> {
     m: &'a Manifest,
     infos: &'a BTreeMap<String, EntityInfo>,
-    route: Option<&'a Route>,
+    /// Errors the plan may fail with (a route's or a handler's).
+    errors: Option<&'a BTreeMap<String, ErrorDecl>>,
+    /// A route's inputs.
+    input: Option<&'a Input>,
+    /// A handler's payload types.
+    payload: Option<BTreeMap<String, Ty>>,
     diags: &'a mut Vec<Diagnostic>,
     scopes: Vec<HashMap<VarId, Ty>>,
     /// Every variable defined anywhere in the plan. Ids are unique per plan, even across
@@ -104,13 +166,14 @@ impl<'a> Checker<'a> {
     fn new(
         m: &'a Manifest,
         infos: &'a BTreeMap<String, EntityInfo>,
-        route: Option<&'a Route>,
         diags: &'a mut Vec<Diagnostic>,
     ) -> Self {
         Self {
             m,
             infos,
-            route,
+            errors: None,
+            input: None,
+            payload: None,
             diags,
             scopes: Vec::new(),
             defined: HashSet::new(),
@@ -222,11 +285,11 @@ impl<'a> Checker<'a> {
     }
 
     fn error_ref(&mut self, name: &str, path: &str) {
-        let declared = self.route.is_some_and(|r| r.errors.contains_key(name));
+        let declared = self.errors.is_some_and(|errors| errors.contains_key(name));
         if !declared {
             let known: Vec<&str> = self
-                .route
-                .map(|r| r.errors.keys().map(String::as_str).collect())
+                .errors
+                .map(|errors| errors.keys().map(String::as_str).collect())
                 .unwrap_or_default();
             self.diag(
                 Code::UnknownError,
@@ -260,12 +323,24 @@ impl<'a> Checker<'a> {
         reason = "one arm per operation; each arm delegates"
     )]
     fn op(&mut self, op: &Op, path: &str, pure: bool) -> (Ty, Cost) {
-        if pure && op.is_write() {
+        if pure && (op.is_write() || op.is_effect()) {
             self.diag(
                 Code::WriteInPureBlock,
                 path,
                 "map and filter bodies may read but never write, so writes can't hide inside a transform. \
                  Compute the values with map, then write them with forEach.",
+            );
+        }
+        if let Op::Update { entity, .. } | Op::Upsert { entity, .. } | Op::Delete { entity, .. } =
+            op
+            && self.m.entities.get(entity).is_some_and(|e| !e.mutable)
+        {
+            self.diag(
+                Code::ImmutableEntity,
+                path,
+                format!(
+                    "{entity} is append-only: rows can be inserted, but not updated or deleted"
+                ),
             );
         }
         let own = Cost::ops(1);
@@ -283,15 +358,21 @@ impl<'a> Checker<'a> {
                 (Ty::OptRow(entity.clone()), own + key_cost + read)
             }
             Op::Insert { entity, values } => {
-                let (ty, cost) = self.insert(entity, values, path, 1);
+                let (ty, cost) = self.insert(entity, values, path, 1, &[Change::Inserted]);
                 (ty, own + cost)
             }
             Op::Upsert { entity, values } => {
-                let (ty, cost) = self.insert(entity, values, path, 2);
+                let (ty, cost) = self.insert(
+                    entity,
+                    values,
+                    path,
+                    2,
+                    &[Change::Inserted, Change::Updated],
+                );
                 (ty, own + cost)
             }
             Op::InsertIfAbsent { entity, values } => {
-                let (_, cost) = self.insert(entity, values, path, 1);
+                let (_, cost) = self.insert(entity, values, path, 1, &[Change::Inserted]);
                 (Ty::Bool, own + cost)
             }
             Op::Update { entity, key, set } => {
@@ -302,8 +383,9 @@ impl<'a> Checker<'a> {
                 let Some(e) = self.entity(entity, &format!("{path}.entity")) else {
                     return (Ty::Unknown, own);
                 };
-                let cost =
-                    own + self.key_map(e, key, &format!("{path}.key")) + self.write_cost(entity, 1);
+                let cost = own
+                    + self.key_map(e, key, &format!("{path}.key"))
+                    + self.write_cost(entity, 1, &[Change::Deleted]);
                 (Ty::Null, cost)
             }
             Op::Query {
@@ -388,6 +470,166 @@ impl<'a> Checker<'a> {
                     own + list_cost + per_item.times(max),
                 )
             }
+            Op::Emit { event, payload } => {
+                let cost = match self.m.events.get(event) {
+                    Some(decl) => {
+                        self.values(&decl.payload, payload, &format!("{path}.payload"), false)
+                    }
+                    None => {
+                        self.unknown(
+                            Code::UnknownEvent,
+                            &format!("{path}.event"),
+                            "event",
+                            event,
+                            self.m.events.keys(),
+                        );
+                        Cost::default()
+                    }
+                };
+                let effects = Cost {
+                    effects: event_handlers(self.m, event),
+                    ..Cost::ZERO
+                };
+                (Ty::Null, own + cost + effects)
+            }
+            Op::Enqueue {
+                queue,
+                payload,
+                delay_ms,
+            } => {
+                let mut cost = match self.m.queues.get(queue) {
+                    Some(decl) => {
+                        self.values(&decl.payload, payload, &format!("{path}.payload"), false)
+                    }
+                    None => {
+                        self.unknown(
+                            Code::UnknownQueue,
+                            &format!("{path}.queue"),
+                            "queue",
+                            queue,
+                            self.m.queues.keys(),
+                        );
+                        Cost::default()
+                    }
+                };
+                if let Some(delay) = delay_ms {
+                    let (ty, delay_cost) = self.expr(delay, &format!("{path}.delayMs"));
+                    if !ty.is_intish() {
+                        self.type_mismatch(&format!("{path}.delayMs"), "int", &ty);
+                    }
+                    cost += delay_cost;
+                }
+                (
+                    Ty::Null,
+                    own + cost
+                        + Cost {
+                            effects: 1,
+                            ..Cost::ZERO
+                        },
+                )
+            }
+            Op::Publish {
+                channel,
+                key,
+                message,
+            } => {
+                let cost = match self.m.channels.get(channel) {
+                    Some(decl) => {
+                        self.values(&decl.key, key, &format!("{path}.key"), true)
+                            + self.values(&decl.message, message, &format!("{path}.message"), false)
+                    }
+                    None => {
+                        self.unknown(
+                            Code::UnknownChannel,
+                            &format!("{path}.channel"),
+                            "channel",
+                            channel,
+                            self.m.channels.keys(),
+                        );
+                        Cost::default()
+                    }
+                };
+                (
+                    Ty::Null,
+                    own + cost
+                        + Cost {
+                            effects: 1,
+                            ..Cost::ZERO
+                        },
+                )
+            }
+            Op::Call {
+                integration,
+                operation,
+                input,
+            }
+            | Op::Send {
+                integration,
+                operation,
+                input,
+            } => {
+                let call = matches!(op, Op::Call { .. });
+                let (mode, expected) = if call {
+                    (OpMode::Call, "call")
+                } else {
+                    (OpMode::Effect, "effect")
+                };
+                let Some(decl) = self.m.integrations.get(integration) else {
+                    self.unknown(
+                        Code::UnknownIntegration,
+                        &format!("{path}.integration"),
+                        "integration",
+                        integration,
+                        self.m.integrations.keys(),
+                    );
+                    return (Ty::Unknown, own);
+                };
+                let Some(op_decl) = decl.operations.get(operation) else {
+                    self.unknown(
+                        Code::UnknownOperation,
+                        &format!("{path}.operation"),
+                        "operation",
+                        operation,
+                        decl.operations.keys(),
+                    );
+                    return (Ty::Unknown, own);
+                };
+                if op_decl.mode != mode {
+                    self.diag(
+                        Code::UnknownOperation,
+                        &format!("{path}.operation"),
+                        format!(
+                            "{integration}.{operation} isn't a {expected} operation; use {}",
+                            if call { "send" } else { "call" }
+                        ),
+                    );
+                }
+                let cost = self.values(&op_decl.input, input, &format!("{path}.input"), false);
+                if call {
+                    let output = op_decl
+                        .output
+                        .iter()
+                        .map(|(n, f)| (n.clone(), Ty::from_field_type(&f.ty)))
+                        .collect();
+                    (
+                        Ty::Object(output),
+                        own + cost
+                            + Cost {
+                                calls: 1,
+                                ..Cost::ZERO
+                            },
+                    )
+                } else {
+                    (
+                        Ty::Null,
+                        own + cost
+                            + Cost {
+                                effects: 1,
+                                ..Cost::ZERO
+                            },
+                    )
+                }
+            }
             Op::Eval { expr } => {
                 let (ty, cost) = self.expr(expr, &format!("{path}.expr"));
                 (ty, own + cost)
@@ -402,11 +644,12 @@ impl<'a> Checker<'a> {
         values: &BTreeMap<String, Expr>,
         path: &str,
         per_index: u64,
+        changes: &[Change],
     ) -> (Ty, Cost) {
         let Some(e) = self.entity(entity, &format!("{path}.entity")) else {
             return (Ty::Unknown, Cost::default());
         };
-        let mut cost = self.write_cost(entity, per_index);
+        let mut cost = self.write_cost(entity, per_index, changes);
         for (name, value) in values {
             let value_path = format!("{path}.values.{name}");
             if !e.fields.contains_key(name) {
@@ -445,7 +688,8 @@ impl<'a> Checker<'a> {
         let Some(e) = self.entity(entity, &format!("{path}.entity")) else {
             return (Ty::Unknown, Cost::default());
         };
-        let mut cost = self.key_map(e, key, &format!("{path}.key")) + self.write_cost(entity, 2);
+        let mut cost = self.key_map(e, key, &format!("{path}.key"))
+            + self.write_cost(entity, 2, &[Change::Updated]);
         for (name, value) in set {
             let value_path = format!("{path}.set.{name}");
             if !e.fields.contains_key(name) {
@@ -574,6 +818,57 @@ impl<'a> Checker<'a> {
         cost
     }
 
+    /// Checks values given for declared fields: no unknown names, and every required field (or,
+    /// with `exact`, every field) present.
+    fn values(
+        &mut self,
+        fields: &BTreeMap<String, Field>,
+        given: &BTreeMap<String, Expr>,
+        path: &str,
+        exact: bool,
+    ) -> Cost {
+        let mut cost = Cost::default();
+        for (name, value) in given {
+            let value_path = format!("{path}.{name}");
+            if !fields.contains_key(name) {
+                let known: Vec<&String> = fields.keys().collect();
+                self.diag(
+                    Code::InvalidPayload,
+                    &value_path,
+                    format!("unknown field {name:?} (fields: {known:?})"),
+                );
+            }
+            cost += self.expr(value, &value_path).1;
+        }
+        for (name, field) in fields {
+            let required = exact || (!field.optional && field.default.is_none());
+            if required && !given.contains_key(name) {
+                self.diag(
+                    Code::InvalidPayload,
+                    path,
+                    format!("missing field {name:?}"),
+                );
+            }
+        }
+        cost
+    }
+
+    fn unknown<'k>(
+        &mut self,
+        code: Code,
+        path: &str,
+        what: &str,
+        name: &str,
+        known: impl Iterator<Item = &'k String>,
+    ) {
+        let known: Vec<&String> = known.collect();
+        self.diag(
+            code,
+            path,
+            format!("unknown {what} {name:?} (declared: {known:?})"),
+        );
+    }
+
     fn row_bytes(&self, entity: &str) -> u64 {
         self.infos.get(entity).map_or(0, |info| info.row_bytes)
     }
@@ -581,15 +876,22 @@ impl<'a> Checker<'a> {
     /// Worst-case cost of one row write. Every write first reads the row it replaces (to keep
     /// indexes and counters consistent), and `per_index` is 2 for updates, which may move an index
     /// entry (delete + insert) or move a row between counter groups.
-    fn write_cost(&self, entity: &str, per_index: u64) -> Cost {
+    /// The write also releases one effect per handler of each change it may make.
+    fn write_cost(&self, entity: &str, per_index: u64, changes: &[Change]) -> Cost {
         let writes = self.infos.get(entity).map_or(1, |info| {
             1 + per_index * info.index_count + per_index * info.counter_count
         });
+        let effects = changes
+            .iter()
+            .map(|c| change_handlers(self.m, entity, *c))
+            .max()
+            .unwrap_or(0);
         Cost {
             reads: 1,
             writes,
             bytes_read: self.row_bytes(entity),
-            ops: 0,
+            effects,
+            ..Cost::ZERO
         }
     }
 
@@ -635,13 +937,23 @@ impl<'a> Checker<'a> {
                 }
             },
             Expr::Input { source, name } => {
-                let fields = self.route.map(|r| match source {
-                    InputSource::Params => &r.input.params,
-                    InputSource::Query => &r.input.query,
-                    InputSource::Body => &r.input.body,
-                });
-                match fields.and_then(|f| f.get(name)) {
-                    Some(field) => (Ty::from_field_type(&field.ty), own),
+                let ty = match source {
+                    InputSource::Payload => {
+                        self.payload.as_ref().and_then(|p| p.get(name)).cloned()
+                    }
+                    InputSource::Params | InputSource::Query | InputSource::Body => {
+                        self.input.and_then(|input| {
+                            let fields = match source {
+                                InputSource::Params => &input.params,
+                                InputSource::Query => &input.query,
+                                _ => &input.body,
+                            };
+                            fields.get(name).map(|field| Ty::from_field_type(&field.ty))
+                        })
+                    }
+                };
+                match ty {
+                    Some(ty) => (ty, own),
                     None => {
                         self.diag(
                             Code::UnknownInput,
@@ -703,7 +1015,7 @@ impl<'a> Checker<'a> {
             }
             Expr::IsNull { of } => (Ty::Bool, own + self.expr(of, &format!("{path}.of")).1),
             Expr::Not { arg } => (Ty::Bool, own + self.condition(arg, &format!("{path}.arg"))),
-            Expr::Neg { arg } => {
+            Expr::Neg { arg } | Expr::Abs { arg } => {
                 let (ty, cost) = self.expr(arg, &format!("{path}.arg"));
                 if !ty.is_intish() {
                     self.type_mismatch(&format!("{path}.arg"), "int", &ty);
@@ -801,6 +1113,15 @@ impl<'a> Checker<'a> {
                 };
                 (Ty::Int { max }, own + cost)
             }
+            Expr::Str { of, .. } | Expr::Truncate { of, .. } => (
+                Ty::String,
+                own + self.string_operand(of, &format!("{path}.of")),
+            ),
+            Expr::StrTest { of, arg, .. } => {
+                let cost = self.string_operand(of, &format!("{path}.of"))
+                    + self.string_operand(arg, &format!("{path}.arg"));
+                (Ty::Bool, own + cost)
+            }
             Expr::Concat { parts } => {
                 let mut cost = own;
                 for (i, part) in parts.iter().enumerate() {
@@ -809,6 +1130,14 @@ impl<'a> Checker<'a> {
                 (Ty::String, cost)
             }
         }
+    }
+
+    fn string_operand(&mut self, expr: &Expr, path: &str) -> Cost {
+        let (ty, cost) = self.expr(expr, path);
+        if !matches!(ty, Ty::String | Ty::Enum(_) | Ty::Unknown | Ty::Null) {
+            self.type_mismatch(path, "string", &ty);
+        }
+        cost
     }
 
     fn match_expr(&mut self, on: &Expr, cases: &BTreeMap<String, Expr>, path: &str) -> (Ty, Cost) {

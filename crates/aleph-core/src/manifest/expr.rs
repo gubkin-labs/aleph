@@ -30,6 +30,8 @@ pub enum InputSource {
     Params,
     Query,
     Body,
+    /// A handler's payload.
+    Payload,
 }
 
 /// Binary operators.
@@ -62,6 +64,28 @@ impl BinaryOp {
             Self::Eq | Self::Neq | Self::Lt | Self::Lte | Self::Gt | Self::Gte
         )
     }
+}
+
+/// String transformations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+#[allow(missing_docs)]
+pub enum StrOp {
+    Lower,
+    Upper,
+    Trim,
+}
+
+/// String tests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+#[allow(missing_docs)]
+pub enum StrTest {
+    StartsWith,
+    EndsWith,
+    Contains,
 }
 
 /// An expression.
@@ -165,6 +189,34 @@ pub enum Expr {
     Length {
         /// The list or string.
         of: Box<Expr>,
+    },
+    /// A string transformation.
+    Str {
+        /// The transformation.
+        op: StrOp,
+        /// The string.
+        of: Box<Expr>,
+    },
+    /// A string test, such as `startsWith`.
+    StrTest {
+        /// The test.
+        op: StrTest,
+        /// The string tested.
+        of: Box<Expr>,
+        /// The other string.
+        arg: Box<Expr>,
+    },
+    /// The first `max` characters of a string.
+    Truncate {
+        /// The string.
+        of: Box<Expr>,
+        /// Maximum length in characters.
+        max: u32,
+    },
+    /// Absolute value of an integer.
+    Abs {
+        /// The operand.
+        arg: Box<Expr>,
     },
     /// String concatenation. Non-string parts are formatted.
     Concat {

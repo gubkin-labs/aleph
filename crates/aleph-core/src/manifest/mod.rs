@@ -13,14 +13,20 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+mod effects;
 mod expr;
 mod plan;
 
-pub use expr::{BinaryOp, Expr, InputSource, Literal};
+pub use effects::{
+    Change, ChannelDecl, CronScan, EventDecl, Handler, Integration, IntegrationOp, OpMode,
+    QueueDecl, Trigger,
+};
+
+pub use expr::{BinaryOp, Expr, InputSource, Literal, StrOp, StrTest};
 pub use plan::{Op, Order, Plan, Stmt, VarId};
 
 /// The manifest format version this crate reads and writes.
-pub const FORMAT_VERSION: &str = "0.1";
+pub const FORMAT_VERSION: &str = "0.2";
 
 /// A complete application manifest.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -44,6 +50,46 @@ pub struct Manifest {
     /// Declared HTTP routes.
     #[serde(default)]
     pub routes: Vec<Route>,
+    /// Declared events, by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, EventDecl>>", optional)
+    )]
+    pub events: BTreeMap<String, EventDecl>,
+    /// Declared queues, by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, QueueDecl>>", optional)
+    )]
+    pub queues: BTreeMap<String, QueueDecl>,
+    /// Declared realtime channels, by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, ChannelDecl>>", optional)
+    )]
+    pub channels: BTreeMap<String, ChannelDecl>,
+    /// Declared integrations, by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, Integration>>", optional)
+    )]
+    pub integrations: BTreeMap<String, Integration>,
+    /// Manifest paths (`routes[2].plan.body[1]`) to source locations (`app.ts:41:5`), for
+    /// diagnostics. Never affects execution.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, String>>", optional)
+    )]
+    pub source_map: BTreeMap<String, String>,
+    /// Asynchronous handlers: triggers, jobs, and schedules.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "codegen", ts(as = "Option<Vec<Handler>>", optional))]
+    pub handlers: Vec<Handler>,
 }
 
 /// Application metadata.
@@ -82,6 +128,30 @@ pub struct Entity {
     /// Secondary indexes, by name.
     #[serde(default)]
     pub indexes: BTreeMap<String, Index>,
+    /// Rules every row must satisfy, by name. Checked on every write; a write that breaks one
+    /// fails the request and rolls back.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, RowPredicate>>", optional)
+    )]
+    pub invariants: BTreeMap<String, RowPredicate>,
+    /// `false` for append-only entities: rows can be inserted but never updated or deleted.
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    #[cfg_attr(feature = "codegen", ts(as = "Option<bool>", optional))]
+    pub mutable: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes by reference"
+)]
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 /// A secondary index over a list of fields.
@@ -186,9 +256,14 @@ pub struct Counter {
     #[serde(default, rename = "where", skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "codegen", ts(optional))]
     pub filter: Option<RowPredicate>,
+    /// Sum this integer expression over the rows instead of counting them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub sum: Option<RowPredicate>,
 }
 
-/// A boolean expression over one row, bound to `var`.
+/// An expression over one row, bound to `var`: a boolean predicate (`where`, invariants) or an
+/// integer (counter `sum`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -218,12 +293,61 @@ pub struct Route {
     /// Declared business errors the plan may fail with, by name.
     #[serde(default)]
     pub errors: BTreeMap<String, ErrorDecl>,
+    /// What the route does, for generated API docs and MCP tools.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub description: Option<String>,
+    /// Exposes the route as an MCP tool with the same inputs, auth, and limits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub mcp: Option<McpTool>,
+    /// Limits how often the route may be called.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub rate_limit: Option<RateLimit>,
     /// Replays successful responses for repeated idempotency keys.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "codegen", ts(optional))]
     pub idempotency: Option<Idempotency>,
     /// The route's logic.
     pub plan: Plan,
+}
+
+/// An MCP tool backed by a route.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct McpTool {
+    /// Tool name, unique within the app.
+    pub name: String,
+}
+
+/// Who a rate limit counts calls for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum RateSubject {
+    /// Each signed-in user (anonymous callers count by IP).
+    User,
+    /// Each client IP.
+    Ip,
+    /// Each API key's org.
+    ApiKey,
+    /// Everyone together.
+    Global,
+}
+
+/// At most `max` calls per subject in each `window_ms` window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RateLimit {
+    /// Who calls are counted for.
+    pub per: RateSubject,
+    /// Calls allowed per window.
+    pub max: u32,
+    /// Window length in milliseconds (1 second to 1 day).
+    pub window_ms: u32,
 }
 
 /// Idempotency settings for a route. A successful response is stored with the request's key in

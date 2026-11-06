@@ -55,7 +55,21 @@ impl Meter {
         self.charge(Cost {
             reads: 1,
             bytes_read: bytes as u64,
-            ..Cost::default()
+            ..Cost::ZERO
+        })
+    }
+
+    pub(crate) fn effect(&mut self) -> Result<(), OverBudget> {
+        self.charge(Cost {
+            effects: 1,
+            ..Cost::ZERO
+        })
+    }
+
+    pub(crate) fn call(&mut self) -> Result<(), OverBudget> {
+        self.charge(Cost {
+            calls: 1,
+            ..Cost::ZERO
         })
     }
 
