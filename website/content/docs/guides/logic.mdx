@@ -3,7 +3,7 @@
 Values in a plan are **expressions**: they only exist when the plan runs. So you use methods instead of operators, and `$` helpers instead of `if` and `for`.
 
 ```ts
-total.plus(tax).gte(100)      // not total + tax >= 100
+subtotal.plus(shipping).gte(100)      // not subtotal + shipping >= 100
 $.fmt`Hello ${user.name}`     // not `Hello ${user.name}`
 ```
 
@@ -34,7 +34,7 @@ lines.some((l) => l.sku.eq("GIFT"));
 lines.every((l) => l.total.gt(0));
 lines.min((l) => l.total);  lines.max((l) => l.total);       // null when empty
 lines.sortBy((l) => l.total, "desc").take(3);
-tags.distinct();  tags.includes("urgent");  a.concat(b);  list.slice(1, 4);  list.first();
+tags.distinct();  tags.includes("urgent");  tags.concat(moreTags);  list.slice(1, 4);  list.first();
 ```
 
 `map` and `filter` bodies may read (a `get` inside `map` is a join) but never write. Use `$.forEach` to write.

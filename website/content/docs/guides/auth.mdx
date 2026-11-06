@@ -5,6 +5,8 @@ Aleph doesn't authenticate; the runtime in front of it does, and passes the **ca
 ## Who may call
 
 ```ts
+const a = app("team", { roles: ["owner", "admin", "member"], apiKeyScopes: ["members:read"] });
+
 a.route("GET /health").auth("public");
 a.route("GET /me");                                   // default: any signed-in user
 a.route("GET /orgs/:orgId/projects").member("orgId");                       // any member of the org
@@ -12,11 +14,7 @@ a.route("DELETE /orgs/:orgId").member("orgId", { roles: ["owner"] });       // o
 a.route("GET /orgs/:orgId/members").member("orgId", { apiKeyScopes: ["members:read"] }); // or an API key
 ```
 
-Declare the roles and scopes at the app level, so typos are caught:
-
-```ts
-const a = app("team", { roles: ["owner", "admin", "member"], apiKeyScopes: ["members:read"] });
-```
+Roles and scopes are declared on the app, so a typo in a route's roles or scopes is a validation error (and, in your editor, a type error).
 
 | Failure | Response |
 |---|---|
@@ -35,10 +33,15 @@ const a = app("team", { roles: ["owner", "admin", "member"], apiKeyScopes: ["mem
 Profile fields are declared on the app:
 
 ```ts
-const a = app("shop", { profile: { email: t.string().max(200), name: t.string().max(100) } });
+const shop = app("shop", { profile: { email: t.string().max(200), name: t.string().max(100) } });
+const OrderPaid = shop.event("orderPaid", { payload: { customerId: t.string().max(64) } });
+const email = shop.integration("email", {
+  provider: "email",
+  operations: { send: { mode: "effect", input: { to: t.string().max(200), subject: t.string().max(200) } } },
+});
 
-a.onEvent("receipt", OrderPaid, ($, { payload }) => {
-  const customer = a.users.get(payload.customerId);
+shop.onEvent("receipt", OrderPaid, ($, { payload }) => {
+  const customer = shop.users.get(payload.customerId);
   email.send("send", { to: customer.email.ifNull("fallback@example.com"), subject: "Thanks!" });
 });
 ```

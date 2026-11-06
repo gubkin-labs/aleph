@@ -14,7 +14,7 @@ npx aleph dev app.ts --watch --seed seed.ts --data .aleph/dev.json --secret STRI
 | `--data file.json` | Keep the data in a file between restarts |
 | `--secret NAME=value` | Set a secret, such as a webhook signing key (repeatable) |
 
-```ts
+```ts nocheck
 // seed.ts
 export default {
   Product: [{ sku: "BK-1", name: "Rust", price: "39.90", category: "books" }],

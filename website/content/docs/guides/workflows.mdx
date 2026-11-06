@@ -62,10 +62,12 @@ Inside a step, `w` gives you:
 ## Use it from routes
 
 ```ts
-a.route("POST /orders").handle(($, { body }) => {
-  Order.insert(body);
-  return { started: Fulfill.start(body.orderId, { orderId: body.orderId }) };  // false if it exists
-});
+a.route("POST /orders")
+  .body({ orderId: t.string().max(32), customerId: t.string().max(64), amountCents: t.int().min(1) })
+  .handle((_, { body }) => {
+    Order.insert(body);
+    return { started: Fulfill.start(body.orderId, { orderId: body.orderId }) };  // false if it exists
+  });
 
 a.route("POST /orders/:orderId/approve").handle(($, { params }) => {
   Fulfill.signal(params.orderId, "approved", { by: $.caller });

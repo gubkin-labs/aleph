@@ -65,8 +65,8 @@ Each batch is a separately bounded run, chained through the outbox.
 ## Realtime channels
 
 ```ts
-const Feed = a.channel("feed", { key: { orgId }, message: { text: t.string().max(200) } });
-Feed.publish({ orgId }, { text: "deployed" });
+const Feed = a.channel("feed", { key: { orgId: t.string().max(64) }, message: { text: t.string().max(200) } });
+Feed.publish({ orgId: "acme" }, { text: "deployed" });     // in a route or handler, after commit
 ```
 
 <Tbd>

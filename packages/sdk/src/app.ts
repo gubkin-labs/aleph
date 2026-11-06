@@ -221,7 +221,7 @@ export class App<R extends string = string, S extends string = string, P extends
       $.forEach(batch, (row) => row.delete());
       $.when(batch.length.eq(50), () => queue.enqueue(values as never));
     });
-    this.onDelete(`cascade_${child.name}`, parent.entity, (_, { payload: change }) => {
+    this.onDelete(`cascade_${child.name}`, parent.entity as never, (_, { payload: change }) => {
       const before = change.before as unknown as Record<string, unknown>;
       queue.enqueue(
         Object.fromEntries(keyFields.map((f) => [f, before[parent.key[f] as string]])) as never,

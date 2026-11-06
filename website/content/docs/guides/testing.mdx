@@ -21,7 +21,11 @@ a.route("POST /orgs/:orgId/members")
     request: { params: { orgId: "acme" }, body: { email: "d@acme.test" } },
     expect: { status: 403, body: { error: "seatLimit", details: { seats: 3 } } },
   })
-  .handle(/* ... */);
+  .handle(($, { params, body, errors }) => {
+    const seats = Member.query({ prefix: [params.orgId], limit: 4 }).length;
+    $.ensure(seats.lt(3), errors.seatLimit, { seats });
+    return Member.insert({ orgId: params.orgId, email: body.email });
+  });
 ```
 
 ```bash
@@ -51,6 +55,7 @@ Each example runs on a fresh in-memory store, with a fixed clock (`2023-11-14T22
 
 ```ts
 import { runExamples } from "@aleph/core";
+import { expect, test } from "vitest";
 import app from "../app.ts";
 
 test("examples pass", () => {

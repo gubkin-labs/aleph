@@ -30,7 +30,14 @@ migration plan:
 Breaking changes go in two deploys:
 
 ```ts
-notes: t.string().max(500).optional().deprecated("use comments instead"),
+const Task = a.entity("Task", {
+  key: ["taskId"],
+  fields: {
+    taskId: t.id().generated(),
+    title: t.string().max(200),
+    notes: t.string().max(500).optional().deprecated("use comments instead"),
+  },
+});
 ```
 
 Ship that, move clients and code off the field, then remove it: the check sees it was deprecated, and allows it. Entities and routes take `deprecated` too, and deprecated routes answer with a `Deprecation: true` header meanwhile.

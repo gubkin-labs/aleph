@@ -17,7 +17,10 @@ To pin the contract, declare it:
 ```ts
 a.route("GET /me")
   .returns(t.object({ id: t.string().max(64), email: t.string().max(200).optional() }))
-  .handle(/* ... */);
+  .handle(($) => {
+    const user = a.users.get($.caller);
+    return { id: $.caller, email: user.email, signedUpAt: $.now() }; // signedUpAt is dropped
+  });
 ```
 
 The checker verifies every response fits the declared type. Fields the type doesn't list are dropped from the response, which is an easy way to return a narrower view of a row.

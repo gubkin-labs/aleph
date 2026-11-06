@@ -8,7 +8,7 @@ Every route's inputs are declared, and its response type is inferred (or declare
 npx aleph client app.ts -o src/client.ts
 ```
 
-```ts
+```ts nocheck
 import { AlephError, createClient, type Routes } from "./client";
 
 const api = createClient({
@@ -49,9 +49,16 @@ An OpenAPI 3.1 document with:
 
 ```ts
 a.route("GET /orgs/:orgId/members/by-email/:email")
+  .params({ orgId: t.string().max(64), email: t.string().min(3).max(200) })
+  .member("orgId", { apiKeyScopes: ["members:read"] })
   .describe("Find a member by email")
   .mcp("find_member")
-  .handle(/* ... */);
+  .errors({ notFound: err.notFound() })
+  .handle(($, { params, errors }) => {
+    const member = Member.findBy("byEmail", [params.orgId, params.email.lower()]);
+    $.ensure(member.exists(), errors.notFound);
+    return member;
+  });
 ```
 
 ```bash

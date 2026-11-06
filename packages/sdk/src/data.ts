@@ -421,8 +421,8 @@ export interface EntityDef<F extends Fields, K extends keyof F & string, I exten
 
 /** How a child entity points at its parent. */
 export interface ParentDef<F extends Fields> {
-  // biome-ignore lint/suspicious/noExplicitAny: any entity can be a parent.
-  entity: Entity<any, any, any>;
+  /** The parent entity (any entity). */
+  entity: { readonly name: string; readonly keyFields: readonly string[] };
   /** Child field → parent key field. */
   key: Partial<Record<keyof F & string, string>>;
   /** Delete children when the parent is deleted (in batches of 50, in the background). */
@@ -749,8 +749,8 @@ export interface CounterDef<
   groupBy: readonly (G | ComputedGroup<F, C>)[];
   /** Only rows matching this predicate are counted. */
   where?: (row: Row<F>) => Expr<boolean>;
-  /** Sum this integer over the rows instead of counting them. */
-  sum?: (row: Row<F>) => Expr<number>;
+  /** Sum this integer over the rows instead of counting them (`null` counts as 0). */
+  sum?: (row: Row<F>) => Expr<number | null>;
   /** Track a field's smallest or largest value (latest, for timestamps), or its distinct count. */
   agg?: CounterAggDef<F>;
   /** Spread a hot counter over this many shards (2-64) so concurrent writers rarely conflict. */

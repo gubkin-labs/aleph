@@ -100,7 +100,7 @@ Every response carries an `x-aleph-usage` header with what the request actually 
 npx aleph client app.ts -o client.ts
 ```
 
-```ts
+```ts nocheck
 import { createClient } from "./client";
 
 const api = createClient({ baseUrl: "http://127.0.0.1:3000", headers: () => ({ "x-aleph-user": "ada" }) });

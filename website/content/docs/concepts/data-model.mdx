@@ -7,7 +7,12 @@ Aleph's storage is an **ordered key-value store** with transactions. Entities, i
 ```ts
 const Task = a.entity("Task", {
   key: ["orgId", "taskId"],
-  fields: { orgId: t.string().max(64), taskId: t.id().generated(), title: t.string().max(200) },
+  fields: {
+    orgId: t.string().max(64),
+    taskId: t.id().generated(),
+    title: t.string().max(200),
+    done: t.bool().default(false),
+  },
 });
 ```
 
@@ -34,11 +39,21 @@ Fields can be `.optional()` (stored as `null`), have a `.default(...)`, or be ma
 ## Indexes
 
 ```ts
-indexes: {
-  byDue: ["orgId", "done", "dueAt"],
-  byEmail: { fields: ["orgId", { name: "email", value: (m) => m.email.lower() }], unique: true },
-  overdue: { fields: ["dueAt"], where: (t) => t.done.not() },
-}
+const Member = a.entity("Member", {
+  key: ["orgId", "memberId"],
+  fields: {
+    orgId: t.string().max(64),
+    memberId: t.id().generated(),
+    email: t.string().max(200),
+    active: t.bool().default(true),
+    joinedAt: t.timestamp().defaultNow(),
+  },
+  indexes: {
+    byJoined: ["orgId", "joinedAt"],                                                         // plain
+    byEmail: { fields: ["orgId", { name: "email", value: (m) => m.email.lower() }], unique: true }, // computed, unique
+    activeByJoined: { fields: ["orgId", "joinedAt"], where: (m) => m.active },               // partial
+  },
+});
 ```
 
 - Indexes can be **computed** (index a value derived from the row), **unique** (a conflicting write fails with 409), or **partial** (`where`).

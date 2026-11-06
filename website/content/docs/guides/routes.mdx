@@ -44,15 +44,20 @@ The handler's return value is the JSON body. Shape the rest with:
 Declare the business errors a route can fail with. Fail with `$.fail(error)`, or `$.ensure(cond, error)`:
 
 ```ts
-.errors({ insufficientFunds: err.unprocessable("Insufficient funds", { balance: t.int(), needed: t.int() }) })
-.handle(($, { body, errors }) => {
-  const account = Account.getOrFail({ accountId: body.from }, errors.notFound);
-  $.ensure(account.balance.gte(body.amount), errors.insufficientFunds, {
-    balance: account.balance,
-    needed: body.amount,
+a.route("POST /transfers")
+  .body({ from: t.id(), amount: t.int().min(1) })
+  .errors({
+    notFound: err.notFound("No such account"),
+    insufficientFunds: err.unprocessable("Insufficient funds", { balance: t.int(), needed: t.int() }),
+  })
+  .handle(($, { body, errors }) => {
+    const account = Account.getOrFail({ accountId: body.from }, errors.notFound);
+    $.ensure(account.balance.gte(body.amount), errors.insufficientFunds, {
+      balance: account.balance,
+      needed: body.amount,
+    });
+    return account.update({ balance: account.balance.minus(body.amount) });
   });
-  // ...
-});
 ```
 
 ```json
@@ -64,14 +69,17 @@ The transaction rolls back. Built-in errors include `404 not_found` (`update` of
 ## Idempotency and rate limits
 
 ```ts
-.idempotent({ ttl: "24h", required: true })    // replay responses for a repeated Idempotency-Key
-.rateLimit({ per: "user", max: 10, window: "1m" })
+a.route("POST /orders")
+  .idempotent({ ttl: "24h", required: true })    // replay responses for a repeated Idempotency-Key
+  .rateLimit({ per: "user", max: 10, window: "1m" })
+  .body({ totalCents: t.int().min(1) })
+  .handle(($, { body }) => Order.insert({ orderId: $.fmt`o-${$.now()}`, customerId: $.caller, amountCents: body.totalCents, totalCents: body.totalCents }));
 ```
 
 ## CORS
 
 ```ts
-const a = app("shop", { cors: { origins: ["https://shop.example.com"], credentials: true, maxAge: "1h" } });
+const shop = app("shop", { cors: { origins: ["https://shop.example.com"], credentials: true, maxAge: "1h" } });
 ```
 
 Preflight `OPTIONS` requests are answered without running anything.

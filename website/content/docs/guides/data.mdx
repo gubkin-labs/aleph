@@ -6,7 +6,7 @@
 const task = Task.get({ orgId, taskId });              // a row, or null: check task.exists()
 const sure = Task.getOrFail({ orgId, taskId }, errors.missing);  // fails with 404-style declared error
 const many = Task.getMany(ids.map((id) => ({ orgId, taskId: id })));
-const member = Member.findBy("byEmail", [orgId, email.lower()]);  // first row of a (unique) index
+const member = Member.findBy("byEmail", [orgId, body.email.lower()]);  // first row of a (unique) index
 ```
 
 ## Queries
@@ -39,7 +39,7 @@ Cursors are opaque, and can't be forged to escape their range.
 ```ts
 Task.insert({ orgId, title });            // 409 already_exists if the key exists
 Task.upsert({ orgId, taskId, title });    // insert, or update the given fields
-Task.insertIfAbsent({ orgId, taskId });   // → bool
+Task.insertIfAbsent({ orgId, taskId, title });   // → bool
 task.update({ done: true });              // or Task.update(key, set)
 task.delete();                            // or Task.delete(key)
 tasks.updateAll({ done: true });          // a bounded list of rows
