@@ -104,6 +104,10 @@ pub(crate) struct Exec<'a> {
     pub(crate) metered: bool,
     /// Response headers, status, cookies, and logs the plan set.
     pub(crate) meta: ResponseMeta,
+    /// The workflow whose step this is, for state updates.
+    pub(crate) workflow: Option<&'a crate::manifest::WorkflowDecl>,
+    /// State fields a workflow step set.
+    pub(crate) state_updates: BTreeMap<String, Value>,
 }
 
 /// What a plan set about its response besides the body.
@@ -113,6 +117,8 @@ pub(crate) struct ResponseMeta {
     pub(crate) headers: BTreeMap<String, String>,
     pub(crate) cookies: Vec<String>,
     pub(crate) logs: Vec<LogEntry>,
+    /// How a workflow step ended.
+    pub(crate) transition: Option<super::workflow::Transition>,
 }
 
 /// One `log` statement's output.
@@ -168,6 +174,7 @@ impl<'a> Exec<'a> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines, reason = "one arm per statement kind")]
     fn stmt(&mut self, stmt: &'a Stmt, pure: bool) -> R<()> {
         self.meter.op()?;
         match stmt {
@@ -202,6 +209,50 @@ impl<'a> Exec<'a> {
                 }
             }
             Stmt::SetStatus { status } => self.meta.status = Some(*status),
+            Stmt::Next {
+                step,
+                delay_ms,
+                state,
+            } => {
+                self.update_state(state)?;
+                let delay_ms = match delay_ms {
+                    Some(expr) => self.eval_int(expr)?,
+                    None => 0,
+                };
+                check_wait(delay_ms)?;
+                self.meta.transition = Some(super::workflow::Transition::Next {
+                    step: step.clone(),
+                    delay_ms,
+                });
+                return Err(ExecError::Returned(Value::Null));
+            }
+            Stmt::WaitFor {
+                signal,
+                timeout_ms,
+                then,
+                on_timeout,
+                state,
+            } => {
+                self.update_state(state)?;
+                let timeout_ms = self.eval_int(timeout_ms)?;
+                check_wait(timeout_ms)?;
+                self.meta.transition = Some(super::workflow::Transition::WaitFor {
+                    signal: signal.clone(),
+                    timeout_ms,
+                    then: then.clone(),
+                    on_timeout: on_timeout.clone(),
+                });
+                return Err(ExecError::Returned(Value::Null));
+            }
+            Stmt::Complete { result, state } => {
+                self.update_state(state)?;
+                let result = match result {
+                    Some(expr) => self.eval(expr)?,
+                    None => Value::Null,
+                };
+                self.meta.transition = Some(super::workflow::Transition::Complete { result });
+                return Err(ExecError::Returned(Value::Null));
+            }
             Stmt::Log { label, value } => {
                 let value = self.eval(value)?;
                 self.meta.logs.push(LogEntry {
@@ -419,6 +470,78 @@ impl<'a> Exec<'a> {
                 )?;
                 Ok(Value::Null)
             }
+            Op::StartWorkflow {
+                workflow,
+                key,
+                input,
+            } => {
+                let decl = self.workflow_decl(workflow)?;
+                let key = self.workflow_key(key)?;
+                if self.read_instance(workflow, &key)?.is_some() {
+                    return Ok(Value::Bool(false));
+                }
+                let input = self.field_values(&decl.input, input, workflow)?;
+                let instance = super::workflow::Instance::new(decl, input);
+                let bytes = serde_json::to_vec(&instance).map_err(|e| runtime(e.to_string()))?;
+                if bytes.len() as u64 > self.meter.limits().max_row_bytes {
+                    return Err(runtime("the workflow's input is too large to store"));
+                }
+                self.tx.put(self.keys.workflow(workflow, &key), bytes);
+                self.meter.write(1)?;
+                self.release(
+                    0,
+                    OutboxItem::Step {
+                        workflow: workflow.clone(),
+                        key,
+                        seq: instance.seq,
+                        attempt: 0,
+                        signal: None,
+                        error: None,
+                    },
+                )?;
+                Ok(Value::Bool(true))
+            }
+            Op::SignalWorkflow {
+                workflow,
+                key,
+                signal,
+                payload,
+            } => {
+                let decl = self.workflow_decl(workflow)?;
+                let key = self.workflow_key(key)?;
+                let fields = decl
+                    .signals
+                    .get(signal)
+                    .ok_or_else(|| runtime(format!("unknown signal {signal}")))?;
+                let payload = Value::Object(self.field_values(fields, payload, signal)?);
+                self.release(
+                    0,
+                    OutboxItem::Signal {
+                        workflow: workflow.clone(),
+                        key,
+                        signal: signal.clone(),
+                        payload,
+                    },
+                )?;
+                Ok(Value::Null)
+            }
+            Op::GetWorkflow { workflow, key } => {
+                let key = self.workflow_key(key)?;
+                Ok(self
+                    .read_instance(workflow, &key)?
+                    .map_or(Value::Null, |i| i.view(&key)))
+            }
+            Op::CancelWorkflow { workflow, key } => {
+                let key = self.workflow_key(key)?;
+                self.release(
+                    0,
+                    OutboxItem::CancelWorkflow {
+                        workflow: workflow.clone(),
+                        key,
+                    },
+                )?;
+                Ok(Value::Null)
+            }
             Op::Cancel { queue, key } => {
                 let job = self.job_ref(queue, key)?;
                 self.release(0, OutboxItem::Cancel { job })?;
@@ -520,6 +643,55 @@ impl<'a> Exec<'a> {
             }
             Op::Eval { expr } => self.eval(expr),
         }
+    }
+
+    /// Evaluates state updates of a workflow step into `self.state_updates`.
+    fn update_state(&mut self, state: &'a BTreeMap<String, Expr>) -> R<()> {
+        for (name, expr) in state {
+            let value = self.eval(expr)?;
+            let field = self
+                .workflow
+                .and_then(|w| w.state.get(name))
+                .ok_or_else(|| runtime(format!("unknown workflow state field {name}")))?;
+            let optional = Field {
+                optional: true,
+                ..field.clone()
+            };
+            let value =
+                conform(&optional, value).map_err(|m| runtime(format!("state.{name}: {m}")))?;
+            self.state_updates.insert(name.clone(), value);
+        }
+        Ok(())
+    }
+
+    /// Evaluates a workflow instance key.
+    fn workflow_key(&mut self, key: &'a Expr) -> R<String> {
+        match self.eval(key)? {
+            Value::String(key) if !key.is_empty() && key.len() <= 256 => Ok(key),
+            other => Err(runtime(format!(
+                "a workflow key must be a string of 1-256 bytes, got {}",
+                other.to_json()
+            ))),
+        }
+    }
+
+    fn workflow_decl(&self, workflow: &str) -> R<&'a crate::manifest::WorkflowDecl> {
+        self.manifest
+            .workflows
+            .get(workflow)
+            .ok_or_else(|| runtime(format!("unknown workflow {workflow}")))
+    }
+
+    /// Reads a workflow instance.
+    fn read_instance(&mut self, workflow: &str, key: &str) -> R<Option<super::workflow::Instance>> {
+        let bytes = self.tx.get(&self.keys.workflow(workflow, key))?;
+        self.meter.read(bytes.as_ref().map_or(0, Vec::len))?;
+        bytes
+            .map(|b| {
+                serde_json::from_slice(&b)
+                    .map_err(|e| runtime(format!("corrupt workflow instance: {e}")))
+            })
+            .transpose()
     }
 
     /// A keyed job's reference: its queue and evaluated key.
@@ -1969,6 +2141,17 @@ impl<'a> Exec<'a> {
             Value::Null => Ok(None),
             other => Err(runtime(format!("expected int, got {}", other.type_name()))),
         }
+    }
+}
+
+fn check_wait(ms: i64) -> R<()> {
+    if (0..=super::workflow::MAX_WAIT_MS).contains(&ms) {
+        Ok(())
+    } else {
+        Err(runtime(format!(
+            "workflow delays and timeouts are 0 to {} ms, got {ms}",
+            super::workflow::MAX_WAIT_MS
+        )))
     }
 }
 

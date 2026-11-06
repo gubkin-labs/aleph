@@ -19,7 +19,7 @@ mod plan;
 
 pub use effects::{
     Change, ChannelDecl, CronScan, CronSchedule, EventDecl, Handler, Integration, IntegrationOp,
-    OpMode, QueueDecl, Trigger,
+    OpMode, QueueDecl, Trigger, WorkflowDecl,
 };
 
 pub use expr::{
@@ -96,6 +96,13 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "codegen", ts(optional))]
     pub cors: Option<Cors>,
+    /// Durable workflows, by name. Their steps are handlers with `workflow` triggers.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, WorkflowDecl>>", optional)
+    )]
+    pub workflows: BTreeMap<String, WorkflowDecl>,
 }
 
 /// Application metadata.

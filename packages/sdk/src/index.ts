@@ -99,3 +99,10 @@ export type {
   RouteBuilder,
 } from "./route.js";
 export type { Duration } from "./units.js";
+export {
+  type StepContext,
+  type StepOptions,
+  Workflow,
+  type WorkflowDef,
+  type WorkflowInstance,
+} from "./workflow.js";

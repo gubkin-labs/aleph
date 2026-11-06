@@ -1,0 +1,110 @@
+{
+  "expect": ["invalid_declaration", "invalid_handler", "type_mismatch", "unknown_field"],
+  "manifest": {
+    "formatVersion": "0.2",
+    "app": {
+      "name": "badwf"
+    },
+    "workflows": {
+      "w": {
+        "input": {
+          "id": {
+            "type": {
+              "kind": "string",
+              "max": 8
+            }
+          }
+        },
+        "state": {
+          "n": {
+            "type": {
+              "kind": "int"
+            }
+          }
+        },
+        "signals": {
+          "go": {}
+        },
+        "start": "missing",
+        "maxSteps": 0
+      }
+    },
+    "routes": [
+      {
+        "id": "r",
+        "method": "POST",
+        "path": "/r",
+        "auth": {
+          "kind": "public"
+        },
+        "input": {},
+        "errors": {},
+        "plan": {
+          "body": [
+            {
+              "kind": "next",
+              "step": "a"
+            },
+            {
+              "kind": "let",
+              "var": 0,
+              "op": {
+                "op": "startWorkflow",
+                "workflow": "nope",
+                "key": {
+                  "kind": "lit",
+                  "value": "k"
+                },
+                "input": {}
+              }
+            }
+          ],
+          "output": {
+            "kind": "lit",
+            "value": null
+          }
+        }
+      }
+    ],
+    "handlers": [
+      {
+        "id": "w_a",
+        "trigger": {
+          "kind": "workflow",
+          "workflow": "w",
+          "step": "a",
+          "onFail": "ghost"
+        },
+        "errors": {},
+        "plan": {
+          "body": [
+            {
+              "kind": "waitFor",
+              "signal": "stop",
+              "timeoutMs": {
+                "kind": "lit",
+                "value": 1000
+              },
+              "then": "b",
+              "onTimeout": "a",
+              "state": {
+                "n": {
+                  "kind": "lit",
+                  "value": "text"
+                },
+                "zzz": {
+                  "kind": "lit",
+                  "value": 1
+                }
+              }
+            }
+          ],
+          "output": {
+            "kind": "lit",
+            "value": null
+          }
+        }
+      }
+    ]
+  }
+}

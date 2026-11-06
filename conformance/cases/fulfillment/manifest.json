@@ -1,0 +1,1029 @@
+{
+  "app": {
+    "name": "fulfillment"
+  },
+  "auth": {
+    "apiKeyScopes": [],
+    "roles": []
+  },
+  "counters": {},
+  "entities": {
+    "Order": {
+      "fields": {
+        "amountCents": {
+          "type": {
+            "kind": "int",
+            "max": 10000000,
+            "min": 1
+          }
+        },
+        "customerId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 0
+          }
+        },
+        "orderId": {
+          "type": {
+            "kind": "string",
+            "max": 32,
+            "min": 1
+          }
+        },
+        "status": {
+          "default": {
+            "kind": "literal",
+            "value": "new"
+          },
+          "type": {
+            "kind": "enum",
+            "values": [
+              "new",
+              "charged",
+              "reserved",
+              "shipped",
+              "refunded"
+            ]
+          }
+        }
+      },
+      "indexes": {},
+      "key": [
+        "orderId"
+      ]
+    }
+  },
+  "formatVersion": "0.2",
+  "handlers": [
+    {
+      "errors": {
+        "gone": {
+          "message": "The order was deleted",
+          "status": 404
+        }
+      },
+      "id": "fulfill_charge",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Order",
+              "key": {
+                "orderId": {
+                  "kind": "field",
+                  "name": "orderId",
+                  "of": {
+                    "kind": "input",
+                    "name": "input",
+                    "source": "payload"
+                  }
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "gone",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "input": {
+                "amountCents": {
+                  "kind": "field",
+                  "name": "amountCents",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                },
+                "orderId": {
+                  "kind": "field",
+                  "name": "orderId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              },
+              "integration": "payments",
+              "op": "call",
+              "operation": "charge"
+            },
+            "var": 1
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Order",
+              "key": {
+                "orderId": {
+                  "kind": "field",
+                  "name": "orderId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              },
+              "op": "update",
+              "set": {
+                "status": {
+                  "kind": "lit",
+                  "value": "charged"
+                }
+              }
+            },
+            "var": 2
+          },
+          {
+            "kind": "next",
+            "state": {
+              "chargeId": {
+                "kind": "field",
+                "name": "chargeId",
+                "of": {
+                  "id": 1,
+                  "kind": "var"
+                }
+              }
+            },
+            "step": "reserve"
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      },
+      "trigger": {
+        "kind": "workflow",
+        "step": "charge",
+        "workflow": "fulfill"
+      }
+    },
+    {
+      "errors": {},
+      "id": "fulfill_reserve",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "input": {
+                "orderId": {
+                  "kind": "field",
+                  "name": "orderId",
+                  "of": {
+                    "kind": "input",
+                    "name": "input",
+                    "source": "payload"
+                  }
+                }
+              },
+              "integration": "inventory",
+              "op": "call",
+              "operation": "reserve"
+            },
+            "var": 0
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Order",
+              "key": {
+                "orderId": {
+                  "kind": "field",
+                  "name": "orderId",
+                  "of": {
+                    "kind": "input",
+                    "name": "input",
+                    "source": "payload"
+                  }
+                }
+              },
+              "op": "update",
+              "set": {
+                "status": {
+                  "kind": "lit",
+                  "value": "reserved"
+                }
+              }
+            },
+            "var": 1
+          },
+          {
+            "kind": "waitFor",
+            "onTimeout": "refund",
+            "signal": "approved",
+            "state": {
+              "reservationId": {
+                "kind": "field",
+                "name": "reservationId",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              }
+            },
+            "then": "ship",
+            "timeoutMs": {
+              "kind": "lit",
+              "value": 86400000
+            }
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      },
+      "trigger": {
+        "kind": "workflow",
+        "onFail": "refund",
+        "step": "reserve",
+        "workflow": "fulfill"
+      }
+    },
+    {
+      "errors": {},
+      "id": "fulfill_ship",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Order",
+              "key": {
+                "orderId": {
+                  "kind": "field",
+                  "name": "orderId",
+                  "of": {
+                    "kind": "input",
+                    "name": "input",
+                    "source": "payload"
+                  }
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Order",
+              "key": {
+                "orderId": {
+                  "kind": "field",
+                  "name": "orderId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              },
+              "op": "update",
+              "set": {
+                "status": {
+                  "kind": "lit",
+                  "value": "shipped"
+                }
+              }
+            },
+            "var": 1
+          },
+          {
+            "kind": "let",
+            "op": {
+              "input": {
+                "subject": {
+                  "kind": "concat",
+                  "parts": [
+                    {
+                      "kind": "lit",
+                      "value": "Shipped, approved by "
+                    },
+                    {
+                      "kind": "field",
+                      "name": "by",
+                      "of": {
+                        "kind": "field",
+                        "name": "approved",
+                        "of": {
+                          "kind": "input",
+                          "name": "signals",
+                          "source": "payload"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "to": {
+                  "kind": "field",
+                  "name": "customerId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              },
+              "integration": "mail",
+              "op": "send",
+              "operation": "send"
+            },
+            "var": 2
+          },
+          {
+            "kind": "complete",
+            "result": {
+              "fields": {
+                "approvedBy": {
+                  "kind": "field",
+                  "name": "by",
+                  "of": {
+                    "kind": "field",
+                    "name": "approved",
+                    "of": {
+                      "kind": "input",
+                      "name": "signals",
+                      "source": "payload"
+                    }
+                  }
+                },
+                "shipped": {
+                  "kind": "lit",
+                  "value": true
+                }
+              },
+              "kind": "object"
+            }
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      },
+      "trigger": {
+        "kind": "workflow",
+        "step": "ship",
+        "workflow": "fulfill"
+      }
+    },
+    {
+      "errors": {},
+      "id": "fulfill_refund",
+      "plan": {
+        "body": [
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "kind": "field",
+                  "name": "chargeId",
+                  "of": {
+                    "kind": "input",
+                    "name": "state",
+                    "source": "payload"
+                  }
+                }
+              },
+              "kind": "not"
+            },
+            "else": [],
+            "kind": "if",
+            "then": [
+              {
+                "kind": "let",
+                "op": {
+                  "input": {
+                    "chargeId": {
+                      "cond": {
+                        "kind": "isNull",
+                        "of": {
+                          "kind": "field",
+                          "name": "chargeId",
+                          "of": {
+                            "kind": "input",
+                            "name": "state",
+                            "source": "payload"
+                          }
+                        }
+                      },
+                      "else": {
+                        "kind": "field",
+                        "name": "chargeId",
+                        "of": {
+                          "kind": "input",
+                          "name": "state",
+                          "source": "payload"
+                        }
+                      },
+                      "kind": "select",
+                      "then": {
+                        "kind": "lit",
+                        "value": ""
+                      }
+                    }
+                  },
+                  "integration": "payments",
+                  "op": "send",
+                  "operation": "refund"
+                },
+                "var": 0
+              }
+            ]
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Order",
+              "key": {
+                "orderId": {
+                  "kind": "field",
+                  "name": "orderId",
+                  "of": {
+                    "kind": "input",
+                    "name": "input",
+                    "source": "payload"
+                  }
+                }
+              },
+              "op": "update",
+              "set": {
+                "status": {
+                  "kind": "lit",
+                  "value": "refunded"
+                }
+              }
+            },
+            "var": 1
+          },
+          {
+            "kind": "complete",
+            "result": {
+              "fields": {
+                "reason": {
+                  "cond": {
+                    "kind": "isNull",
+                    "of": {
+                      "kind": "input",
+                      "name": "error",
+                      "source": "payload"
+                    }
+                  },
+                  "else": {
+                    "kind": "input",
+                    "name": "error",
+                    "source": "payload"
+                  },
+                  "kind": "select",
+                  "then": {
+                    "kind": "lit",
+                    "value": "not approved in time"
+                  }
+                },
+                "shipped": {
+                  "kind": "lit",
+                  "value": false
+                }
+              },
+              "kind": "object"
+            }
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      },
+      "trigger": {
+        "kind": "workflow",
+        "step": "refund",
+        "workflow": "fulfill"
+      }
+    }
+  ],
+  "integrations": {
+    "inventory": {
+      "config": {},
+      "operations": {
+        "reserve": {
+          "input": {
+            "orderId": {
+              "type": {
+                "kind": "string",
+                "max": 32,
+                "min": 0
+              }
+            }
+          },
+          "mode": "call",
+          "output": {
+            "reservationId": {
+              "type": {
+                "kind": "string",
+                "max": 64,
+                "min": 0
+              }
+            }
+          }
+        }
+      },
+      "provider": "http"
+    },
+    "mail": {
+      "config": {},
+      "operations": {
+        "send": {
+          "input": {
+            "subject": {
+              "type": {
+                "kind": "string",
+                "max": 120,
+                "min": 0
+              }
+            },
+            "to": {
+              "type": {
+                "kind": "string",
+                "max": 64,
+                "min": 0
+              }
+            }
+          },
+          "mode": "effect"
+        }
+      },
+      "provider": "email"
+    },
+    "payments": {
+      "config": {},
+      "operations": {
+        "charge": {
+          "input": {
+            "amountCents": {
+              "type": {
+                "kind": "int"
+              }
+            },
+            "orderId": {
+              "type": {
+                "kind": "string",
+                "max": 32,
+                "min": 0
+              }
+            }
+          },
+          "mode": "call",
+          "output": {
+            "chargeId": {
+              "type": {
+                "kind": "string",
+                "max": 64,
+                "min": 0
+              }
+            }
+          }
+        },
+        "refund": {
+          "input": {
+            "chargeId": {
+              "type": {
+                "kind": "string",
+                "max": 64,
+                "min": 0
+              }
+            }
+          },
+          "mode": "effect"
+        }
+      },
+      "provider": "stripe"
+    }
+  },
+  "routes": [
+    {
+      "auth": {
+        "kind": "public"
+      },
+      "errors": {},
+      "examples": [
+        {
+          "expect": {
+            "body": {
+              "started": true
+            },
+            "runs": [
+              "fulfill_charge",
+              "fulfill_reserve"
+            ],
+            "status": 201
+          },
+          "mocks": [
+            {
+              "integration": "payments",
+              "operation": "charge",
+              "response": {
+                "chargeId": "ch_1"
+              }
+            },
+            {
+              "integration": "inventory",
+              "operation": "reserve",
+              "response": {
+                "reservationId": "r_1"
+              }
+            }
+          ],
+          "name": "places an order and starts fulfillment",
+          "process": true,
+          "request": {
+            "body": {
+              "amountCents": 500,
+              "customerId": "ada",
+              "orderId": "o1"
+            }
+          }
+        }
+      ],
+      "id": "post_orders",
+      "input": {
+        "body": {
+          "amountCents": {
+            "type": {
+              "kind": "int",
+              "max": 10000000,
+              "min": 1
+            }
+          },
+          "customerId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 0
+            }
+          },
+          "orderId": {
+            "type": {
+              "kind": "string",
+              "max": 32,
+              "min": 1
+            }
+          }
+        },
+        "params": {},
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/orders",
+      "plan": {
+        "body": [
+          {
+            "kind": "setStatus",
+            "status": 201
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Order",
+              "op": "insert",
+              "values": {
+                "amountCents": {
+                  "kind": "input",
+                  "name": "amountCents",
+                  "source": "body"
+                },
+                "customerId": {
+                  "kind": "input",
+                  "name": "customerId",
+                  "source": "body"
+                },
+                "orderId": {
+                  "kind": "input",
+                  "name": "orderId",
+                  "source": "body"
+                }
+              }
+            },
+            "var": 0
+          },
+          {
+            "kind": "let",
+            "op": {
+              "input": {
+                "orderId": {
+                  "kind": "input",
+                  "name": "orderId",
+                  "source": "body"
+                }
+              },
+              "key": {
+                "kind": "input",
+                "name": "orderId",
+                "source": "body"
+              },
+              "op": "startWorkflow",
+              "workflow": "fulfill"
+            },
+            "var": 1
+          }
+        ],
+        "output": {
+          "fields": {
+            "started": {
+              "id": 1,
+              "kind": "var"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {},
+      "id": "post_orders_orderId_approve",
+      "input": {
+        "body": {},
+        "params": {
+          "orderId": {
+            "type": {
+              "kind": "string",
+              "max": 32,
+              "min": 1
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/orders/:orderId/approve",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "key": {
+                "kind": "input",
+                "name": "orderId",
+                "source": "params"
+              },
+              "op": "signalWorkflow",
+              "payload": {
+                "by": {
+                  "kind": "caller"
+                }
+              },
+              "signal": "approved",
+              "workflow": "fulfill"
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "fields": {
+            "signalled": {
+              "kind": "lit",
+              "value": true
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "public"
+      },
+      "errors": {
+        "none": {
+          "message": "No fulfillment for this order",
+          "status": 404
+        }
+      },
+      "id": "get_orders_orderId_fulfillment",
+      "input": {
+        "body": {},
+        "params": {
+          "orderId": {
+            "type": {
+              "kind": "string",
+              "max": 32,
+              "min": 1
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "GET",
+      "path": "/orders/:orderId/fulfillment",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "key": {
+                "kind": "input",
+                "name": "orderId",
+                "source": "params"
+              },
+              "op": "getWorkflow",
+              "workflow": "fulfill"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "kind": "field",
+                  "name": "status",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              },
+              "kind": "not"
+            },
+            "error": "none",
+            "kind": "ensure"
+          }
+        ],
+        "output": {
+          "fields": {
+            "chargeId": {
+              "kind": "field",
+              "name": "chargeId",
+              "of": {
+                "kind": "field",
+                "name": "state",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              }
+            },
+            "error": {
+              "kind": "field",
+              "name": "error",
+              "of": {
+                "id": 0,
+                "kind": "var"
+              }
+            },
+            "result": {
+              "kind": "field",
+              "name": "result",
+              "of": {
+                "id": 0,
+                "kind": "var"
+              }
+            },
+            "status": {
+              "kind": "field",
+              "name": "status",
+              "of": {
+                "id": 0,
+                "kind": "var"
+              }
+            },
+            "step": {
+              "kind": "field",
+              "name": "step",
+              "of": {
+                "id": 0,
+                "kind": "var"
+              }
+            },
+            "steps": {
+              "kind": "field",
+              "name": "steps",
+              "of": {
+                "id": 0,
+                "kind": "var"
+              }
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {},
+      "id": "delete_orders_orderId_fulfillment",
+      "input": {
+        "body": {},
+        "params": {
+          "orderId": {
+            "type": {
+              "kind": "string",
+              "max": 32,
+              "min": 1
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "DELETE",
+      "path": "/orders/:orderId/fulfillment",
+      "plan": {
+        "body": [
+          {
+            "kind": "setStatus",
+            "status": 202
+          },
+          {
+            "kind": "let",
+            "op": {
+              "key": {
+                "kind": "input",
+                "name": "orderId",
+                "source": "params"
+              },
+              "op": "cancelWorkflow",
+              "workflow": "fulfill"
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "fields": {
+            "cancelling": {
+              "kind": "lit",
+              "value": true
+            }
+          },
+          "kind": "object"
+        }
+      }
+    }
+  ],
+  "workflows": {
+    "fulfill": {
+      "backoffMs": 1000,
+      "input": {
+        "orderId": {
+          "type": {
+            "kind": "string",
+            "max": 32,
+            "min": 0
+          }
+        }
+      },
+      "maxSteps": 10,
+      "retries": 1,
+      "signals": {
+        "approved": {
+          "by": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 0
+            }
+          }
+        }
+      },
+      "start": "charge",
+      "state": {
+        "chargeId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 0
+          }
+        },
+        "reservationId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 0
+          }
+        }
+      }
+    }
+  }
+}

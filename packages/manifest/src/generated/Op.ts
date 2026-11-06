@@ -175,6 +175,50 @@ queue: string,
 /**
  * The job's key.
  */
+key: Expr, } | { "op": "startWorkflow", 
+/**
+ * The workflow.
+ */
+workflow: string, 
+/**
+ * The instance key (a string, 1-256 bytes), like an order id.
+ */
+key: Expr, 
+/**
+ * Input values.
+ */
+input: { [key in string]: Expr }, } | { "op": "signalWorkflow", 
+/**
+ * The workflow.
+ */
+workflow: string, 
+/**
+ * The instance key.
+ */
+key: Expr, 
+/**
+ * The signal.
+ */
+signal: string, 
+/**
+ * Payload values.
+ */
+payload: { [key in string]: Expr }, } | { "op": "getWorkflow", 
+/**
+ * The workflow.
+ */
+workflow: string, 
+/**
+ * The instance key.
+ */
+key: Expr, } | { "op": "cancelWorkflow", 
+/**
+ * The workflow.
+ */
+workflow: string, 
+/**
+ * The instance key.
+ */
 key: Expr, } | { "op": "getUser", 
 /**
  * The user id.

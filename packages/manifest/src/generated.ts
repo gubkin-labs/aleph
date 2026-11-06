@@ -80,3 +80,4 @@ export type * from "./generated/Ttl.js";
 export type * from "./generated/TypeSchema.js";
 export type * from "./generated/Verify.js";
 export type * from "./generated/Webhook.js";
+export type * from "./generated/WorkflowDecl.js";

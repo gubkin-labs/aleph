@@ -33,6 +33,34 @@ pub(crate) enum OutboxItem {
     },
     /// Cancel a keyed job. Only ever pending: it's applied when the outbox is written.
     Cancel { job: JobRef },
+    /// Run step number `seq` of a workflow instance.
+    Step {
+        workflow: String,
+        key: String,
+        seq: u64,
+        attempt: u32,
+        /// The signal that resumed the instance, with its payload.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signal: Option<(String, Value)>,
+        /// Why the previous step failed (for a compensation step).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+    /// Deliver a signal to a workflow instance.
+    Signal {
+        workflow: String,
+        key: String,
+        signal: String,
+        payload: Value,
+    },
+    /// A wait timed out, unless the instance moved on since (`seq`).
+    Timeout {
+        workflow: String,
+        key: String,
+        seq: u64,
+    },
+    /// Cancel a workflow instance.
+    CancelWorkflow { workflow: String, key: String },
     /// Run one batch of a scanning cron, starting after `cursor`.
     Scan {
         handler: String,

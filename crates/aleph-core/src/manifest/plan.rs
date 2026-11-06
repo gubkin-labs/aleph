@@ -79,6 +79,61 @@ pub enum Stmt {
         /// The status.
         status: u16,
     },
+    /// Workflow steps only: run step `step` next (after `delay_ms`), updating state fields.
+    /// Ends the step.
+    Next {
+        /// The next step.
+        step: String,
+        /// How long to wait first, in milliseconds (at most 30 days).
+        #[serde(default, rename = "delayMs", skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional, rename = "delayMs"))]
+        delay_ms: Option<Expr>,
+        /// New values for state fields.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        #[cfg_attr(
+            feature = "codegen",
+            ts(as = "Option<BTreeMap<String, Expr>>", optional)
+        )]
+        state: BTreeMap<String, Expr>,
+    },
+    /// Workflow steps only: wait for `signal`, then run `then` (with the signal's payload), or
+    /// `on_timeout` if it doesn't come within `timeout_ms`. A signal that already arrived is
+    /// used immediately. Ends the step.
+    WaitFor {
+        /// The signal.
+        signal: String,
+        /// How long to wait, in milliseconds (at most 30 days).
+        #[serde(rename = "timeoutMs")]
+        #[cfg_attr(feature = "codegen", ts(rename = "timeoutMs"))]
+        timeout_ms: Expr,
+        /// The step to run when the signal arrives.
+        then: String,
+        /// The step to run on timeout.
+        #[serde(rename = "onTimeout")]
+        #[cfg_attr(feature = "codegen", ts(rename = "onTimeout"))]
+        on_timeout: String,
+        /// New values for state fields.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        #[cfg_attr(
+            feature = "codegen",
+            ts(as = "Option<BTreeMap<String, Expr>>", optional)
+        )]
+        state: BTreeMap<String, Expr>,
+    },
+    /// Workflow steps only: finish the workflow with an optional result. Ends the step.
+    Complete {
+        /// The result, readable with `getWorkflow`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        result: Option<Expr>,
+        /// New values for state fields.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        #[cfg_attr(
+            feature = "codegen",
+            ts(as = "Option<BTreeMap<String, Expr>>", optional)
+        )]
+        state: BTreeMap<String, Expr>,
+    },
     /// Record a value for debugging. Logs are returned with the response in development and
     /// sampled in production; they never change what the plan does.
     Log {
@@ -305,6 +360,43 @@ pub enum Op {
         /// The job's key.
         key: Box<Expr>,
     },
+    /// Start a workflow instance with key `key`, unless one with that key exists. Evaluates to
+    /// whether it started. The first step runs after commit.
+    StartWorkflow {
+        /// The workflow.
+        workflow: String,
+        /// The instance key (a string, 1-256 bytes), like an order id.
+        key: Box<Expr>,
+        /// Input values.
+        input: BTreeMap<String, Expr>,
+    },
+    /// Send a signal to a workflow instance, after commit. A waiting instance resumes; one not
+    /// (yet) waiting keeps the latest signal of each name until it waits for it.
+    SignalWorkflow {
+        /// The workflow.
+        workflow: String,
+        /// The instance key.
+        key: Box<Expr>,
+        /// The signal.
+        signal: String,
+        /// Payload values.
+        payload: BTreeMap<String, Expr>,
+    },
+    /// Read a workflow instance: `{ instanceId, status, step, state, result, error, steps }`,
+    /// or `null`. `status` is `running`, `waiting`, `completed`, `failed`, or `cancelled`.
+    GetWorkflow {
+        /// The workflow.
+        workflow: String,
+        /// The instance key.
+        key: Box<Expr>,
+    },
+    /// Cancel a running or waiting workflow instance, after commit. Evaluates to `null`.
+    CancelWorkflow {
+        /// The workflow.
+        workflow: String,
+        /// The instance key.
+        key: Box<Expr>,
+    },
     /// Read a user's profile from the tenant's user directory. Evaluates to
     /// `{ userId, ...profile fields }`, or `null` if there's no such user.
     GetUser {
@@ -353,6 +445,8 @@ impl Op {
             Self::Emit { .. }
                 | Self::Enqueue { .. }
                 | Self::Cancel { .. }
+                | Self::SignalWorkflow { .. }
+                | Self::CancelWorkflow { .. }
                 | Self::Publish { .. }
                 | Self::Send { .. }
         )
@@ -367,6 +461,7 @@ impl Op {
                 | Self::InsertIfAbsent { .. }
                 | Self::Update { .. }
                 | Self::Delete { .. }
+                | Self::StartWorkflow { .. }
         )
     }
 }

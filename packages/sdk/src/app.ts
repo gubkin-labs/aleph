@@ -45,6 +45,7 @@ import { toNode } from "./node.js";
 import { AlephBuildError, callSite, recorder } from "./recorder.js";
 import { type DefaultParams, type InputValues, RouteBuilder } from "./route.js";
 import { type Duration, durationMs } from "./units.js";
+import { Workflow, type WorkflowDef } from "./workflow.js";
 
 /** App-level options. */
 export interface AppOptions<R extends string, S extends string, P extends Fields = Fields> {
@@ -151,6 +152,7 @@ export class App<R extends string = string, S extends string = string, P extends
   readonly #queues = new Map<string, Spec>();
   readonly #channels = new Map<string, Spec>();
   readonly #integrations = new Map<string, Spec>();
+  readonly #workflows = new Map<string, Spec>();
   readonly #routes: Route[] = [];
   readonly #handlers: Handler[] = [];
   readonly #sourceMap: Record<string, string> = {};
@@ -316,6 +318,21 @@ export class App<R extends string = string, S extends string = string, P extends
     const integration = new IntegrationHandle(name, def);
     this.#integrations.set(name, integration);
     return integration;
+  }
+
+  /**
+   * Declares a durable workflow. Add steps with `.step(name, fn)`; start instances from routes
+   * or handlers with `.start(key, input)`.
+   */
+  workflow<
+    I extends Fields,
+    S extends Fields = Record<never, never>,
+    G extends Record<string, Fields> = Record<never, never>,
+  >(name: string, def: WorkflowDef<I, S, G>): Workflow<I, S, G> {
+    this.#claim(this.#workflows, "workflow", name);
+    const workflow = new Workflow(name, def, this.#handlerSink());
+    this.#workflows.set(name, workflow);
+    return workflow;
   }
 
   /** Starts a route: `a.route("GET /orgs/:orgId/projects")`. */
@@ -493,6 +510,7 @@ export class App<R extends string = string, S extends string = string, P extends
     if (this.#queues.size > 0) manifest.queues = specs(this.#queues);
     if (this.#channels.size > 0) manifest.channels = specs(this.#channels);
     if (this.#integrations.size > 0) manifest.integrations = specs(this.#integrations);
+    if (this.#workflows.size > 0) manifest.workflows = specs(this.#workflows);
     if (this.#handlers.length > 0) manifest.handlers = structuredClone(this.#handlers);
     const cors = this.#options.cors;
     if (cors) {

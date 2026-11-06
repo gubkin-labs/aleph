@@ -14,10 +14,11 @@ use super::effects::{Journal, OutboxItem, Pending, backoff_ms};
 use super::exec::{Exec, ExecError};
 use super::input::Inputs;
 use super::meter::Meter;
+use super::workflow::{Instance, Status, Transition, Waiting};
 use super::{Engine, Env};
 use crate::keys::{Key, KeyPart, Keyspace, TenantId};
 use crate::limits::Limits;
-use crate::manifest::{CronScan, Handler, QueueDecl, Trigger};
+use crate::manifest::{CronScan, Handler, QueueDecl, Trigger, WorkflowDecl};
 use crate::store::{CommitError, Direction, Transaction};
 use crate::value::Value;
 
@@ -104,6 +105,31 @@ pub(crate) fn write_outbox(
         tx.put(entry, bytes);
     }
     Ok(())
+}
+
+/// Which scheduled step of which instance.
+struct StepRef<'a> {
+    workflow: &'a str,
+    key: &'a str,
+    seq: u64,
+}
+
+fn step_item(
+    workflow: &str,
+    key: &str,
+    seq: u64,
+    attempt: u32,
+    signal: Option<(String, Value)>,
+    error: Option<String>,
+) -> OutboxItem {
+    OutboxItem::Step {
+        workflow: workflow.to_owned(),
+        key: key.to_owned(),
+        seq,
+        attempt,
+        signal,
+        error,
+    }
 }
 
 /// Retry settings: (retries, base backoff, max backoff).
@@ -270,6 +296,108 @@ impl Engine {
         report: &mut ProcessReport,
     ) {
         match item {
+            OutboxItem::Step {
+                workflow,
+                key: instance,
+                seq,
+                attempt,
+                signal,
+                error,
+            } => {
+                let step = StepRef {
+                    workflow: &workflow,
+                    key: &instance,
+                    seq,
+                };
+                self.handle_step(keys, now, key, &step, attempt, signal, error, report);
+            }
+            OutboxItem::Signal {
+                workflow,
+                key: instance,
+                signal,
+                payload,
+            } => {
+                let decl = self.manifest.manifest().workflows.get(&workflow);
+                self.update_instance(
+                    keys,
+                    now,
+                    key,
+                    &workflow,
+                    &instance,
+                    report,
+                    |inst, next| {
+                        if inst.status.finished() {
+                            return;
+                        }
+                        let resumes = inst.status == Status::Waiting
+                            && inst.waiting.as_ref().is_some_and(|w| w.signal == signal);
+                        if !resumes {
+                            // Not waiting for it (yet): keep the latest of each signal.
+                            inst.signals.insert(signal.clone(), payload.clone());
+                            return;
+                        }
+                        let then = inst.waiting.take().map(|w| w.then).unwrap_or_default();
+                        inst.status = Status::Running;
+                        if let Some(decl) = decl
+                            && inst.advance(decl)
+                        {
+                            inst.step = then;
+                            next.push(step_item(
+                                &workflow,
+                                &instance,
+                                inst.seq,
+                                0,
+                                Some((signal.clone(), payload.clone())),
+                                None,
+                            ));
+                        }
+                    },
+                );
+            }
+            OutboxItem::Timeout {
+                workflow,
+                key: instance,
+                seq,
+            } => {
+                let decl = self.manifest.manifest().workflows.get(&workflow);
+                self.update_instance(
+                    keys,
+                    now,
+                    key,
+                    &workflow,
+                    &instance,
+                    report,
+                    |inst, next| {
+                        if inst.status != Status::Waiting || inst.seq != seq {
+                            return; // the signal came, or the instance moved on
+                        }
+                        let on_timeout = inst
+                            .waiting
+                            .take()
+                            .map(|w| w.on_timeout)
+                            .unwrap_or_default();
+                        inst.status = Status::Running;
+                        if let Some(decl) = decl
+                            && inst.advance(decl)
+                        {
+                            inst.step = on_timeout;
+                            next.push(step_item(&workflow, &instance, inst.seq, 0, None, None));
+                        }
+                    },
+                );
+            }
+            OutboxItem::CancelWorkflow {
+                workflow,
+                key: instance,
+            } => {
+                self.update_instance(keys, now, key, &workflow, &instance, report, |inst, _| {
+                    if !inst.status.finished() {
+                        inst.status = Status::Cancelled;
+                        inst.waiting = None;
+                        inst.seq += 1; // anything already scheduled is now stale
+                    }
+                });
+            }
             OutboxItem::Deliver { delivery, attempt } => {
                 match self.sink.deliver(keys.tenant(), &delivery) {
                     Ok(()) => {
@@ -459,6 +587,8 @@ impl Engine {
                     vars: HashMap::new(),
                     metered: true,
                     meta: super::exec::ResponseMeta::default(),
+                    workflow: None,
+                    state_updates: BTreeMap::new(),
                 };
                 match exec.run() {
                     Ok(_) => std::mem::take(&mut exec.effects),
@@ -481,6 +611,334 @@ impl Engine {
         Err(ExecError::Runtime(
             "the handler's transaction kept conflicting".into(),
         ))
+    }
+
+    /// Runs one workflow step, with retries; after the last retry, the step's `onFail` step
+    /// runs (compensation) or the instance fails.
+    #[allow(clippy::too_many_arguments)]
+    fn handle_step(
+        &self,
+        keys: &Keyspace,
+        now: i64,
+        entry: &Key,
+        step: &StepRef<'_>,
+        attempt: u32,
+        signal: Option<(String, Value)>,
+        error: Option<String>,
+        report: &mut ProcessReport,
+    ) {
+        let manifest = self.manifest.manifest();
+        let Some(decl) = manifest.workflows.get(step.workflow) else {
+            self.remove(entry);
+            report
+                .failures
+                .push(format!("unknown workflow {}", step.workflow));
+            return;
+        };
+        match self.run_step(
+            keys,
+            now,
+            entry,
+            step,
+            decl,
+            signal.as_ref(),
+            error.as_deref(),
+        ) {
+            Ok(Some((handler, usage))) => report.record(&handler, Some(usage)),
+            Ok(None) => {}
+            Err((handler, failure)) => {
+                if attempt < decl.retries {
+                    let next = OutboxItem::Step {
+                        workflow: step.workflow.to_owned(),
+                        key: step.key.to_owned(),
+                        seq: step.seq,
+                        attempt: attempt + 1,
+                        signal,
+                        error,
+                    };
+                    let at = now + backoff_ms(attempt, decl.backoff_ms, 60_000);
+                    self.reschedule(keys, entry, at, &next);
+                    report.retried += 1;
+                    return;
+                }
+                let message = failure.to_string();
+                report.failures.push(format!(
+                    "{}: {message}",
+                    handler.as_deref().unwrap_or(step.workflow)
+                ));
+                let on_fail =
+                    handler.as_deref().and_then(|id| {
+                        manifest.handlers.iter().find(|h| h.id == id).and_then(|h| {
+                            match &h.trigger {
+                                Trigger::Workflow { on_fail, .. } => on_fail.clone(),
+                                _ => None,
+                            }
+                        })
+                    });
+                let seq = step.seq;
+                self.update_instance(
+                    keys,
+                    now,
+                    entry,
+                    step.workflow,
+                    step.key,
+                    report,
+                    |inst, next| {
+                        if inst.seq != seq || inst.status.finished() {
+                            return;
+                        }
+                        match &on_fail {
+                            Some(compensate) => {
+                                if inst.advance(decl) {
+                                    inst.step.clone_from(compensate);
+                                    next.push(step_item(
+                                        step.workflow,
+                                        step.key,
+                                        inst.seq,
+                                        0,
+                                        None,
+                                        Some(message.clone()),
+                                    ));
+                                }
+                            }
+                            None => {
+                                inst.status = Status::Failed;
+                                inst.error = Some(message.clone());
+                                inst.seq += 1;
+                            }
+                        }
+                    },
+                );
+            }
+        }
+    }
+
+    /// One attempt at a workflow step, in one transaction: read the instance, run the step's
+    /// plan, apply its transition, and write the instance and the next entry. `Ok(None)` if the
+    /// entry was stale.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::type_complexity,
+        clippy::too_many_lines,
+        reason = "one transaction: read, run, transition, write"
+    )]
+    fn run_step(
+        &self,
+        keys: &Keyspace,
+        now: i64,
+        entry: &Key,
+        step: &StepRef<'_>,
+        decl: &WorkflowDecl,
+        signal: Option<&(String, Value)>,
+        error: Option<&str>,
+    ) -> Result<Option<(String, crate::limits::Cost)>, (Option<String>, ExecError)> {
+        let manifest = self.manifest.manifest();
+        let env = self.env.as_ref();
+        let mut journal = Journal::default();
+        let instance_key = keys.workflow(step.workflow, step.key);
+        let fail = |e: ExecError| (None, e);
+        for _ in 0..=Limits::JOB.max_conflict_retries {
+            let mut tx = self.store.begin();
+            journal.rewind();
+            if tx.get(entry).map_err(|e| fail(e.into()))?.is_none() {
+                return Ok(None);
+            }
+            let mut meter = Meter::new(Limits::JOB);
+            let bytes = tx.get(&instance_key).map_err(|e| fail(e.into()))?;
+            meter
+                .read(bytes.as_ref().map_or(0, Vec::len))
+                .map_err(|e| fail(e.into()))?;
+            let instance: Option<Instance> = bytes.and_then(|b| serde_json::from_slice(&b).ok());
+            let Some(mut instance) =
+                instance.filter(|i| i.status == Status::Running && i.seq == step.seq)
+            else {
+                // Stale: cancelled, already past this step, or gone.
+                tx.delete(entry.clone());
+                let _ = tx.commit();
+                return Ok(None);
+            };
+            let Some(handler) = manifest.handlers.iter().find(|h| {
+                matches!(&h.trigger, Trigger::Workflow { workflow, step: s, .. }
+                    if workflow == step.workflow && *s == instance.step)
+            }) else {
+                return Err(fail(ExecError::Runtime(format!(
+                    "workflow {} has no step {}",
+                    step.workflow, instance.step
+                ))));
+            };
+            let with_handler = |e: ExecError| (Some(handler.id.clone()), e);
+            let inputs = Inputs {
+                payload: instance.payload(step.key, decl, signal, error),
+                ..Inputs::default()
+            };
+            let (mut effects, transition, updates) = {
+                let mut exec = Exec {
+                    manifest,
+                    plan: &handler.plan,
+                    errors: &handler.errors,
+                    tenant: keys.tenant(),
+                    integrations: self.integrations.as_ref(),
+                    journal: &mut journal,
+                    effects: Vec::new(),
+                    tx: &mut *tx,
+                    keys,
+                    meter: &mut meter,
+                    env,
+                    now,
+                    caller: None,
+                    inputs: &inputs,
+                    vars: HashMap::new(),
+                    metered: true,
+                    meta: super::exec::ResponseMeta::default(),
+                    workflow: Some(decl),
+                    state_updates: BTreeMap::new(),
+                };
+                match exec.run() {
+                    Ok(_) => (
+                        std::mem::take(&mut exec.effects),
+                        exec.meta.transition.take(),
+                        std::mem::take(&mut exec.state_updates),
+                    ),
+                    Err(_) if tx.validate() == Err(CommitError::Conflict) => continue,
+                    Err(e) => return Err(with_handler(e)),
+                }
+            };
+            instance.state.extend(updates);
+            let transition = transition.unwrap_or(Transition::Complete {
+                result: Value::Null,
+            });
+            match transition {
+                Transition::Next {
+                    step: next,
+                    delay_ms,
+                } => {
+                    if instance.advance(decl) {
+                        instance.step = next;
+                        meter.effect().map_err(|e| with_handler(e.into()))?;
+                        effects.push(Pending {
+                            delay_ms,
+                            item: step_item(step.workflow, step.key, instance.seq, 0, None, None),
+                        });
+                    }
+                }
+                Transition::WaitFor {
+                    signal: name,
+                    timeout_ms,
+                    then,
+                    on_timeout,
+                } => {
+                    if let Some(payload) = instance.signals.remove(&name) {
+                        // It already arrived.
+                        if instance.advance(decl) {
+                            instance.step = then;
+                            meter.effect().map_err(|e| with_handler(e.into()))?;
+                            effects.push(Pending {
+                                delay_ms: 0,
+                                item: step_item(
+                                    step.workflow,
+                                    step.key,
+                                    instance.seq,
+                                    0,
+                                    Some((name, payload)),
+                                    None,
+                                ),
+                            });
+                        }
+                    } else {
+                        instance.status = Status::Waiting;
+                        instance.seq += 1;
+                        instance.waiting = Some(Waiting {
+                            signal: name,
+                            then,
+                            on_timeout,
+                        });
+                        meter.effect().map_err(|e| with_handler(e.into()))?;
+                        effects.push(Pending {
+                            delay_ms: timeout_ms,
+                            item: OutboxItem::Timeout {
+                                workflow: step.workflow.to_owned(),
+                                key: step.key.to_owned(),
+                                seq: instance.seq,
+                            },
+                        });
+                    }
+                }
+                Transition::Complete { result } => {
+                    instance.status = Status::Completed;
+                    instance.result = result;
+                    instance.seq += 1;
+                }
+            }
+            let bytes = serde_json::to_vec(&instance)
+                .map_err(|e| with_handler(ExecError::Runtime(e.to_string())))?;
+            if bytes.len() as u64 > Limits::JOB.max_row_bytes {
+                return Err(with_handler(ExecError::Runtime(
+                    "the workflow's state and result are too large to store".into(),
+                )));
+            }
+            tx.put(instance_key.clone(), bytes);
+            meter.write(1).map_err(|e| with_handler(e.into()))?;
+            write_outbox(&mut *tx, keys, env, now, effects).map_err(with_handler)?;
+            tx.delete(entry.clone());
+            match tx.commit() {
+                Ok(()) => return Ok(Some((handler.id.clone(), meter.used()))),
+                Err(CommitError::Conflict) => {}
+                Err(CommitError::Store(e)) => return Err(with_handler(ExecError::Store(e))),
+            }
+        }
+        Err(fail(ExecError::Runtime(
+            "the workflow step's transaction kept conflicting".into(),
+        )))
+    }
+
+    /// Changes a workflow instance outside a step (signals, timeouts, cancels, failures) and
+    /// removes the outbox entry that asked for it, in one transaction.
+    #[allow(clippy::too_many_arguments)]
+    fn update_instance(
+        &self,
+        keys: &Keyspace,
+        now: i64,
+        entry: &Key,
+        workflow: &str,
+        key: &str,
+        report: &mut ProcessReport,
+        mut change: impl FnMut(&mut Instance, &mut Vec<OutboxItem>),
+    ) {
+        let instance_key = keys.workflow(workflow, key);
+        for _ in 0..=Limits::JOB.max_conflict_retries {
+            let mut tx = self.store.begin();
+            if !matches!(tx.get(entry), Ok(Some(_))) {
+                return;
+            }
+            let instance: Option<Instance> = tx
+                .get(&instance_key)
+                .ok()
+                .flatten()
+                .and_then(|b| serde_json::from_slice(&b).ok());
+            let mut next = Vec::new();
+            if let Some(mut instance) = instance {
+                change(&mut instance, &mut next);
+                if let Ok(bytes) = serde_json::to_vec(&instance) {
+                    tx.put(instance_key.clone(), bytes);
+                }
+            }
+            let pending = next
+                .into_iter()
+                .map(|item| Pending { delay_ms: 0, item })
+                .collect();
+            if write_outbox(&mut *tx, keys, self.env.as_ref(), now, pending).is_err() {
+                return;
+            }
+            tx.delete(entry.clone());
+            match tx.commit() {
+                Ok(()) => return,
+                Err(CommitError::Conflict) => {}
+                Err(CommitError::Store(e)) => {
+                    report.failures.push(e.to_string());
+                    return;
+                }
+            }
+        }
     }
 
     fn remove(&self, key: &Key) {

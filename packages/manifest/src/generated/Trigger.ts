@@ -10,6 +10,8 @@ import type { CronSchedule } from "./CronSchedule.js";
  * - `deadLetter`: the job's payload fields, plus `error` and `attempts`
  * - `entity`: `before` and `after` (rows, `null` when absent)
  * - `cron`: `firedAt`, plus `batch` (a list of rows) when it scans
+ * - `workflow`: `instanceId`, `input`, `state`, `signals` (the signal that resumed the step, by
+ *   name; the others are `null`), and `error` (in a compensation step)
  */
 export type Trigger = { "kind": "event", 
 /**
@@ -31,7 +33,20 @@ queue: string, } | { "kind": "deadLetter",
 /**
  * The queue.
  */
-queue: string, } | { "kind": "cron", 
+queue: string, } | { "kind": "workflow", 
+/**
+ * The workflow.
+ */
+workflow: string, 
+/**
+ * The step's name.
+ */
+step: string, 
+/**
+ * The step to run if this one fails every retry (a compensating action). Without one,
+ * the workflow fails.
+ */
+onFail?: string, } | { "kind": "cron", 
 /**
  * Interval, in milliseconds (1 second to 30 days). Ignored (and 0) with `schedule`.
  */

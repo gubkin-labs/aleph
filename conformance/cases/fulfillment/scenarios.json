@@ -1,0 +1,412 @@
+{
+  "seed": 5,
+  "startMs": 1700000000000,
+  "stepMs": 1000,
+  "steps": [
+    {
+      "name": "charges succeed",
+      "mock": {
+        "integration": "payments",
+        "operation": "charge",
+        "response": {
+          "chargeId": "ch_1"
+        }
+      }
+    },
+    {
+      "name": "stock is available",
+      "mock": {
+        "integration": "inventory",
+        "operation": "reserve",
+        "response": {
+          "reservationId": "r_1"
+        }
+      }
+    },
+    {
+      "name": "place o1",
+      "request": {
+        "method": "POST",
+        "path": "/orders",
+        "body": {
+          "orderId": "o1",
+          "customerId": "ada",
+          "amountCents": 500
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "started": true
+        }
+      }
+    },
+    {
+      "name": "o1 is charged and reserved, then waits for approval",
+      "process": true,
+      "expect": {
+        "report": {
+          "runs": [
+            {
+              "handler": "fulfill_charge"
+            },
+            {
+              "handler": "fulfill_reserve"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "o1 waits",
+      "request": {
+        "method": "GET",
+        "path": "/orders/o1/fulfillment"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "waiting",
+          "step": "reserve",
+          "chargeId": "ch_1",
+          "steps": 2
+        }
+      }
+    },
+    {
+      "name": "a manager approves o1",
+      "request": {
+        "method": "POST",
+        "path": "/orders/o1/approve",
+        "caller": {
+          "userId": "boss"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "o1 ships",
+      "process": true,
+      "expect": {
+        "report": {
+          "runs": [
+            {
+              "handler": "fulfill_ship"
+            }
+          ]
+        },
+        "deliveries": [
+          {
+            "target": "mail",
+            "data": {
+              "to": "ada",
+              "subject": "Shipped, approved by boss"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "o1 is done",
+      "request": {
+        "method": "GET",
+        "path": "/orders/o1/fulfillment"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "completed",
+          "result": {
+            "shipped": true,
+            "approvedBy": "boss"
+          },
+          "steps": 3
+        }
+      }
+    },
+    {
+      "name": "place o2",
+      "request": {
+        "method": "POST",
+        "path": "/orders",
+        "body": {
+          "orderId": "o2",
+          "customerId": "ada",
+          "amountCents": 500
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "started": true
+        }
+      }
+    },
+    {
+      "name": "o2 waits for approval",
+      "process": true
+    },
+    {
+      "name": "a day passes without approval: o2 is refunded",
+      "advanceMs": 86400000,
+      "process": true,
+      "expect": {
+        "report": {
+          "runs": [
+            {
+              "handler": "fulfill_refund"
+            }
+          ]
+        },
+        "deliveries": [
+          {
+            "target": "payments",
+            "operation": "refund",
+            "data": {
+              "chargeId": "ch_1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "o2 timed out",
+      "request": {
+        "method": "GET",
+        "path": "/orders/o2/fulfillment"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "completed",
+          "result": {
+            "shipped": false,
+            "reason": "not approved in time"
+          }
+        }
+      }
+    },
+    {
+      "name": "the warehouse is down",
+      "mock": {
+        "integration": "inventory",
+        "operation": "reserve",
+        "error": "warehouse offline"
+      }
+    },
+    {
+      "name": "place o3",
+      "request": {
+        "method": "POST",
+        "path": "/orders",
+        "body": {
+          "orderId": "o3",
+          "customerId": "ada",
+          "amountCents": 500
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "started": true
+        }
+      }
+    },
+    {
+      "name": "o3 is charged; reserving fails once",
+      "process": true,
+      "expect": {
+        "report": {
+          "retried": 1
+        }
+      }
+    },
+    {
+      "name": "the retry fails too, so the charge is refunded",
+      "advanceMs": 2000,
+      "process": true,
+      "expect": {
+        "report": {
+          "runs": [
+            {
+              "handler": "fulfill_refund"
+            }
+          ]
+        },
+        "deliveries": [
+          {
+            "target": "payments",
+            "operation": "refund"
+          }
+        ]
+      }
+    },
+    {
+      "name": "o3 was compensated",
+      "request": {
+        "method": "GET",
+        "path": "/orders/o3/fulfillment"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "completed",
+          "step": "refund",
+          "result": {
+            "shipped": false
+          }
+        }
+      }
+    },
+    {
+      "name": "the warehouse is back",
+      "mock": {
+        "integration": "inventory",
+        "operation": "reserve",
+        "response": {
+          "reservationId": "r_2"
+        }
+      }
+    },
+    {
+      "name": "place o4",
+      "request": {
+        "method": "POST",
+        "path": "/orders",
+        "body": {
+          "orderId": "o4",
+          "customerId": "ada",
+          "amountCents": 500
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "started": true
+        }
+      }
+    },
+    {
+      "name": "o4 is approved before it waits",
+      "request": {
+        "method": "POST",
+        "path": "/orders/o4/approve",
+        "caller": {
+          "userId": "boss"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "o4 runs straight through: the early signal is used",
+      "process": true,
+      "expect": {
+        "report": {
+          "runs": [
+            {
+              "handler": "fulfill_charge"
+            },
+            {
+              "handler": "fulfill_reserve"
+            },
+            {
+              "handler": "fulfill_ship"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "o4 is done",
+      "request": {
+        "method": "GET",
+        "path": "/orders/o4/fulfillment"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "completed",
+          "result": {
+            "shipped": true
+          }
+        }
+      }
+    },
+    {
+      "name": "place o5",
+      "request": {
+        "method": "POST",
+        "path": "/orders",
+        "body": {
+          "orderId": "o5",
+          "customerId": "ada",
+          "amountCents": 500
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "started": true
+        }
+      }
+    },
+    {
+      "name": "o5 waits",
+      "process": true
+    },
+    {
+      "name": "o5 is cancelled",
+      "request": {
+        "method": "DELETE",
+        "path": "/orders/o5/fulfillment",
+        "caller": {
+          "userId": "boss"
+        }
+      },
+      "expect": {
+        "status": 202
+      }
+    },
+    {
+      "name": "the cancel is applied",
+      "process": true
+    },
+    {
+      "name": "o5 is cancelled",
+      "request": {
+        "method": "GET",
+        "path": "/orders/o5/fulfillment"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "cancelled"
+        }
+      }
+    },
+    {
+      "name": "its timeout later finds nothing to do",
+      "advanceMs": 86400000,
+      "process": true,
+      "expect": {
+        "report": {
+          "runs": []
+        }
+      }
+    },
+    {
+      "name": "unknown orders have no fulfillment",
+      "request": {
+        "method": "GET",
+        "path": "/orders/nope/fulfillment"
+      },
+      "expect": {
+        "status": 404
+      }
+    }
+  ]
+}

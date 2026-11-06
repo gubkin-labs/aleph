@@ -1,0 +1,176 @@
+{
+  "entities": {
+    "Order": {
+      "maxRowBytes": 702
+    }
+  },
+  "routes": {
+    "delete_orders_orderId_fulfillment": {
+      "bounds": {
+        "reads": 0,
+        "writes": 0,
+        "ops": 6,
+        "bytesRead": 0,
+        "effects": 1,
+        "calls": 0,
+        "memory": 25
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "cancelling": {
+            "kind": "bool"
+          }
+        }
+      }
+    },
+    "get_orders_orderId_fulfillment": {
+      "bounds": {
+        "reads": 1,
+        "writes": 0,
+        "ops": 22,
+        "bytesRead": 65536,
+        "effects": 0,
+        "calls": 0,
+        "memory": 165886
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "chargeId": {
+            "kind": "nullable",
+            "of": {
+              "kind": "string",
+              "maxLength": 64
+            }
+          },
+          "error": {
+            "kind": "nullable",
+            "of": {
+              "kind": "string",
+              "maxLength": 4096
+            }
+          },
+          "result": {
+            "kind": "any"
+          },
+          "status": {
+            "kind": "nullable",
+            "of": {
+              "kind": "enum",
+              "values": [
+                "running",
+                "waiting",
+                "completed",
+                "failed",
+                "cancelled"
+              ]
+            }
+          },
+          "step": {
+            "kind": "nullable",
+            "of": {
+              "kind": "enum",
+              "values": [
+                "charge",
+                "reserve",
+                "ship",
+                "refund"
+              ]
+            }
+          },
+          "steps": {
+            "kind": "nullable",
+            "of": {
+              "kind": "int"
+            }
+          }
+        }
+      }
+    },
+    "post_orders": {
+      "bounds": {
+        "reads": 2,
+        "writes": 2,
+        "ops": 12,
+        "bytesRead": 66238,
+        "effects": 1,
+        "calls": 0,
+        "memory": 725
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "started": {
+            "kind": "bool"
+          }
+        }
+      }
+    },
+    "post_orders_orderId_approve": {
+      "bounds": {
+        "reads": 0,
+        "writes": 0,
+        "ops": 6,
+        "bytesRead": 0,
+        "effects": 1,
+        "calls": 0,
+        "memory": 24
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "signalled": {
+            "kind": "bool"
+          }
+        }
+      }
+    }
+  },
+  "handlers": {
+    "fulfill_charge": {
+      "bounds": {
+        "reads": 3,
+        "writes": 2,
+        "ops": 23,
+        "bytesRead": 66940,
+        "effects": 2,
+        "calls": 1,
+        "memory": 1680
+      }
+    },
+    "fulfill_refund": {
+      "bounds": {
+        "reads": 2,
+        "writes": 2,
+        "ops": 26,
+        "bytesRead": 66238,
+        "effects": 3,
+        "calls": 0,
+        "memory": 710
+      }
+    },
+    "fulfill_reserve": {
+      "bounds": {
+        "reads": 2,
+        "writes": 2,
+        "ops": 14,
+        "bytesRead": 66238,
+        "effects": 2,
+        "calls": 1,
+        "memory": 983
+      }
+    },
+    "fulfill_ship": {
+      "bounds": {
+        "reads": 3,
+        "writes": 2,
+        "ops": 25,
+        "bytesRead": 66940,
+        "effects": 3,
+        "calls": 0,
+        "memory": 1412
+      }
+    }
+  }
+}

@@ -29,6 +29,7 @@ const OUTBOX: &str = "o";
 const SCHEDULES: &str = "s";
 const USERS: &str = "u";
 const JOBS: &str = "j";
+const WORKFLOWS: &str = "w";
 
 /// A tenant (app) identifier: 1–64 characters of `[A-Za-z0-9_-]`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -358,6 +359,15 @@ impl Keyspace {
     /// The key of a user's profile in the tenant's user directory.
     pub fn user(&self, user_id: &str) -> Key {
         self.key(&[KeyPart::Str(USERS)], &[KeyPart::Str(user_id)], &[])
+    }
+
+    /// The key of a workflow instance.
+    pub fn workflow(&self, workflow: &str, key: &str) -> Key {
+        self.key(
+            &[KeyPart::Str(WORKFLOWS), KeyPart::Str(workflow)],
+            &[KeyPart::Str(key)],
+            &[],
+        )
     }
 
     /// The key of a keyed job's pointer to its outbox entry.

@@ -96,6 +96,13 @@
       "additionalProperties": {
         "type": "string"
       }
+    },
+    "workflows": {
+      "description": "Durable workflows, by name. Their steps are handlers with `workflow` triggers.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/WorkflowDecl"
+      }
     }
   },
   "additionalProperties": false,
@@ -2887,6 +2894,123 @@
           ]
         },
         {
+          "description": "Start a workflow instance with key `key`, unless one with that key exists. Evaluates to\nwhether it started. The first step runs after commit.",
+          "type": "object",
+          "properties": {
+            "input": {
+              "description": "Input values.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "key": {
+              "description": "The instance key (a string, 1-256 bytes), like an order id.",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "type": "string",
+              "const": "startWorkflow"
+            },
+            "workflow": {
+              "description": "The workflow.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "workflow",
+            "key",
+            "input"
+          ]
+        },
+        {
+          "description": "Send a signal to a workflow instance, after commit. A waiting instance resumes; one not\n(yet) waiting keeps the latest signal of each name until it waits for it.",
+          "type": "object",
+          "properties": {
+            "key": {
+              "description": "The instance key.",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "type": "string",
+              "const": "signalWorkflow"
+            },
+            "payload": {
+              "description": "Payload values.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "signal": {
+              "description": "The signal.",
+              "type": "string"
+            },
+            "workflow": {
+              "description": "The workflow.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "workflow",
+            "key",
+            "signal",
+            "payload"
+          ]
+        },
+        {
+          "description": "Read a workflow instance: `{ instanceId, status, step, state, result, error, steps }`,\nor `null`. `status` is `running`, `waiting`, `completed`, `failed`, or `cancelled`.",
+          "type": "object",
+          "properties": {
+            "key": {
+              "description": "The instance key.",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "type": "string",
+              "const": "getWorkflow"
+            },
+            "workflow": {
+              "description": "The workflow.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "workflow",
+            "key"
+          ]
+        },
+        {
+          "description": "Cancel a running or waiting workflow instance, after commit. Evaluates to `null`.",
+          "type": "object",
+          "properties": {
+            "key": {
+              "description": "The instance key.",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "type": "string",
+              "const": "cancelWorkflow"
+            },
+            "workflow": {
+              "description": "The workflow.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "workflow",
+            "key"
+          ]
+        },
+        {
           "description": "Read a user's profile from the tenant's user directory. Evaluates to\n`{ userId, ...profile fields }`, or `null` if there's no such user.",
           "type": "object",
           "properties": {
@@ -3625,6 +3749,116 @@
           ]
         },
         {
+          "description": "Workflow steps only: run step `step` next (after `delay_ms`), updating state fields.\nEnds the step.",
+          "type": "object",
+          "properties": {
+            "delayMs": {
+              "description": "How long to wait first, in milliseconds (at most 30 days).",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Expr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "next"
+            },
+            "state": {
+              "description": "New values for state fields.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "step": {
+              "description": "The next step.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "step"
+          ]
+        },
+        {
+          "description": "Workflow steps only: wait for `signal`, then run `then` (with the signal's payload), or\n`on_timeout` if it doesn't come within `timeout_ms`. A signal that already arrived is\nused immediately. Ends the step.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "waitFor"
+            },
+            "onTimeout": {
+              "description": "The step to run on timeout.",
+              "type": "string"
+            },
+            "signal": {
+              "description": "The signal.",
+              "type": "string"
+            },
+            "state": {
+              "description": "New values for state fields.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "then": {
+              "description": "The step to run when the signal arrives.",
+              "type": "string"
+            },
+            "timeoutMs": {
+              "description": "How long to wait, in milliseconds (at most 30 days).",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "signal",
+            "timeoutMs",
+            "then",
+            "onTimeout"
+          ]
+        },
+        {
+          "description": "Workflow steps only: finish the workflow with an optional result. Ends the step.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "complete"
+            },
+            "result": {
+              "description": "The result, readable with `getWorkflow`.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Expr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "description": "New values for state fields.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        },
+        {
           "description": "Record a value for debugging. Logs are returned with the response in development and\nsampled in production; they never change what the plan does.",
           "type": "object",
           "properties": {
@@ -3797,7 +4031,7 @@
       ]
     },
     "Trigger": {
-      "description": "What runs a handler. The handler reads its payload with `input` expressions of source\n`payload`:\n- `event`, `queue`: the declared payload fields\n- `deadLetter`: the job's payload fields, plus `error` and `attempts`\n- `entity`: `before` and `after` (rows, `null` when absent)\n- `cron`: `firedAt`, plus `batch` (a list of rows) when it scans",
+      "description": "What runs a handler. The handler reads its payload with `input` expressions of source\n`payload`:\n- `event`, `queue`: the declared payload fields\n- `deadLetter`: the job's payload fields, plus `error` and `attempts`\n- `entity`: `before` and `after` (rows, `null` when absent)\n- `cron`: `firedAt`, plus `batch` (a list of rows) when it scans\n- `workflow`: `instanceId`, `input`, `state`, `signals` (the signal that resumed the step, by\n  name; the others are `null`), and `error` (in a compensation step)",
       "oneOf": [
         {
           "description": "An emitted event.",
@@ -3878,6 +4112,37 @@
           "required": [
             "kind",
             "queue"
+          ]
+        },
+        {
+          "description": "One step of a workflow. It ends by moving to another step (`next`), waiting for a\nsignal (`waitFor`), or finishing (`complete`); a step that ends without one completes.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "workflow"
+            },
+            "onFail": {
+              "description": "The step to run if this one fails every retry (a compensating action). Without one,\nthe workflow fails.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "step": {
+              "description": "The step's name.",
+              "type": "string"
+            },
+            "workflow": {
+              "description": "The workflow.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "workflow",
+            "step"
           ]
         },
         {
@@ -4080,6 +4345,67 @@
       "additionalProperties": false,
       "required": [
         "verify"
+      ]
+    },
+    "WorkflowDecl": {
+      "description": "A durable workflow: steps that run one after another, each its own bounded transaction, with\ntyped state carried between them, waits for signals with timeouts, delays, retries, and\ncompensation. Instances are identified by a key the starter chooses.",
+      "type": "object",
+      "properties": {
+        "backoffMs": {
+          "description": "Delay before a step's first retry, in milliseconds.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 1000,
+          "minimum": 0
+        },
+        "input": {
+          "description": "What a workflow is started with (read-only afterwards).",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Field"
+          }
+        },
+        "maxSteps": {
+          "description": "The most steps one instance may run (1-1000), so every instance finishes.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 100,
+          "minimum": 0
+        },
+        "retries": {
+          "description": "Retries of a failed step (at most 10), with exponential backoff.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 3,
+          "minimum": 0
+        },
+        "signals": {
+          "description": "Signals the workflow can wait for, with their payloads.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/Field"
+            }
+          }
+        },
+        "start": {
+          "description": "The first step.",
+          "type": "string"
+        },
+        "state": {
+          "description": "State carried between steps. Every field is optional: it starts `null`, and steps set it.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Field"
+          },
+          "default": {}
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "input",
+        "start"
       ]
     }
   }

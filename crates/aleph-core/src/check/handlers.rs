@@ -102,6 +102,7 @@ fn payload_types(fields: &BTreeMap<String, Field>) -> BTreeMap<String, Ty> {
 
 /// The payload a handler's trigger provides, and the cost the trigger itself adds (reading a
 /// scan batch and scheduling the next one). `None` if the trigger is invalid.
+#[allow(clippy::too_many_lines, reason = "one arm per trigger kind")]
 fn trigger_payload(
     m: &Manifest,
     infos: &BTreeMap<String, EntityInfo>,
@@ -143,6 +144,51 @@ fn trigger_payload(
             let row = Ty::OptRow(entity.clone());
             let payload = BTreeMap::from([("before".into(), row.clone()), ("after".into(), row)]);
             Some((payload, Cost::ZERO))
+        }
+        Trigger::Workflow {
+            workflow,
+            step,
+            on_fail,
+        } => {
+            let Some(decl) = m.workflows.get(workflow) else {
+                return missing("workflow", workflow);
+            };
+            check_name(step, &format!("{trigger_path}.step"), diags);
+            if let Some(target) = on_fail
+                && !plan::workflow_steps(m, workflow).any(|s| s == target)
+            {
+                diags.push(Diagnostic::new(
+                    Code::InvalidHandler,
+                    format!("{trigger_path}.onFail"),
+                    format!("workflow {workflow:?} has no step {target:?}"),
+                ));
+            }
+            let instance = plan::workflow_instance_ty(m, workflow, decl);
+            let state = match &instance {
+                Ty::Object(fields) => fields.get("state").cloned().unwrap_or(Ty::Unknown),
+                _ => Ty::Unknown,
+            };
+            let signals = decl
+                .signals
+                .iter()
+                .map(|(n, fields)| (n.clone(), Ty::Object(payload_types(fields)).nullable()))
+                .collect();
+            let payload = BTreeMap::from([
+                ("instanceId".to_owned(), Ty::string(256)),
+                ("input".to_owned(), Ty::Object(payload_types(&decl.input))),
+                ("state".to_owned(), state),
+                ("signals".to_owned(), Ty::Object(signals)),
+                ("error".to_owned(), Ty::string(4096).nullable()),
+            ]);
+            // Reading and writing the instance, and scheduling the next step and a timeout.
+            let extra = Cost {
+                reads: 1,
+                writes: 1,
+                effects: 2,
+                bytes_read: Limits::JOB.max_row_bytes,
+                ..Cost::ZERO
+            };
+            Some((payload, extra))
         }
         Trigger::Cron {
             every_ms,
@@ -257,7 +303,49 @@ fn check_fields(fields: &BTreeMap<String, Field>, path: &str, diags: &mut Vec<Di
 }
 
 /// Validates events, queues, channels, and integrations.
+fn check_workflows(m: &Manifest, diags: &mut Vec<Diagnostic>) {
+    for (name, decl) in &m.workflows {
+        let path = format!("workflows.{name}");
+        check_name(name, &path, diags);
+        check_fields(&decl.input, &format!("{path}.input"), diags);
+        check_fields(&decl.state, &format!("{path}.state"), diags);
+        for (signal, fields) in &decl.signals {
+            check_name(signal, &format!("{path}.signals.{signal}"), diags);
+            check_fields(fields, &format!("{path}.signals.{signal}"), diags);
+        }
+        let mut problem = |at: String, message: String| {
+            diags.push(Diagnostic::new(Code::InvalidDeclaration, at, message));
+        };
+        if !(1..=1000).contains(&decl.max_steps) {
+            problem(format!("{path}.maxSteps"), "maxSteps must be 1-1000".into());
+        }
+        if decl.retries > QueueDecl::MAX_RETRIES {
+            problem(
+                format!("{path}.retries"),
+                "a step retries at most 10 times".into(),
+            );
+        }
+        let steps: Vec<&str> = plan::workflow_steps(m, name).collect();
+        if !steps.contains(&decl.start.as_str()) {
+            problem(
+                format!("{path}.start"),
+                format!(
+                    "start step {:?} has no handler (steps: {steps:?})",
+                    decl.start
+                ),
+            );
+        }
+        let mut seen = HashSet::new();
+        for step in &steps {
+            if !seen.insert(*step) {
+                problem(path.clone(), format!("step {step:?} is declared twice"));
+            }
+        }
+    }
+}
+
 fn check_declarations(m: &Manifest, diags: &mut Vec<Diagnostic>) {
+    check_workflows(m, diags);
     for (name, event) in &m.events {
         let path = format!("events.{name}");
         check_name(name, &path, diags);

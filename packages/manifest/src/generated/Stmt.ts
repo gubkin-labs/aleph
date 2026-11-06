@@ -49,7 +49,47 @@ value: Expr, } | { "kind": "setStatus",
 /**
  * The status.
  */
-status: number, } | { "kind": "log", 
+status: number, } | { "kind": "next", 
+/**
+ * The next step.
+ */
+step: string, 
+/**
+ * How long to wait first, in milliseconds (at most 30 days).
+ */
+delayMs?: Expr, 
+/**
+ * New values for state fields.
+ */
+state?: { [key in string]: Expr }, } | { "kind": "waitFor", 
+/**
+ * The signal.
+ */
+signal: string, 
+/**
+ * How long to wait, in milliseconds (at most 30 days).
+ */
+timeoutMs: Expr, 
+/**
+ * The step to run when the signal arrives.
+ */
+then: string, 
+/**
+ * The step to run on timeout.
+ */
+onTimeout: string, 
+/**
+ * New values for state fields.
+ */
+state?: { [key in string]: Expr }, } | { "kind": "complete", 
+/**
+ * The result, readable with `getWorkflow`.
+ */
+result?: Expr, 
+/**
+ * New values for state fields.
+ */
+state?: { [key in string]: Expr }, } | { "kind": "log", 
 /**
  * A short label.
  */

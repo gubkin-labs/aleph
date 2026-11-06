@@ -14,6 +14,7 @@ use crate::limits::Cost;
 use crate::manifest::{
     AggOp, BinaryOp, Change, Entity, ErrorDecl, Expr, Field, FieldType, Handler, Input,
     InputSource, Manifest, Op, OpMode, Route, RowPredicate, Stmt, StrOp, Trigger, VarId,
+    WorkflowDecl,
 };
 
 /// The match case that catches every other value.
@@ -72,6 +73,9 @@ pub(crate) fn check_handler(
     let mut checker = Checker::new(m, infos, diags);
     checker.errors = Some(&handler.errors);
     checker.payload = Some(payload);
+    if let Trigger::Workflow { workflow, .. } = &handler.trigger {
+        checker.workflow = m.workflows.get(workflow).map(|d| (workflow.as_str(), d));
+    }
     let plan_path = format!("{path}.plan");
     checker.scopes.push(HashMap::new());
     let mut cost = Cost::default();
@@ -220,6 +224,50 @@ fn impurity(expr: &Expr) -> Option<&'static str> {
     }
 }
 
+/// The step names of a workflow (its step handlers).
+pub(crate) fn workflow_steps<'m>(
+    m: &'m Manifest,
+    workflow: &'m str,
+) -> impl Iterator<Item = &'m str> {
+    m.handlers.iter().filter_map(move |h| match &h.trigger {
+        Trigger::Workflow {
+            workflow: w, step, ..
+        } if w == workflow => Some(step.as_str()),
+        _ => None,
+    })
+}
+
+/// The type of a workflow instance as `getWorkflow` reads it.
+pub(crate) fn workflow_instance_ty(m: &Manifest, workflow: &str, decl: &WorkflowDecl) -> Ty {
+    let state = decl
+        .state
+        .iter()
+        .map(|(n, f)| (n.clone(), Ty::from_field(f).nullable()))
+        .collect();
+    let steps: Vec<String> = workflow_steps(m, workflow).map(str::to_owned).collect();
+    Ty::Object(BTreeMap::from([
+        ("instanceId".to_owned(), Ty::string(256)),
+        (
+            "status".to_owned(),
+            Ty::Enum(
+                ["running", "waiting", "completed", "failed", "cancelled"]
+                    .map(str::to_owned)
+                    .to_vec(),
+            ),
+        ),
+        ("step".to_owned(), Ty::Enum(steps)),
+        ("state".to_owned(), Ty::Object(state)),
+        ("result".to_owned(), Ty::Unknown),
+        ("error".to_owned(), Ty::string(4096).nullable()),
+        (
+            "steps".to_owned(),
+            Ty::Int {
+                max: Some(i64::from(decl.max_steps)),
+            },
+        ),
+    ]))
+}
+
 fn field_kind(ty: &FieldType) -> &'static str {
     match ty {
         FieldType::String { .. } => "string",
@@ -260,6 +308,8 @@ struct Checker<'a> {
     defined: HashSet<VarId>,
     /// The types of early `return` values, with their paths.
     outputs: Vec<(Ty, String)>,
+    /// The workflow whose step this is, if any.
+    workflow: Option<(&'a str, &'a WorkflowDecl)>,
 }
 
 impl<'a> Checker<'a> {
@@ -278,6 +328,7 @@ impl<'a> Checker<'a> {
             scopes: Vec::new(),
             defined: HashSet::new(),
             outputs: Vec::new(),
+            workflow: None,
         }
     }
 
@@ -451,6 +502,7 @@ impl<'a> Checker<'a> {
         cost
     }
 
+    #[allow(clippy::too_many_lines, reason = "one arm per statement kind")]
     fn stmt(&mut self, stmt: &Stmt, path: &str, pure: bool) -> Cost {
         let own = Cost::ops(1);
         match stmt {
@@ -503,6 +555,45 @@ impl<'a> Checker<'a> {
                 own
             }
             Stmt::Log { value, .. } => own + self.expr(value, &format!("{path}.value")).1,
+            Stmt::Next {
+                step,
+                delay_ms,
+                state,
+            } => {
+                let mut cost = own + self.transition(pure, path, &[step], state);
+                if let Some(delay) = delay_ms {
+                    cost += self.int(delay, &format!("{path}.delayMs"));
+                }
+                cost
+            }
+            Stmt::WaitFor {
+                signal,
+                timeout_ms,
+                then,
+                on_timeout,
+                state,
+            } => {
+                let mut cost = own + self.transition(pure, path, &[then, on_timeout], state);
+                if let Some((name, decl)) = self.workflow
+                    && !decl.signals.contains_key(signal)
+                {
+                    let known: Vec<&String> = decl.signals.keys().collect();
+                    self.diag(
+                        Code::InvalidHandler,
+                        &format!("{path}.signal"),
+                        format!("workflow {name:?} has no signal {signal:?} (declared: {known:?})"),
+                    );
+                }
+                cost += self.int(timeout_ms, &format!("{path}.timeoutMs"));
+                cost
+            }
+            Stmt::Complete { result, state } => {
+                let mut cost = own + self.transition(pure, path, &[], state);
+                if let Some(result) = result {
+                    cost += self.expr(result, &format!("{path}.result")).1;
+                }
+                cost
+            }
             Stmt::If {
                 cond,
                 then,
@@ -535,6 +626,84 @@ impl<'a> Checker<'a> {
             self.type_mismatch(path, "bool", &ty);
         }
         cost
+    }
+
+    /// Checks a workflow transition: only in a workflow step (outside map/filter), to steps that
+    /// exist, with state values that fit the declared state.
+    fn transition(
+        &mut self,
+        pure: bool,
+        path: &str,
+        steps: &[&String],
+        state: &BTreeMap<String, Expr>,
+    ) -> Cost {
+        let Some((name, decl)) = self.workflow.filter(|_| !pure) else {
+            self.diag(
+                Code::InvalidHandler,
+                path,
+                "next, waitFor, and complete can only end a workflow step (outside map and filter)",
+            );
+            return Cost::ZERO;
+        };
+        for step in steps {
+            if !workflow_steps(self.m, name).any(|s| s == step.as_str()) {
+                let known: Vec<&str> = workflow_steps(self.m, name).collect();
+                self.diag(
+                    Code::InvalidHandler,
+                    path,
+                    format!("workflow {name:?} has no step {step:?} (steps: {known:?})"),
+                );
+            }
+        }
+        self.state_values(name, &decl.state, state, &format!("{path}.state"))
+    }
+
+    /// Checks values for workflow state fields (all optional: state starts `null`).
+    fn state_values(
+        &mut self,
+        workflow: &str,
+        fields: &BTreeMap<String, Field>,
+        given: &BTreeMap<String, Expr>,
+        path: &str,
+    ) -> Cost {
+        let mut cost = Cost::ZERO;
+        for (field_name, value) in given {
+            let value_path = format!("{path}.{field_name}");
+            let (ty, value_cost) = self.expr(value, &value_path);
+            cost += value_cost;
+            match fields.get(field_name) {
+                Some(field) => {
+                    let optional = Field {
+                        optional: true,
+                        ..field.clone()
+                    };
+                    self.check_write(&ty, &optional, &value_path);
+                }
+                None => {
+                    let known: Vec<&String> = fields.keys().collect();
+                    self.diag(
+                        Code::UnknownField,
+                        &value_path,
+                        format!("workflow {workflow:?} has no state field {field_name:?} (state: {known:?})"),
+                    );
+                }
+            }
+        }
+        cost
+    }
+
+    /// The workflow declaration an op names, or a diagnostic.
+    fn workflow_decl(&mut self, workflow: &str, path: &str) -> Option<&'a WorkflowDecl> {
+        let decl = self.m.workflows.get(workflow);
+        if decl.is_none() {
+            let known: Vec<&String> = self.m.workflows.keys().collect();
+            self.diag(
+                Code::InvalidDeclaration,
+                &format!("{path}.workflow"),
+                format!("unknown workflow {workflow:?} (declared: {known:?})"),
+            );
+        }
+        decl
     }
 
     /// Statements that shape the HTTP response only make sense in routes, outside map/filter.
@@ -984,6 +1153,80 @@ impl<'a> Checker<'a> {
             Op::Eval { expr } => {
                 let (ty, cost) = self.expr(expr, &format!("{path}.expr"));
                 (ty, own + cost)
+            }
+            Op::StartWorkflow {
+                workflow,
+                key,
+                input,
+            } => {
+                let mut cost = own + self.string(key, &format!("{path}.key")).1;
+                if let Some(decl) = self.workflow_decl(workflow, path) {
+                    cost += self.values(&decl.input, input, &format!("{path}.input"), false);
+                    for (field_name, value) in input {
+                        if let Some(field) = decl.input.get(field_name) {
+                            let (ty, _) = self.expr(value, &format!("{path}.input.{field_name}"));
+                            self.check_write(&ty, field, &format!("{path}.input.{field_name}"));
+                        }
+                    }
+                }
+                let start = Cost {
+                    reads: 1,
+                    writes: 1,
+                    effects: 1,
+                    bytes_read: crate::limits::Limits::ROUTE.max_row_bytes,
+                    ..Cost::ZERO
+                };
+                (Ty::Bool, cost + start)
+            }
+            Op::SignalWorkflow {
+                workflow,
+                key,
+                signal,
+                payload,
+            } => {
+                let mut cost = own + self.string(key, &format!("{path}.key")).1;
+                if let Some(decl) = self.workflow_decl(workflow, path) {
+                    match decl.signals.get(signal) {
+                        Some(fields) => {
+                            cost += self.values(fields, payload, &format!("{path}.payload"), false);
+                        }
+                        None => {
+                            let known: Vec<&String> = decl.signals.keys().collect();
+                            self.diag(
+                                Code::InvalidDeclaration,
+                                &format!("{path}.signal"),
+                                format!("workflow {workflow:?} has no signal {signal:?} (declared: {known:?})"),
+                            );
+                        }
+                    }
+                }
+                let effect = Cost {
+                    effects: 1,
+                    ..Cost::ZERO
+                };
+                (Ty::Null, cost + effect)
+            }
+            Op::GetWorkflow { workflow, key } => {
+                let cost = own + self.string(key, &format!("{path}.key")).1;
+                let ty = match self.workflow_decl(workflow, path) {
+                    Some(decl) => workflow_instance_ty(self.m, workflow, decl).nullable(),
+                    None => Ty::Unknown,
+                };
+                let read = Cost {
+                    reads: 1,
+                    bytes_read: crate::limits::Limits::ROUTE.max_row_bytes,
+                    ..Cost::ZERO
+                };
+                (ty, cost + read)
+            }
+            Op::CancelWorkflow { workflow, key } => {
+                let cost = own + self.string(key, &format!("{path}.key")).1;
+                self.workflow_decl(workflow, path);
+                let effect = Cost {
+                    effects: 1,
+                    ..Cost::ZERO
+                };
+                (Ty::Null, cost + effect)
             }
             Op::Cancel { queue, key } => {
                 if !self.m.queues.contains_key(queue) {

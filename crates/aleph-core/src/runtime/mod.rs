@@ -22,6 +22,7 @@ mod meter;
 mod process;
 mod time;
 mod webhook;
+mod workflow;
 
 pub use effects::{
     Delivery, DeliveryKind, Integrations, MemorySink, MockIntegrations, NoIntegrations, NullSink,
@@ -530,6 +531,8 @@ impl Engine {
             vars: HashMap::new(),
             metered: false,
             meta: exec::ResponseMeta::default(),
+            workflow: None,
+            state_updates: BTreeMap::new(),
         };
         let mut inserted = 0;
         for (i, row) in rows.iter().enumerate() {
@@ -860,6 +863,8 @@ impl Engine {
                     vars: HashMap::new(),
                     metered: true,
                     meta: exec::ResponseMeta::default(),
+                    workflow: None,
+                    state_updates: BTreeMap::new(),
                 };
                 let result = exec.run();
                 logs = std::mem::take(&mut exec.meta.logs);

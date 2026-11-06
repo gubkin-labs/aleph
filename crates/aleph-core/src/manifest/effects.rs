@@ -148,6 +148,8 @@ pub enum Change {
 /// - `deadLetter`: the job's payload fields, plus `error` and `attempts`
 /// - `entity`: `before` and `after` (rows, `null` when absent)
 /// - `cron`: `firedAt`, plus `batch` (a list of rows) when it scans
+/// - `workflow`: `instanceId`, `input`, `state`, `signals` (the signal that resumed the step, by
+///   name; the others are `null`), and `error` (in a compensation step)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
 #[serde(
@@ -179,6 +181,19 @@ pub enum Trigger {
         /// The queue.
         queue: String,
     },
+    /// One step of a workflow. It ends by moving to another step (`next`), waiting for a
+    /// signal (`waitFor`), or finishing (`complete`); a step that ends without one completes.
+    Workflow {
+        /// The workflow.
+        workflow: String,
+        /// The step's name.
+        step: String,
+        /// The step to run if this one fails every retry (a compensating action). Without one,
+        /// the workflow fails.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        on_fail: Option<String>,
+    },
     /// A schedule: runs at every multiple of `every_ms` (plus `offset_ms`) since the epoch.
     Cron {
         /// Interval, in milliseconds (1 second to 30 days). Ignored (and 0) with `schedule`.
@@ -197,6 +212,42 @@ pub enum Trigger {
         #[cfg_attr(feature = "codegen", ts(optional))]
         schedule: Option<CronSchedule>,
     },
+}
+
+/// A durable workflow: steps that run one after another, each its own bounded transaction, with
+/// typed state carried between them, waits for signals with timeouts, delays, retries, and
+/// compensation. Instances are identified by a key the starter chooses.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkflowDecl {
+    /// What a workflow is started with (read-only afterwards).
+    pub input: BTreeMap<String, Field>,
+    /// State carried between steps. Every field is optional: it starts `null`, and steps set it.
+    #[serde(default)]
+    pub state: BTreeMap<String, Field>,
+    /// Signals the workflow can wait for, with their payloads.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, BTreeMap<String, Field>>>", optional)
+    )]
+    pub signals: BTreeMap<String, BTreeMap<String, Field>>,
+    /// The first step.
+    pub start: String,
+    /// The most steps one instance may run (1-1000), so every instance finishes.
+    #[serde(default = "default_max_steps")]
+    pub max_steps: u32,
+    /// Retries of a failed step (at most 10), with exponential backoff.
+    #[serde(default = "default_retries")]
+    pub retries: u32,
+    /// Delay before a step's first retry, in milliseconds.
+    #[serde(default = "default_backoff")]
+    pub backoff_ms: u32,
+}
+
+fn default_max_steps() -> u32 {
+    100
 }
 
 /// A calendar schedule: a five-field cron expression in a time zone.

@@ -10,6 +10,7 @@ import type { Handler } from "./Handler.js";
 import type { Integration } from "./Integration.js";
 import type { QueueDecl } from "./QueueDecl.js";
 import type { Route } from "./Route.js";
+import type { WorkflowDecl } from "./WorkflowDecl.js";
 
 /**
  * A complete application manifest.
@@ -67,4 +68,8 @@ handlers?: Array<Handler>,
 /**
  * Cross-origin access for browsers.
  */
-cors?: Cors, };
+cors?: Cors, 
+/**
+ * Durable workflows, by name. Their steps are handlers with `workflow` triggers.
+ */
+workflows?: { [key in string]: WorkflowDecl }, };
