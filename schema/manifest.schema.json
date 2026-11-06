@@ -2024,7 +2024,7 @@
       ]
     },
     "QueryRange": {
-      "description": "Bounds on the field after a query's prefix. At most one lower and one upper bound.",
+      "description": "Bounds on the field after a query's prefix. At most one lower and one upper bound. Like SQL\ncomparisons, a range never matches rows where that field is `null`.",
       "type": "object",
       "properties": {
         "gt": {

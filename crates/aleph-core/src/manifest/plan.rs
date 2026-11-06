@@ -87,7 +87,8 @@ impl Order {
     }
 }
 
-/// Bounds on the field after a query's prefix. At most one lower and one upper bound.
+/// Bounds on the field after a query's prefix. At most one lower and one upper bound. Like SQL
+/// comparisons, a range never matches rows where that field is `null`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

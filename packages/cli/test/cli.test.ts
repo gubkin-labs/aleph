@@ -153,4 +153,47 @@ describe("aleph dev", () => {
       await new Promise((resolve) => server.close(resolve));
     }
   });
+
+  it("runs async work after requests and exposes the inspection API", async () => {
+    const manifest = readFileSync(join(cases, "pipeline", "manifest.json"), "utf8");
+    const lines: string[] = [];
+    const server = await startDevServer(manifest, { port: 0, log: (l) => lines.push(l) });
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("no port");
+      const base = `http://127.0.0.1:${address.port}`;
+      const upload = await fetch(`${base}/orgs/acme/docs`, {
+        method: "POST",
+        headers: {
+          "x-aleph-user": "u1",
+          "x-aleph-orgs": "acme=member",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ title: "Hello" }),
+      });
+      expect(upload.status).toBe(200);
+      expect(lines.join("\n")).toMatch(/ran enqueueProcessing/);
+
+      const { activity } = (await (await fetch(`${base}/__aleph/activity`)).json()) as {
+        activity: { kind: string; route?: string; handler?: string }[];
+      };
+      expect(activity.map((a) => a.route ?? a.handler)).toEqual(
+        expect.arrayContaining(["uploadDoc", "enqueueProcessing"]),
+      );
+      const mocked = await fetch(`${base}/__aleph/mock`, {
+        method: "POST",
+        body: JSON.stringify({
+          integration: "ocr",
+          operation: "extract",
+          response: { pages: 1, summary: "x" },
+        }),
+      });
+      expect(mocked.status).toBe(200);
+      const report = (await (await fetch(`${base}/__aleph/report`)).json()) as { ok: boolean };
+      expect(report.ok).toBe(true);
+      expect((await fetch(`${base}/__aleph/nope`)).status).toBe(404);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
 });

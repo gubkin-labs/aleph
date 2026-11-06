@@ -1,0 +1,25 @@
+{
+  "name": "@aleph-examples/shop",
+  "private": true,
+  "description": "A shop: queues, payment calls, retries, dead letters, events, emails, a sum, and cron",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aleph-examples/inspector": "workspace:*",
+    "@aleph/sdk": "workspace:*",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@aleph/core": "workspace:*",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "vite": "8.3.6"
+  }
+}

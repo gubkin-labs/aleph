@@ -398,8 +398,12 @@ impl Engine {
                     vars: HashMap::new(),
                     metered: true,
                 };
-                exec.run()?;
-                std::mem::take(&mut exec.effects)
+                match exec.run() {
+                    Ok(_) => std::mem::take(&mut exec.effects),
+                    // A failure decided on stale reads isn't trusted: re-run it right away.
+                    Err(_) if tx.validate() == Err(CommitError::Conflict) => continue,
+                    Err(error) => return Err(error),
+                }
             };
             if let Some(item) = next {
                 effects.push(Pending { delay_ms: 0, item });

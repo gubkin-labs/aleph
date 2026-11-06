@@ -1,0 +1,25 @@
+{
+  "name": "@aleph-examples/todos",
+  "private": true,
+  "description": "A todo app: users, CRUD, paging, a range query, and a counter",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aleph-examples/inspector": "workspace:*",
+    "@aleph/sdk": "workspace:*",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@aleph/core": "workspace:*",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "vite": "8.3.6"
+  }
+}

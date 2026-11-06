@@ -30,13 +30,15 @@ export class LoadError extends Error {
  */
 export async function loadManifest(
   path: string,
-  options: { sourceMap?: boolean } = {},
+  options: { sourceMap?: boolean; fresh?: boolean } = {},
 ): Promise<string> {
   const file = resolve(path);
   if (extname(file) === ".json") return readFile(file, "utf8");
   let module: { default?: unknown };
   try {
-    module = (await import(pathToFileURL(file).href)) as { default?: unknown };
+    // `fresh` re-imports the app after it changed (the URL query busts Node's module cache).
+    const url = `${pathToFileURL(file).href}${options.fresh ? `?v=${Date.now()}` : ""}`;
+    module = (await import(url)) as { default?: unknown };
   } catch (error) {
     throw new LoadError(
       `couldn't load ${path}: ${error instanceof Error ? error.message : String(error)}`,
@@ -47,5 +49,5 @@ export async function loadManifest(
       `${path} must \`export default\` an app created with app() from @aleph/sdk`,
     );
   }
-  return module.default.toJSON(options);
+  return module.default.toJSON({ sourceMap: options.sourceMap ?? false });
 }

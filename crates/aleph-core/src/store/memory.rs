@@ -76,6 +76,23 @@ struct MemoryTx<'a> {
     writes: BTreeMap<Key, Option<Vec<u8>>>,
 }
 
+impl MemoryTx<'_> {
+    /// Fails if any recorded read or scan would now see something different.
+    fn check(&self, inner: &Inner) -> Result<(), CommitError> {
+        for (key, version) in &self.reads {
+            if inner.data.get(key).map_or(0, |v| v.version) != *version {
+                return Err(CommitError::Conflict);
+            }
+        }
+        for scan in &self.scans {
+            if committed_in(inner, &scan.covered) != scan.seen {
+                return Err(CommitError::Conflict);
+            }
+        }
+        Ok(())
+    }
+}
+
 fn committed_in(inner: &Inner, range: &KeyRange) -> Vec<(Key, u64)> {
     inner
         .data
@@ -153,18 +170,13 @@ impl Transaction for MemoryTx<'_> {
         self.writes.insert(key, None);
     }
 
+    fn validate(&self) -> Result<(), CommitError> {
+        self.check(&self.store.lock())
+    }
+
     fn commit(self: Box<Self>) -> Result<(), CommitError> {
         let mut inner = self.store.lock();
-        for (key, version) in &self.reads {
-            if inner.data.get(key).map_or(0, |v| v.version) != *version {
-                return Err(CommitError::Conflict);
-            }
-        }
-        for scan in &self.scans {
-            if committed_in(&inner, &scan.covered) != scan.seen {
-                return Err(CommitError::Conflict);
-            }
-        }
+        self.check(&inner)?;
         if self.writes.is_empty() {
             return Ok(());
         }
@@ -251,6 +263,20 @@ mod tests {
         reader.put(key(100), b"y".to_vec());
         put(&store, 50, b"z"); // after the page's last key
         assert_eq!(reader.commit(), Ok(()));
+    }
+
+    #[test]
+    fn validation_detects_stale_reads_without_writing() {
+        let store = MemoryStore::new();
+        put(&store, 1, b"0");
+        let mut tx = store.begin();
+        tx.get(&key(1)).unwrap();
+        tx.put(key(2), b"never".to_vec());
+        assert_eq!(tx.validate(), Ok(()));
+        put(&store, 1, b"changed");
+        assert_eq!(tx.validate(), Err(CommitError::Conflict));
+        drop(tx);
+        assert_eq!(store.entries().len(), 1); // the buffered write was never applied
     }
 
     #[test]

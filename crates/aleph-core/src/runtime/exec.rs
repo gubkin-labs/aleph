@@ -846,7 +846,11 @@ impl<'a> Exec<'a> {
         let bounded = match scan.range {
             None => full.clone(),
             Some(range) => {
-                let lower = self.bound(range.gt.as_ref(), range.gte.as_ref())?;
+                // Like SQL, a comparison never matches `null`: with no lower bound, a range still
+                // starts after the null values (which sort first).
+                let lower = self
+                    .bound(range.gt.as_ref(), range.gte.as_ref())?
+                    .or(Some((Value::Null, false)));
                 let upper = self.bound(range.lt.as_ref(), range.lte.as_ref())?;
                 full.bounded(key_bound(lower.as_ref()), key_bound(upper.as_ref()))
             }

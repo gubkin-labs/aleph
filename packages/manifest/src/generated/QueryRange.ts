@@ -2,7 +2,8 @@
 import type { Expr } from "./Expr.js";
 
 /**
- * Bounds on the field after a query's prefix. At most one lower and one upper bound.
+ * Bounds on the field after a query's prefix. At most one lower and one upper bound. Like SQL
+ * comparisons, a range never matches rows where that field is `null`.
  */
 export type QueryRange = { 
 /**

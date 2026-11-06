@@ -59,4 +59,9 @@ pub trait Transaction {
     fn delete(&mut self, key: Key);
     /// Commits atomically, or fails with [`CommitError::Conflict`] if anything read has changed.
     fn commit(self: Box<Self>) -> Result<(), CommitError>;
+    /// Checks that nothing this transaction read has changed, without applying its writes. A
+    /// transaction that ends without committing (for example by failing with a declared error)
+    /// must still validate its reads before its outcome is trusted: otherwise it may have seen an
+    /// inconsistent mix of states (read skew).
+    fn validate(&self) -> Result<(), CommitError>;
 }

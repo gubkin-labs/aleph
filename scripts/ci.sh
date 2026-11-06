@@ -16,7 +16,11 @@ fi
 step "Rust: tests"
 cargo test --workspace --locked --quiet
 step "Generated code is up to date"
-cargo run -q -p xtask -- codegen --check 2>/dev/null
+# Hide ts-rs's harmless serde-attribute notes, but show real failures (like stale files).
+if ! codegen_out=$(cargo run -q -p xtask -- codegen --check 2>&1); then
+  echo "$codegen_out" | grep -v "serde attribute\|deny_unknown_fields\|ts-rs failed\|^ *|"
+  exit 1
+fi
 step "TypeScript: install"
 pnpm install --frozen-lockfile --silent
 step "TypeScript: lint"

@@ -523,7 +523,15 @@ impl Engine {
                         Response::error(503, "storage_unavailable", e.to_string())
                     }
                 },
-                Err(error) => error_response(route, error),
+                Err(error) => {
+                    // The failure was decided on what this attempt read; if any of it changed
+                    // meanwhile, the decision may be wrong, so re-run instead of answering.
+                    if tx.validate() == Err(CommitError::Conflict) {
+                        usage = meter.used();
+                        continue;
+                    }
+                    error_response(route, error)
+                }
             };
             return Response {
                 usage: meter.used(),
