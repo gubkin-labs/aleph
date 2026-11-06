@@ -1,18 +1,26 @@
 import type { Metadata } from "next";
+import { Instrument_Serif } from "next/font/google";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { REPO } from "@/lib/nav";
 import "./globals.css";
 
+const serif = Instrument_Serif({
+  weight: "400",
+  style: ["normal", "italic"],
+  subsets: ["latin"],
+  variable: "--font-serif",
+});
+
 export const metadata: Metadata = {
   title: { default: "Aleph: declarative backends with known costs", template: "%s · Aleph" },
   description:
-    "Aleph is an open-source declarative language for backends. Describe routes, data, and logic in TypeScript; every request has a worst-case cost that's checked before it runs.",
+    "Aleph is an open-source declarative language for backends. Every request's cost is known before it runs, so many apps can safely share the same servers and database.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={serif.variable}>
       <body>
         <header className="topbar">
           <Link href="/" className="logo">
