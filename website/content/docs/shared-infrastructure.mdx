@@ -1,0 +1,40 @@
+# Shared infrastructure
+
+The most important consequence of Aleph's design is economic: **bounded apps can safely share machines**, and sharing is much cheaper than giving every app its own.
+
+## The problem with one stack per app
+
+A typical small backend runs on dedicated pieces:
+- a server or container
+- a database
+- a cache
+- a queue
+- an auth service
+
+Each is sized for the worst day, and each is mostly idle. Before an app has any users, that stack often costs around $100 a month. Serverless removes the idle server, but not the database and the rest, and it introduces cold starts and per-invocation surprises.
+
+The reason apps can't simply share one big server and database is **trust**. If one app's request can loop forever, allocate gigabytes, or scan a whole table, it can starve every app next to it. So providers isolate apps with dedicated resources, and you pay for the isolation.
+
+## Why Aleph apps can share
+
+An Aleph app is a manifest of bounded operations, run by a trusted core. That changes what a runtime can promise:
+
+| Risk in a shared runtime | Why it can't happen with Aleph |
+|---|---|
+| A request runs away with the CPU | Every request's operations are bounded statically and metered at run time |
+| A request floods the shared database | Reads, writes, and bytes per request are bounded; queries are always by key or range with a limit |
+| Memory spikes take down the process | The bytes a request can hold are bounded too |
+| One tenant reads another's data | Keys are built inside the tenant's keyspace; a plan can't name anyone else's |
+| Author code escapes its sandbox | There's no author code: the runtime interprets data |
+
+So many apps, from many unrelated authors, can run in the **same processes** against the **same database**. A runtime can also use each request's known worst case to admit work fairly. See [Tenants and isolation](/docs/running/isolation/).
+
+## What that means for cost
+
+- **No idle stack per app.** Capacity is pooled across apps, so an app with ten requests a day costs roughly ten requests' worth, not a server's worth.
+- **Predictable bills.** Every request has a worst case, so the most a route can cost is known before anyone calls it.
+- **Cheaper to run.** Requests are microseconds of CPU in a native Rust interpreter, with no per-app process to boot.
+
+<Note title="Where the savings come from">
+Aleph, the language, makes sharing *safe*. The savings come from a runtime that actually packs many apps onto shared machines. The open-source core gives any runtime the parts it needs: validation, cost analysis, metering, isolation, and execution. See [Running a manifest](/docs/running/).
+</Note>

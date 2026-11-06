@@ -1,34 +1,61 @@
-# Why declarative backends
+# Why declarative
 
-Most backends are programs. A request runs arbitrary code that can loop, allocate, query, and call out as much as it likes. That flexibility has a cost: nobody can say what a request will do until it does it.
+Most backends are programs: a request runs code that can loop, allocate, query, and call out as much as it wants. You find out what it does by running it, under load, in production.
 
-Aleph makes a different trade. A backend is a **description**: routes, entities, and plans built from bounded operations. You give up arbitrary code. In exchange, the system can reason about your backend as a whole.
+Aleph backends are **descriptions**. You compose a closed set of operations (read this row, query this range of at most 50 rows, send this email after commit), and the composition is data. Data can be inspected before it runs. Everything on this page follows from that.
 
-## What a description makes possible
+## Known costs, before deploy
 
-| Question | In a typical backend | In Aleph |
-|---|---|---|
-| What's the most a request can read or write? | Unknown until you load-test | Computed from the declarations, before deploy |
-| Can a request leave half its writes behind? | Depends on careful transaction handling | Never: one transaction per request |
-| Can a retried request send the email twice? | Often, unless you build an outbox | No: effects are released once, after commit |
-| Can one customer's request touch another's data? | Only if every query is filtered correctly | It can't name it: keys are tenant-prefixed |
-| Does this deploy break existing data or clients? | Found out in production | Classified as safe, backfill, or breaking |
-| What does this route return? | Whatever the code returns | An inferred, typed schema |
+The checker computes each route's worst case from your declarations:
+- a string's `.max(...)`
+- a query's `limit`
+- an array input's maximum length
+- the indexes and counters a write must maintain
 
-## Where the cost comes from
+```text
+✖ over_budget at app.ts:41:3 (routes[2].plan)
+  route "bulkComplete" can use up to 75 writes in the worst case, over the limit of 50.
+  Lower the bounds that drive it (query limits, list sizes) or split the work.
+```
 
-The bound of a request comes from your **data declarations**:
-- the maximum length of a string field
-- the `limit` of a query
-- the maximum size of a list input
-- the indexes and counters on an entity
+You learn about the expensive route when you write it, not when your database falls over. A runtime meter enforces the same bounds while the request runs, so the guarantee holds even if the analysis had a bug. See [Bounded by construction](/docs/bounded-by-construction/).
 
-Logic only adds, multiplies, and takes maxima of those numbers. Designing the schema is designing the cost model, which is why every `t.string()` needs a `.max(...)`.
+## Correct by default
+
+Because the runtime knows every operation, it can make the safe thing the only thing:
+- every request is one **serializable transaction**
+- emails, jobs, and events are released **exactly once**, after commit
+- payment-style routes **replay** their response for a repeated idempotency key
+- **every key belongs to its tenant**, so one customer's request can't name another's data
+
+You don't write this machinery, and you can't forget it.
+
+## Infrastructure becomes the runtime's problem
+
+A description says what, not how, so the runtime is free to choose the how and improve it:
+- **Storage:** key layout, index maintenance, and backfills.
+- **Retries:** conflict retries and backoff.
+- **Delivery:** the outbox, and how integrations are delivered.
+- **Speed:** the runtime itself (the core is Rust).
+
+A faster runtime or a better storage engine underneath doesn't require changing a line of your app.
+
+## Everything else is generated
+
+One declaration drives:
+- input validation
+- inferred response types
+- a typed client
+- OpenAPI documents
+- MCP tools for agents
+- worked examples that run as tests
+
+The schema can be checked against the deployed one before a change ships. All of it stays consistent because there's only one source.
 
 ## What you give up
 
-- **No unbounded loops.** Loops run over lists with a known maximum length. Work that's unbounded, like processing every row, becomes a scheduled job that walks the data in bounded batches.
-- **No arbitrary code in requests.** You compose built-in operations. When you need the outside world, you declare an integration, and the runtime calls it.
-- **Per-request limits.** A route reads at most 250 rows and writes at most 50. Bigger work moves to jobs and workflows, each step bounded on its own. See [Limits](/docs/reference/limits/).
+- **No arbitrary code in requests.** You compose built-in operations; the outside world is reached through declared [integrations](/docs/integrations/).
+- **No unbounded loops or scans.** Loops run over lists with a known maximum. Work over all your data becomes a [schedule that walks it in batches](/docs/compute/async/).
+- **Per-request budgets.** A route reads at most 250 rows and writes at most 50; bigger work moves to jobs and [workflows](/docs/compute/workflows/). See [Limits](/docs/reference/limits/).
 
-These constraints are what make the guarantees possible. The rest of these docs show how far you can get within them.
+These constraints are exactly what buy the guarantees. Most application backends turn out to fit inside them, and the rest of these docs show how.

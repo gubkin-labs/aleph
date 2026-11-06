@@ -1,4 +1,4 @@
-# Async work
+# Events, queues, and schedules
 
 Anything that doesn't need to happen inside the request goes through the outbox and runs as its own bounded **job**. Job limits are larger than route limits: 500 reads, 200 writes, 5,000 ops.
 

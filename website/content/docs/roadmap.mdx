@@ -1,23 +1,34 @@
-# Roadmap
+# Roadmap and status
 
-Aleph is pre-1.0. What's planned, roughly in order:
+Aleph is pre-1.0. This page is the honest list of what exists in the language today, and what's planned.
 
-## Language
-- **Freeze the manifest format** and publish a stability policy.
-- **Coverage-guided fuzzing** of the parser and validator, beyond the property-based generators that already run on every change.
-- **Streaming responses**, for long-running and LLM-backed routes.
-- **Blob storage**: files declared like entities, with bounded uploads.
-- **Search and vector indexes** as declared, bounded index kinds.
-- **Joins as a declared operation**, instead of `map` plus `get`.
+## Available today
 
-## Tooling
-- A **language server** for diagnostics in the editor, at the line, as you type.
-- A **visual cost explorer**: what each route can trigger, across handlers, jobs, and workflow steps.
-- **Generated clients** for more languages.
+| Area | What exists |
+|---|---|
+| **Auth** | Per-route rules: public, signed-in, org members by role, API keys by scope. Caller profiles and a user directory |
+| **Data** | Entities with ordered keys; unique, partial, and computed indexes; prefix, range, and `anyOf` queries; cursor pagination; counters (count, sum, min/max, distinct, sharded, time-bucketed); invariants; versioned rows; row expiry; parent/child relations with cascading deletes; schema evolution checks |
+| **Compute** | Routes with full HTTP control; bounded logic; events, entity triggers, queues with retries and dead letters, keyed and delayed jobs, interval and calendar schedules, batch scans; durable workflows |
+| **Integrations** | Declared calls (journaled) and sends (after commit); signed webhooks (HMAC, Stripe, GitHub) with dedupe |
+| **API surface** | Inferred and declared response types, typed clients, OpenAPI, MCP tools |
+| **Verifying** | Route examples and `aleph test`; `aleph dev` with watch, seeds, persistent data, mocks, and an inspector |
+| **Guarantees** | Static bounds on 7 resources, enforced by a runtime meter; tenant isolation; differential tests over 100k+ generated plans |
 
-## Release
+## Not in the language yet
+
+| Area | Planned |
+|---|---|
+| **Auth** | Declaring sign-in methods (email and password, magic links, OAuth) and org management in the manifest. Today the runtime authenticates callers and passes them in |
+| **Data** | Blob storage (declared buckets with size and type limits); materialized views beyond counters; "drop after N days" for deprecated fields |
+| **Compute** | Streaming responses (for LLM routes); delivering realtime channel messages to subscribers (publishing exists) |
+| **Integrations** | Declared hosts with timeouts for generic HTTP; OAuth connections on behalf of users; built-in providers (email, payments) |
+| **Capabilities** | Native capabilities (LLM calls with tools, vector search, full-text search) and reusable components (chat, notifications, subscriptions, audit log) |
+| **Tooling** | A language server, a visual cost explorer for what a request can trigger, and generated clients in more languages |
+| **Format** | Freezing the manifest format, with a versioning policy |
+
 <Tbd>
-- Publish `@aleph/sdk`, `@aleph/cli`, `@aleph/core`, and `@aleph/manifest` to npm.
-- Set up versioning and changelogs.
-- Choose the docs domain and hosting, and add analytics if wanted.
+Release tasks:
+- publish the npm packages
+- set up versioning and changelogs
+- choose the docs domain, hosting, and analytics
 </Tbd>

@@ -1,6 +1,14 @@
 # Auth and callers
 
-Aleph doesn't authenticate; the runtime in front of it does, and passes the **caller** with each request. Routes declare who may call them, and the core enforces it.
+Auth in Aleph is declared, not built. Each route says who may call it:
+- anyone
+- any signed-in user
+- members of the org in its path, optionally with certain roles
+- API keys with certain scopes
+
+The core enforces that rule before the plan runs. Your plans read the caller's id, their role, and their profile fields.
+
+Proving *who* the caller is (sessions, passwords, OAuth) is done by the runtime in front of the core, which passes the authenticated **caller** in with each request.
 
 ## Who may call
 
@@ -57,6 +65,6 @@ shop.onEvent("receipt", OrderPaid, ($, { payload }) => {
 | `x-aleph-api-key: acme` and `x-aleph-api-key-scopes: members:read` | An API key for an org |
 | `x-aleph-profile: {"email":"ada@example.com"}` | The caller's profile |
 
-<Tbd>
-How a production runtime authenticates callers (sessions, OAuth, API key issuing) is outside the language. Document the chosen identity provider integration here.
-</Tbd>
+<Note title="Not yet in the language">
+Declaring sign-in methods (email and password, magic links, Google or GitHub OAuth) and org management in the manifest is planned; see the [roadmap](/docs/roadmap/). Today, whatever authenticates callers passes them to the core.
+</Note>

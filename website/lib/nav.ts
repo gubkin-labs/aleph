@@ -1,4 +1,4 @@
-/** The docs' table of contents: every page, in reading order, grouped like Diátaxis. */
+/** The docs' table of contents: every page, in reading order, grouped by what you're building. */
 
 export interface Page {
   /** The URL path under /docs (`""` is the docs home). */
@@ -21,160 +21,185 @@ export const NAV: Section[] = [
         slug: "",
         title: "What is Aleph?",
         description:
-          "A declarative language for backends whose every request has a known worst-case cost.",
+          "A declarative language for backends whose every request has a known, enforced cost.",
       },
       {
         slug: "why-declarative",
-        title: "Why declarative backends",
+        title: "Why declarative",
+        description: "What a backend described as data gives you that a program can't.",
+      },
+      {
+        slug: "shared-infrastructure",
+        title: "Shared infrastructure",
+        description: "Why bounded apps can share processes and databases, and why that costs less.",
+      },
+      {
+        slug: "bounded-by-construction",
+        title: "Bounded by construction",
         description:
-          "What changes when a backend is data instead of code: guarantees, tooling, and sharing.",
+          "How every request's worst case is computed before it runs, and enforced while it runs.",
+      },
+      {
+        slug: "how-it-works",
+        title: "How it works",
+        description: "From TypeScript to a manifest to a validated plan run by one trusted core.",
       },
       {
         slug: "use-cases",
         title: "Use cases",
-        description: "SaaS APIs, ledgers, shops, pipelines, webhooks, and agent tools.",
+        description: "What Aleph is good at, and what it isn't.",
       },
       {
         slug: "comparison",
         title: "Aleph vs. alternatives",
-        description:
-          "How Aleph compares to serverless functions, BaaS products, ORMs, and workflow engines.",
+        description: "Serverless functions, BaaS, ORMs, and workflow engines.",
       },
     ],
   },
   {
     title: "Get started",
     pages: [
-      {
-        slug: "installation",
-        title: "Installation",
-        description: "Install the SDK and CLI.",
-      },
+      { slug: "installation", title: "Installation", description: "Install the SDK and CLI." },
       {
         slug: "quickstart",
         title: "Quickstart",
-        description: "Write a backend, check its costs, test it, and serve it in five minutes.",
+        description: "Describe a backend, see its worst case, test it, and serve it.",
       },
       {
         slug: "tutorial",
         title: "Tutorial: a team task tracker",
-        description:
-          "Build a multi-user API step by step: entities, auth, queries, counters, and async work.",
+        description: "Orgs, roles, queries, counters, events, and a schedule, step by step.",
       },
     ],
   },
   {
-    title: "Concepts",
+    title: "Auth",
     pages: [
       {
-        slug: "concepts/how-it-works",
-        title: "How Aleph works",
-        description: "From app.ts to a manifest to a validated plan run by a trusted core.",
-      },
-      {
-        slug: "concepts/bounded-execution",
-        title: "Bounded execution",
-        description: "Static cost analysis, limits, and the runtime meter that enforces them.",
-      },
-      {
-        slug: "concepts/data-model",
-        title: "Data model",
+        slug: "auth",
+        title: "Auth and callers",
         description:
-          "Entities, ordered keys, indexes, counters, and why there are no unbounded scans.",
+          "Who may call a route: users, org roles, API keys, profiles, and the user directory.",
+      },
+    ],
+  },
+  {
+    title: "Data",
+    pages: [
+      {
+        slug: "data",
+        title: "Entities, keys, and indexes",
+        description: "The data model: ordered keys, declared indexes, counters, and relations.",
       },
       {
-        slug: "concepts/transactions-and-effects",
+        slug: "data/reading-and-writing",
+        title: "Reading and writing",
+        description: "Gets, queries, pagination, writes, versions, expiry, and parents.",
+      },
+      {
+        slug: "data/transactions",
         title: "Transactions and effects",
-        description:
-          "One serializable transaction per request, and effects released exactly once after commit.",
+        description: "One transaction per request, and effects released exactly once.",
       },
       {
-        slug: "concepts/types",
+        slug: "data/types",
         title: "Types and null",
         description: "Field types, inferred response types, nullability, and narrowing.",
       },
       {
-        slug: "concepts/isolation",
-        title: "Tenants and isolation",
-        description: "How many apps and tenants share one runtime safely.",
-      },
-      {
-        slug: "concepts/schema-evolution",
+        slug: "data/schema-evolution",
         title: "Schema evolution",
-        description: "Safe, backfilled, and breaking changes, and deprecating before removing.",
+        description: "Safe, backfilled, and breaking changes.",
       },
     ],
   },
   {
-    title: "Guides",
+    title: "Compute",
     pages: [
       {
-        slug: "guides/routes",
+        slug: "compute",
         title: "Routes and HTTP",
         description:
-          "Inputs, statuses, headers, cookies, redirects, errors with details, and CORS.",
+          "Inputs, statuses, headers, cookies, redirects, errors, idempotency, rate limits, CORS.",
       },
       {
-        slug: "guides/auth",
-        title: "Auth and callers",
+        slug: "compute/logic",
+        title: "Logic and expressions",
         description:
-          "Signed-in users, org roles, API keys, caller profiles, and the user directory.",
+          "Guards, branches, bounded loops, list and string helpers, decimals, and time.",
       },
       {
-        slug: "guides/data",
-        title: "Reading and writing data",
-        description: "Get, insert, upsert, update, queries, pagination, versions, and expiry.",
+        slug: "compute/async",
+        title: "Events, queues, and schedules",
+        description: "Background work: triggers, jobs, retries, keyed jobs, cron, and batch scans.",
       },
       {
-        slug: "guides/logic",
-        title: "Expressions and logic",
-        description: "Guards, branches, loops, list and string helpers, decimals, and time.",
-      },
-      {
-        slug: "guides/async",
-        title: "Async work",
-        description: "Events, entity triggers, queues, keyed jobs, retries, and schedules.",
-      },
-      {
-        slug: "guides/workflows",
+        slug: "compute/workflows",
         title: "Durable workflows",
         description: "Multi-step processes with state, signals, timeouts, and compensation.",
       },
+    ],
+  },
+  {
+    title: "Integrations",
+    pages: [
       {
-        slug: "guides/integrations",
+        slug: "integrations",
         title: "Integrations and webhooks",
-        description: "Calling services, sending messages, and receiving signed webhooks.",
+        description: "Declared outbound calls and messages, and signed inbound webhooks.",
+      },
+    ],
+  },
+  {
+    title: "API surface",
+    pages: [
+      {
+        slug: "api",
+        title: "OpenAPI, MCP, and typed clients",
+        description: "Describe your API to people, agents, and compilers, from one declaration.",
+      },
+    ],
+  },
+  {
+    title: "Verifying logic",
+    pages: [
+      {
+        slug: "verifying",
+        title: "Examples and aleph test",
+        description: "Worked examples on routes: tests, documentation, and a bounds check at once.",
       },
       {
-        slug: "guides/testing",
-        title: "Testing with examples",
-        description: "Worked examples on routes, run by aleph test.",
-      },
-      {
-        slug: "guides/clients",
-        title: "Typed clients and OpenAPI",
-        description: "Generate a typed fetch client, OpenAPI documents, and MCP tools.",
-      },
-      {
-        slug: "guides/local-development",
+        slug: "verifying/local-development",
         title: "Local development",
-        description: "aleph dev: watch mode, seed data, persistent data, mocks, and logs.",
+        description: "aleph dev: watch mode, seed data, mocks, logs, and an inspector.",
+      },
+    ],
+  },
+  {
+    title: "Running Aleph",
+    pages: [
+      {
+        slug: "running",
+        title: "Running a manifest",
+        description: "What a runtime needs to run Aleph apps, and what it gets from the core.",
+      },
+      {
+        slug: "running/isolation",
+        title: "Tenants and isolation",
+        description: "How unrelated apps and tenants share one runtime safely.",
+      },
+      {
+        slug: "running/observability",
+        title: "Observability",
+        description: "Usage, logs, and errors you get without writing any monitoring code.",
       },
     ],
   },
   {
     title: "Reference",
     pages: [
-      {
-        slug: "reference/cli",
-        title: "CLI",
-        description: "Every aleph command and flag.",
-      },
-      {
-        slug: "reference/sdk",
-        title: "SDK",
-        description: "The @aleph/sdk API: app, t, $, entities, lists, expressions, and workflows.",
-      },
+      { slug: "reference/cli", title: "CLI", description: "Every aleph command and flag." },
+      { slug: "reference/sdk", title: "SDK", description: "The @aleph/sdk API." },
       {
         slug: "reference/limits",
         title: "Limits",
@@ -183,7 +208,7 @@ export const NAV: Section[] = [
       {
         slug: "reference/manifest",
         title: "Manifest format",
-        description: "The JSON format any runtime can execute, and its schema.",
+        description: "The JSON format a runtime executes, and its schema.",
       },
       {
         slug: "reference/diagnostics",
@@ -195,20 +220,16 @@ export const NAV: Section[] = [
   {
     title: "Project",
     pages: [
+      { slug: "examples", title: "Example apps", description: "Complete apps to read and run." },
       {
-        slug: "examples",
-        title: "Example apps",
-        description: "Complete apps to read and run.",
+        slug: "roadmap",
+        title: "Roadmap and status",
+        description: "What exists today, and what's planned.",
       },
       {
         slug: "contributing",
         title: "Contributing",
         description: "Repository layout, local checks, and how changes land.",
-      },
-      {
-        slug: "roadmap",
-        title: "Roadmap",
-        description: "What's next for the language and its tooling.",
       },
     ],
   },

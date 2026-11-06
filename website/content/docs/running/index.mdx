@@ -1,0 +1,41 @@
+# Running a manifest
+
+Aleph separates **describing** a backend from **running** it. The language (the SDK, the CLI, and the manifest format) is open source. Running a manifest is the job of a **runtime**: any program that embeds the open-source core and provides storage, authentication, and integration providers.
+
+## What the core gives a runtime
+
+`aleph-core` is one Rust library, used natively or as WebAssembly. It covers four things.
+
+**Validation and analysis**
+- Validates a manifest and computes the worst case of every route and handler.
+- Classifies a new manifest against the deployed one, with a migration plan.
+
+**Execution**
+- Executes requests: routing, authorization, input validation, and one metered, serializable transaction per request.
+- Processes the outbox: handlers, jobs, schedules, workflow steps, and deliveries, with retries and backoff.
+
+**Isolation**
+- Builds every key inside the tenant's keyspace.
+
+**Testing**
+- Runs route examples, as `aleph test` does.
+
+## What a runtime provides
+
+| Piece | The interface | What `aleph dev` uses |
+|---|---|---|
+| Storage | An ordered, transactional key-value store (`Store`) | An in-memory store, optionally saved to a file |
+| Callers | Who is calling, already authenticated (`Caller`) | Headers like `x-aleph-user` |
+| Integrations | Calls (`Integrations`) and deliveries (`Sink`) | Mocks you set, and an activity log |
+| Secrets | Secret values by name (`Secrets`) | `--secret NAME=value` |
+| Time and ids | A clock and an id source (`Env`) | The system clock |
+
+The core never runs author TypeScript, and a runtime doesn't need to either. It consumes the manifest alone. An app update is a new manifest, not a new build.
+
+## The same core everywhere
+
+`aleph dev`, `aleph test`, the conformance suite, and any production runtime all execute the same core. A result you get locally is the result a runtime gives.
+
+<Tbd>
+There's no production runtime documented here yet. To build one, start from the `Engine` API in `crates/aleph-core`, plus the conformance suite (`conformance/`), which defines the expected behavior.
+</Tbd>

@@ -110,35 +110,32 @@ code {
 /* ─── Home ───────────────────────────────────────────────── */
 
 .home {
-  max-width: 1120px;
+  max-width: 1080px;
   margin: 0 auto;
-  padding: 0 24px 64px;
+  padding: 0 24px 80px;
 }
 
 .home section {
+  margin-top: 96px;
+}
+
+.home .hero {
+  max-width: 780px;
   margin-top: 72px;
 }
 
-.hero {
-  max-width: 760px;
-}
-
 .hero h1 {
-  font-size: clamp(36px, 6vw, 56px);
-  line-height: 1.08;
+  font-size: clamp(34px, 5.4vw, 52px);
+  line-height: 1.1;
   letter-spacing: -0.02em;
-  margin: 8px 0 20px;
-}
-
-.eyebrow {
-  color: var(--accent);
-  font-weight: 600;
-  margin: 0;
+  font-weight: 650;
+  margin: 0 0 22px;
 }
 
 .lead {
   font-size: 19px;
   color: var(--fg-muted);
+  max-width: 680px;
 }
 
 .hero-actions {
@@ -150,8 +147,8 @@ code {
 
 .button {
   display: inline-block;
-  background: var(--accent);
-  color: #fff;
+  background: var(--fg);
+  color: var(--bg);
   padding: 10px 18px;
   border-radius: 8px;
   font-weight: 600;
@@ -159,86 +156,488 @@ code {
 
 .button:hover {
   text-decoration: none;
-  opacity: 0.92;
+  opacity: 0.88;
 }
 
 .button-secondary {
-  background: var(--bg-soft);
+  background: transparent;
   color: var(--fg);
   border: 1px solid var(--border);
 }
 
-.split {
+.chapter {
   display: grid;
-  grid-template-columns: 1fr 1.25fr;
-  gap: 32px;
-  align-items: start;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 56px;
+  align-items: center;
+  padding-top: 40px;
+  border-top: 1px solid var(--border);
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
+.chapter-flip .chapter-text {
+  order: 2;
 }
 
-.grid-small {
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 10px;
+.chapter h2 {
+  font-size: 26px;
+  letter-spacing: -0.01em;
+  margin: 0 0 14px;
 }
 
-.tile {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px;
-  background: var(--bg-soft);
-}
-
-.tile h3 {
-  margin: 0 0 6px;
-  font-size: 17px;
-}
-
-.tile p {
-  margin: 0;
+.chapter p {
   color: var(--fg-muted);
+  margin: 0 0 12px;
 }
 
-.chip {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 14px;
-}
-
-.steps {
+.sample {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 16px;
-  padding: 0;
-  list-style: none;
-  counter-reset: step;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  padding-top: 40px;
+  border-top: 1px solid var(--border);
 }
 
-.steps li {
-  counter-increment: step;
-  border-top: 2px solid var(--accent);
-  padding-top: 12px;
+.sample h2,
+.sample p {
+  margin: 0;
 }
 
-.steps h3::before {
-  content: counter(step) ". ";
-  color: var(--accent);
-}
-
-.steps p,
 .muted {
   color: var(--fg-muted);
 }
 
 .cta {
   text-align: center;
-  padding: 48px;
-  border-radius: var(--radius);
-  background: var(--accent-soft);
+  padding: 56px 24px;
+  border-top: 1px solid var(--border);
+}
+
+.cta h2 {
+  margin: 0 0 8px;
+}
+
+.cta p {
+  margin: 0 0 24px;
+}
+
+/* ─── Scenes ─────────────────────────────────────────────── */
+
+.scene {
+  width: 100%;
+  height: auto;
+  display: block;
+  --s-err: #c2410c;
+  --s-ok: #15803d;
+  --s-term: #16181d;
+  --s-term-fg: #e8eaef;
+}
+
+@media (prefers-color-scheme: dark) {
+  .scene {
+    --s-err: #fb923c;
+    --s-ok: #4ade80;
+    --s-term: #07080b;
+  }
+}
+
+.scene text {
+  fill: var(--fg);
+  white-space: pre;
+}
+
+.s-code {
+  font: 11.5px var(--mono);
+}
+
+.s-tiny {
+  font-size: 11.5px;
+}
+
+.s-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.scene .s-muted {
+  fill: var(--fg-muted);
+}
+
+.scene .s-strong {
+  font-weight: 600;
+  fill: var(--accent);
+}
+
+.scene .s-hl {
+  fill: var(--accent);
+  font-weight: 600;
+}
+
+.scene .s-err {
+  fill: var(--s-err);
+}
+
+.scene .s-ok {
+  fill: var(--s-ok);
+}
+
+.s-card {
+  fill: var(--bg);
+  stroke: var(--border);
+}
+
+.s-strong-card {
+  stroke: var(--accent);
+}
+
+.s-line,
+.s-edge {
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 1.2;
+  opacity: 0.6;
+}
+
+.s-node {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+}
+
+.s-gauge,
+.s-track {
+  fill: var(--bg-soft);
+  stroke: var(--border);
+}
+
+.s-cap {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.s-level {
+  fill: var(--accent);
+  opacity: 0.22;
+  transform-box: fill-box;
+  transform-origin: bottom;
+}
+
+.s-axis {
+  stroke: var(--border);
+}
+
+.s-bar {
+  fill: var(--accent);
+  opacity: 0.55;
+  transform-box: fill-box;
+  transform-origin: bottom;
+}
+
+.s-bar-over {
+  fill: none;
+  stroke: var(--s-err);
+  stroke-dasharray: 4 3;
+}
+
+.s-used {
+  fill: var(--fg-muted);
+  opacity: 0.5;
+}
+
+.s-app {
+  fill: var(--accent);
+  fill-opacity: 0.7;
+}
+
+.s-app-1 {
+  fill-opacity: 0.45;
+}
+
+.s-app-2 {
+  fill-opacity: 0.3;
+}
+
+.s-app-3 {
+  fill-opacity: 0.58;
+}
+
+.s-provisioned {
+  stroke: var(--fg-muted);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+  opacity: 0.6;
+}
+
+.s-usage {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+.s-term {
+  fill: var(--s-term);
+}
+
+.s-dot {
+  fill: #3a3f4b;
+}
+
+.scene .s-on-term {
+  fill: var(--s-term-fg);
+}
+
+.scene .s-muted-term {
+  fill: #8b93a1;
+}
+
+.scene .s-on-term.s-err {
+  fill: #fb923c;
+}
+
+.scene .s-on-term.s-ok {
+  fill: #4ade80;
+}
+
+.s-flow {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 14 400;
+  stroke-dashoffset: 14;
+  opacity: 0;
+}
+
+/* Motion: slow loops. Each element's resting style is its final state, so with reduced motion
+   (no animation) every scene is a complete still diagram. */
+
+@media (prefers-reduced-motion: no-preference) {
+  .s-draw {
+    stroke-dasharray: 90;
+    animation: s-draw 7s ease-in-out infinite;
+  }
+
+  .s-node {
+    animation: s-appear 7s ease-out infinite;
+  }
+
+  .s-d1 {
+    animation-delay: 0.25s;
+  }
+
+  .s-d2 {
+    animation-delay: 0.5s;
+  }
+
+  .s-level {
+    animation: s-rise 7s ease-out infinite;
+  }
+
+  .s-bar {
+    animation: s-bar 7s ease-out infinite;
+  }
+
+  .s-reject {
+    animation: s-reject 7s ease-in-out infinite;
+  }
+
+  .s-app {
+    animation: s-pack 8s ease-out infinite;
+  }
+
+  .s-idle {
+    animation: s-idle 4s ease-in-out infinite;
+  }
+
+  .s-draw-long {
+    stroke-dasharray: 600;
+    animation: s-draw-long 8s ease-in-out infinite;
+  }
+
+  .s-step {
+    animation: s-step 10s ease-out infinite;
+  }
+
+  .s-step2 {
+    animation-name: s-step2;
+  }
+
+  .s-step3 {
+    animation-name: s-step3;
+  }
+
+  .s-step4 {
+    animation-name: s-step4;
+  }
+
+  .s-flow {
+    animation: s-flow 3s ease-in-out infinite;
+  }
+}
+
+@keyframes s-draw {
+  0% {
+    stroke-dashoffset: 90;
+  }
+  20%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes s-appear {
+  0%,
+  20% {
+    opacity: 0;
+  }
+  32%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes s-rise {
+  0%,
+  35% {
+    transform: scaleY(0);
+  }
+  55%,
+  92% {
+    transform: scaleY(1);
+  }
+  100% {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes s-bar {
+  0% {
+    transform: scaleY(0.15);
+  }
+  25%,
+  85% {
+    transform: scaleY(1);
+  }
+  100% {
+    transform: scaleY(0.15);
+  }
+}
+
+@keyframes s-reject {
+  0%,
+  45% {
+    opacity: 0;
+  }
+  55%,
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes s-pack {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  15%,
+  88% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes s-idle {
+  50% {
+    opacity: 0.15;
+  }
+}
+
+@keyframes s-draw-long {
+  0% {
+    stroke-dashoffset: 600;
+  }
+  45%,
+  90% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -600;
+  }
+}
+
+@keyframes s-step {
+  0% {
+    opacity: 0;
+  }
+  4%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes s-step2 {
+  0%,
+  20% {
+    opacity: 0;
+  }
+  24%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes s-step3 {
+  0%,
+  45% {
+    opacity: 0;
+  }
+  49%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes s-step4 {
+  0%,
+  62% {
+    opacity: 0;
+  }
+  66%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes s-flow {
+  0% {
+    opacity: 1;
+    stroke-dashoffset: 14;
+  }
+  70% {
+    opacity: 1;
+    stroke-dashoffset: -200;
+  }
+  71%,
+  100% {
+    opacity: 0;
+    stroke-dashoffset: -200;
+  }
 }
 
 /* ─── Docs ───────────────────────────────────────────────── */
@@ -508,9 +907,14 @@ code {
 /* ─── Small screens ──────────────────────────────────────── */
 
 @media (max-width: 860px) {
-  .split,
+  .chapter,
   .docs {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+
+  .chapter-flip .chapter-text {
+    order: 0;
   }
 
   .docs-nav {

@@ -1,6 +1,37 @@
 # What is Aleph?
 
-Aleph is an open-source, declarative language for backends. You describe your API's routes, data, and logic in TypeScript with the `@aleph/sdk` package. The SDK compiles that description into a **manifest**, a versioned JSON document. A small, trusted core validates the manifest, computes the worst-case cost of every request, and runs it.
+Aleph is an open-source, declarative language for backends. You describe your backend in TypeScript:
+- routes, auth, and data
+- background work, workflows, and integrations
+
+Aleph compiles that description into a **manifest**: a versioned document that *describes* the backend instead of *being* a program.
+
+That one difference is the point. A program can do anything at run time, so nobody knows in advance what a request will cost. A description can be read before it runs, so Aleph does know.
+
+## What follows from a backend being a description
+
+**1. Every request has a known worst case.**
+Before anything is deployed, Aleph computes the most each route can read, write, compute, call, and allocate. A runtime enforces those limits on every request. A route that *could* scan a million rows isn't slow in production; it's rejected at check time, with a diagnostic that says which declaration to change.
+
+**2. That makes it safe for many apps to share infrastructure.**
+A request can't run away with the CPU, flood the database, or spike memory, so apps from unrelated authors can run in the same processes against the same database without hurting each other. You don't need your own servers, database, and cache sized for your worst day.
+
+**3. Shared infrastructure is far cheaper.**
+Today a small app that needs a database, a cache, and auth often costs around $100 a month before it has any users, most of it idle capacity. A runtime that packs many bounded apps onto shared machines only pays for work that actually happens. See [Shared infrastructure](/docs/shared-infrastructure/).
+
+**4. There's no infrastructure to design.**
+The manifest says *what* the backend is. *How* it runs is the runtime's job:
+- the storage layout
+- transactions and retries
+- the outbox that sends emails exactly once
+- idempotency for payments
+
+No Dockerfiles, no queues to provision, no deploy pipeline to maintain.
+
+**5. Agents can build it, and check their own work.**
+The vocabulary is small and closed, every mistake comes back as a precise diagnostic with a stable code, and worked examples on routes run as tests. A coding agent doesn't have to make architecture decisions, and it can fix its own errors. See [API surface](/docs/api/) for exposing routes as MCP tools.
+
+## What it looks like
 
 ```ts
 import { app, t } from "@aleph/sdk";
@@ -28,21 +59,13 @@ a.route("GET /todos")
 export default a;
 ```
 
-The code reads like ordinary TypeScript, but it doesn't run per request. It runs once, at build time, and records a **plan**: a tree of operations drawn from a closed set of built-ins. Because the plan is data, Aleph can tell you things about it before it ever runs.
-
-## What you get
-
-- **A known worst-case cost for every request.** Reads, writes, operations, bytes read, effects, integration calls, and memory are all bounded statically. A runtime meter enforces the same bounds. A request that could scan a million rows isn't slow; it's rejected before deploy.
-- **Correctness by default.** Every request is one serializable transaction. Events, jobs, and outgoing messages are released exactly once, after commit.
-- **Isolation by construction.** Every storage key is built inside the caller's tenant keyspace. A plan can't name another tenant's data.
-- **Types end to end.** One schema drives input validation, inferred response types, a generated typed client, OpenAPI, and MCP tools for AI agents.
-- **One core everywhere.** The same Rust core runs natively and as WebAssembly, so `aleph dev`, your tests, and production execute identical code.
+It reads like ordinary TypeScript, but the handlers don't run per request. They run once, at build time, and **record** a plan of built-in operations. `aleph check` then reports each route's worst case. `GET /todos` reads at most 50 rows, because `limit: 50` and the maximum size of a `Todo` row bound it.
 
 ## Where to go next
 
 <Cards>
-  <Card href="/docs/quickstart/" title="Quickstart">Write, check, test, and serve an app in five minutes.</Card>
-  <Card href="/docs/why-declarative/" title="Why declarative">What changes when a backend is data instead of code.</Card>
-  <Card href="/docs/concepts/how-it-works/" title="How it works">From app.ts to a validated plan.</Card>
+  <Card href="/docs/why-declarative/" title="Why declarative">What a description gives you that a program can't.</Card>
+  <Card href="/docs/shared-infrastructure/" title="Shared infrastructure">Why bounded apps can share machines, and why that's cheaper.</Card>
+  <Card href="/docs/quickstart/" title="Quickstart">Describe, check, test, and serve a backend.</Card>
   <Card href="/docs/reference/sdk/" title="SDK reference">Every builder and helper.</Card>
 </Cards>

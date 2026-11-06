@@ -77,7 +77,7 @@ npx aleph test app.ts
 1 passed, 0 failed
 ```
 
-Each example runs on a fresh in-memory store with fixed time and ids, and also checks that the request stayed within its static bounds. See [Testing with examples](/docs/guides/testing/).
+Each example runs on a fresh in-memory store with fixed time and ids, and also checks that the request stayed within its static bounds. See [Testing with examples](/docs/verifying/).
 
 ## 4. Serve it
 
@@ -110,4 +110,4 @@ const note = await api.postNotes({ text: "typed" }); // note.pinned: boolean
 ## Next
 
 - [Tutorial: a team task tracker](/docs/tutorial/) covers orgs, roles, counters, and async work.
-- [How Aleph works](/docs/concepts/how-it-works/) explains what happened above.
+- [How Aleph works](/docs/how-it-works/) explains what happened above.

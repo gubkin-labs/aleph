@@ -1,5 +1,14 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { Code } from "@/components/Code";
+import {
+  AgentScene,
+  CostScene,
+  DescribeScene,
+  GeneratedScene,
+  PredictableScene,
+  SharedScene,
+} from "@/components/Scenes";
 
 const SAMPLE = `import { app, err, t } from "@aleph/sdk";
 
@@ -28,139 +37,135 @@ a.route("GET /orgs/:orgId/tasks")
 const CHECK = `$ aleph check app.ts
 ✔ valid: worst-case cost (share of the limit)
 
-route                    reads  writes      ops    bytes read   memory
-get_orgs_orgId_tasks  51 (20%)  0 (0%)  11 (1%)  81.0 KB (4%)   226.2 KB (3%)`;
+route                    reads  writes      ops    bytes read  effects   calls         memory
+get_orgs_orgId_tasks  51 (20%)  0 (0%)  11 (1%)  81.0 KB (4%)   0 (0%)  0 (0%)  226.2 KB (3%)`;
 
-const GUARANTEES = [
-  [
-    "Known worst-case cost",
-    "Every route has a static bound on reads, writes, operations, bytes, effects, calls, and memory, checked before deploy and enforced while it runs.",
-  ],
-  [
-    "Serializable by default",
-    "Each request is one optimistic transaction with phantom protection. No lost updates, no half-written state.",
-  ],
-  [
-    "Effects exactly once",
-    "Events, jobs, emails, and messages go to a transactional outbox: a failed request never sends, a committed one sends once.",
-  ],
-  [
-    "Isolation by construction",
-    "Every key is built inside its tenant's keyspace. A plan can't name another tenant's data, so it can't touch it.",
-  ],
-  [
-    "Types end to end",
-    "One schema drives input validation, inferred response types, a generated client, OpenAPI, and MCP tools.",
-  ],
-  [
-    "Safe to evolve",
-    "Every schema change is classified as safe, needing a backfill, or breaking, before it ships.",
-  ],
-];
-
-const STEPS = [
-  [
-    "Describe",
-    "Write routes, entities, and logic with the TypeScript SDK. Handlers run once, at build time, and record a plan.",
-  ],
-  ["Compile", "The SDK emits a manifest: plain, versioned JSON. No author code ships, only data."],
-  [
-    "Check",
-    "The core validates types and references and computes worst-case costs. Over-budget plans are rejected with diagnostics people and agents can act on.",
-  ],
-  [
-    "Run",
-    "The same core interprets the plan inside one metered transaction, natively or as WASM: locally, in tests, and in production.",
-  ],
-];
+function Chapter({
+  title,
+  scene,
+  flip,
+  children,
+}: {
+  title: string;
+  scene: ReactNode;
+  flip?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <section className={flip ? "chapter chapter-flip" : "chapter"}>
+      <div className="chapter-text">
+        <h2>{title}</h2>
+        {children}
+      </div>
+      <div className="chapter-scene">{scene}</div>
+    </section>
+  );
+}
 
 export default function Home() {
   return (
     <main className="home">
       <section className="hero">
-        <p className="eyebrow">Open-source · Apache-2.0</p>
-        <h1>Backends you can reason about before they run.</h1>
+        <h1>Describe a backend. Know its worst case before it runs.</h1>
         <p className="lead">
-          Aleph is a declarative language for backends. Describe routes, data, and logic in
-          TypeScript. Aleph compiles them into a manifest whose every request has a known worst-case
-          cost, runs it in one serializable transaction, and keeps tenants isolated by construction.
+          Aleph is an open-source, declarative language for backends. You describe routes, data, and
+          logic; Aleph turns the description into a plan and computes the most any request can ever
+          cost. That one fact is what lets many apps share the same servers and database safely, and
+          sharing is what makes them cheap to run.
         </p>
         <div className="hero-actions">
           <Link href="/docs/quickstart/" className="button">
             Get started
           </Link>
-          <Link href="/docs/" className="button button-secondary">
-            Read the docs
+          <Link href="/docs/why-declarative/" className="button button-secondary">
+            Why declarative
           </Link>
         </div>
       </section>
 
-      <section className="split">
-        <div>
-          <h2>Ordinary TypeScript in, a checked plan out</h2>
-          <p>
-            Routes look like the code you'd write anyway. The difference is what you get back: the
-            worst case of every request, before anything is deployed.
-          </p>
-          <Code code={CHECK} lang="text" />
-        </div>
-        <Code code={SAMPLE} lang="ts" />
-      </section>
-
-      <section>
-        <h2>What a declarative backend buys you</h2>
-        <div className="grid">
-          {GUARANTEES.map(([title, text]) => (
-            <div key={title} className="tile">
-              <h3>{title}</h3>
-              <p>{text}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <h2>How it works</h2>
-        <ol className="steps">
-          {STEPS.map(([title, text]) => (
-            <li key={title}>
-              <h3>{title}</h3>
-              <p>{text}</p>
-            </li>
-          ))}
-        </ol>
-        <p className="muted">
-          A manifest runs on any host that embeds the open-source core: your laptop with{" "}
-          <code>aleph dev</code>, your tests, or a production runtime.
+      <Chapter title="You describe what happens, not how" scene={<DescribeScene />}>
+        <p>
+          A route in Aleph is a description: which rows it reads, what it writes, what it checks.
+          The SDK runs your handler once, at build time, and records it as data. Nothing you wrote
+          runs in production; a small, audited interpreter does.
         </p>
-      </section>
+        <p>
+          Because the program is data, Aleph can read it the way a reviewer would, and work out what
+          it does in the worst case without running it.
+        </p>
+      </Chapter>
 
-      <section>
-        <h2>Everything a real backend needs</h2>
-        <div className="grid grid-small">
-          {[
-            "Entities, indexes, and counters",
-            "Auth, org roles, API keys",
-            "Cursor pagination and range queries",
-            "Exact decimals and time zones",
-            "Queues, retries, and schedules",
-            "Durable workflows with compensation",
-            "Signed webhooks with dedupe",
-            "Idempotency and rate limits",
-            "Worked examples as tests",
-            "Typed clients and OpenAPI",
-            "MCP tools for agents",
-            "Local dev with an inspector",
-          ].map((item) => (
-            <div key={item} className="chip">
-              {item}
-            </div>
-          ))}
-        </div>
+      <Chapter title="Every request has a ceiling" scene={<PredictableScene />} flip>
+        <p>
+          Every route gets a bound on reads, writes, operations, bytes, memory, effects, and
+          outbound calls. A route that could exceed its budget is rejected by{" "}
+          <code>aleph check</code>, with a message saying which query drives the cost.
+        </p>
+        <p>
+          While it runs, the same bound is metered. No request discovers in production that it loops
+          a million times.
+        </p>
+      </Chapter>
+
+      <Chapter title="So apps can share infrastructure" scene={<SharedScene />}>
+        <p>
+          Putting unrelated apps on one server is usually risky: one bad query or runaway loop slows
+          everyone down. With Aleph that can't happen, because no request can grow past a bound
+          known in advance, and every key lives inside its own tenant's keyspace.
+        </p>
+        <p>
+          So a runtime can pack thousands of small apps into the same processes and the same
+          database, the way a hosting provider packs static sites.{" "}
+          <Link href="/docs/shared-infrastructure/">How sharing works</Link>
+        </p>
+      </Chapter>
+
+      <Chapter title="Which is why it costs less" scene={<CostScene />} flip>
+        <p>
+          A typical small backend pays for a server, a database, and a cache that sit idle most of
+          the day. Shared, the idle capacity is pooled; you pay for requests that happen.
+        </p>
+        <p>
+          And because the worst case of every route is known, so is the most a route can cost you,
+          before you deploy it.
+        </p>
+      </Chapter>
+
+      <Chapter title="One description, everything derived from it" scene={<GeneratedScene />}>
+        <p>
+          The same declaration validates input, infers response types, and produces OpenAPI, a typed
+          client, and MCP tools. Worked examples you write next to a route run as tests. Every
+          schema change is classified as safe, needing a backfill, or breaking.
+        </p>
+        <p>
+          There is nothing to wire up: no ORM, no queue client, no migration scripts, no separate
+          API spec to keep in sync.
+        </p>
+      </Chapter>
+
+      <Chapter title="Small enough for an agent to get right" scene={<AgentScene />} flip>
+        <p>
+          The vocabulary is closed and typed, so a coding agent can't reach for a library that isn't
+          there. When it writes something too expensive or unsafe, the checker answers with a
+          precise diagnostic, and the agent can fix its own work before anyone reviews it.
+        </p>
+      </Chapter>
+
+      <section className="sample">
+        <h2>What it looks like</h2>
+        <p className="muted">
+          Ordinary TypeScript in, a checked plan out. This route lists an org's tasks with an open
+          count, and <code>aleph check</code> reports its worst case.
+        </p>
+        <Code code={SAMPLE} lang="ts" />
+        <Code code={CHECK} lang="text" />
       </section>
 
       <section className="cta">
-        <h2>Build your first app in five minutes</h2>
+        <h2>Build a first app in five minutes</h2>
+        <p className="muted">
+          Install the CLI, write one file, run it locally with <code>aleph dev</code>.
+        </p>
         <Link href="/docs/quickstart/" className="button">
           Start the quickstart
         </Link>
