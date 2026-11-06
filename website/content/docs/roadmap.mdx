@@ -1,0 +1,23 @@
+# Roadmap
+
+Aleph is pre-1.0. What's planned, roughly in order:
+
+## Language
+- **Freeze the manifest format** and publish a stability policy.
+- **Coverage-guided fuzzing** of the parser and validator, beyond the property-based generators that already run on every change.
+- **Streaming responses**, for long-running and LLM-backed routes.
+- **Blob storage**: files declared like entities, with bounded uploads.
+- **Search and vector indexes** as declared, bounded index kinds.
+- **Joins as a declared operation**, instead of `map` plus `get`.
+
+## Tooling
+- A **language server** for diagnostics in the editor, at the line, as you type.
+- A **visual cost explorer**: what each route can trigger, across handlers, jobs, and workflow steps.
+- **Generated clients** for more languages.
+
+## Release
+<Tbd>
+- Publish `@aleph/sdk`, `@aleph/cli`, `@aleph/core`, and `@aleph/manifest` to npm.
+- Set up versioning and changelogs.
+- Choose the docs domain and hosting, and add analytics if wanted.
+</Tbd>

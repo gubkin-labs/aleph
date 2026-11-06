@@ -1,0 +1,34 @@
+# Example apps
+
+The repository has two kinds of complete apps to read and run.
+
+## Example apps with a UI
+
+Each has a small React UI and an inspector panel showing every request's actual usage against its static bounds, plus handler runs, deliveries, and logs.
+
+```bash
+pnpm --filter @aleph-examples/todos dev
+```
+
+| App | What it shows |
+|---|---|
+| `examples/todos` | Signed-in users, CRUD, cursor paging, a range query on an index, a counter, and "due today" in the user's time zone |
+| `examples/team` | Org roles and API keys, case-insensitive unique emails, seat limits with error details, idempotent invites, a last-owner guard, and an MCP tool |
+| `examples/shop` | A charge job with a journaled payment call, retries, a dead-letter handler, receipts sent to the address in the user directory, a revenue sum, and an hourly scan |
+
+Each UI imports its types from a generated client (`src/client.ts`), and each app's routes carry examples that `aleph test` runs.
+
+## Conformance apps
+
+`conformance/cases/*` are golden apps that the SDK, the WebAssembly build, and the native core must agree on:
+- their manifests
+- their worst-case costs
+- every response in a scripted scenario
+
+| Case | What it covers |
+|---|---|
+| `projects` | A SaaS backend with plan limits and bulk operations |
+| `ledger` | Accounts, deposits, and transfers with invariants and idempotency |
+| `pipeline` | Queues, retries, dead letters, an OCR integration, a realtime channel, and a scanning schedule |
+| `commerce` | Nearly every language feature: objects, decimals, time zones, response types, webhooks, profiles, keyed jobs, counters of every kind, expiry, cascades, and CORS |
+| `fulfillment` | A durable workflow (saga) with signals, timeouts, retries, compensation, and cancellation |

@@ -1,0 +1,22 @@
+# CLI
+
+```bash
+aleph <command> <app.ts | manifest.json> [flags]
+```
+
+Every command takes an app module (`app.ts`, whose default export is an `app(...)`), or a built `manifest.json`. TypeScript runs through Node's built-in type stripping.
+
+| Command | What it does |
+|---|---|
+| `aleph build app.ts [-o manifest.json] [--source-map]` | Writes the manifest (stdout without `-o`). `--source-map` adds `file:line:col` locations for diagnostics |
+| `aleph check app.ts` | Validates, and prints each route's and handler's worst-case cost as a share of its limits. Exits 1 on diagnostics |
+| `aleph check app.ts --against deployed.json` | Also classifies every change from the deployed manifest (safe, needs backfill, breaking) and prints the migration plan. Exits 1 if not deployable |
+| `aleph test app.ts` | Runs every route example. Exits 1 on failures |
+| `aleph client app.ts [-o client.ts]` | Writes a typed fetch client |
+| `aleph dev app.ts [--port 3000] [--watch] [--seed seed.ts] [--data file] [--secret NAME=value]` | Serves the app locally; see [Local development](/docs/guides/local-development/) |
+| `aleph openapi app.ts` | Prints an OpenAPI 3.1 document |
+| `aleph mcp app.ts` | Prints the MCP tools the app exposes |
+
+Exit codes: `0` success, `1` the app has problems, `2` the command was used wrong.
+
+The commands are also exported from `@aleph/cli` for use from scripts: `check`, `generateClient`, `openapi`, `mcpTools`, `startDevServer`, and `main`.

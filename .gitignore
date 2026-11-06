@@ -7,3 +7,9 @@ coverage/
 .DS_Store
 # wasm-bindgen output is built, not committed
 packages/core-wasm/wasm/
+
+# Next.js
+website/.next/
+website/out/
+website/next-env.d.ts
+website/test/.samples-*/

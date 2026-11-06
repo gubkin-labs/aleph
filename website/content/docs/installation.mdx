@@ -1,0 +1,33 @@
+# Installation
+
+Aleph is two npm packages: the SDK you write apps with, and the CLI that checks, tests, and serves them. Both bundle the WebAssembly build of the core, so there's nothing else to install.
+
+```bash
+npm install @aleph/sdk
+npm install --save-dev @aleph/cli
+```
+
+<Tbd>
+The packages aren't published to npm yet. Until they are, use them from a clone of the repository (below). Publishing is a manual step for the maintainers: the `@aleph` npm scope, the package versions, and a release workflow.
+</Tbd>
+
+Requirements:
+- **Node.js 24 or newer.** The CLI loads `app.ts` with Node's built-in TypeScript support, so there's no separate build step.
+- **TypeScript 5.8 or newer** for editor support. The SDK's types do much of the checking as you type.
+
+## From the repository
+
+```bash
+git clone https://github.com/gubkin-labs/aleph.git
+cd aleph
+pnpm install
+pnpm build
+```
+
+The `aleph` command is then available from `packages/cli` (`pnpm --filter @aleph/cli exec aleph --help`), and the example apps under `examples/` use the packages directly. Building from source also needs a Rust toolchain with the `wasm32-unknown-unknown` target and `wasm-bindgen-cli`; see [Contributing](/docs/contributing/).
+
+## Check your setup
+
+```bash
+npx aleph --help
+```

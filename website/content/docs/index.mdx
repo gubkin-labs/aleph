@@ -1,0 +1,48 @@
+# What is Aleph?
+
+Aleph is an open-source, declarative language for backends. You describe your API's routes, data, and logic in TypeScript with the `@aleph/sdk` package. The SDK compiles that description into a **manifest**, a versioned JSON document. A small, trusted core validates the manifest, computes the worst-case cost of every request, and runs it.
+
+```ts
+import { app, t } from "@aleph/sdk";
+
+const a = app("todos");
+
+const Todo = a.entity("Todo", {
+  key: ["ownerId", "todoId"],
+  fields: {
+    ownerId: t.string().max(64),
+    todoId: t.id().generated(),
+    title: t.string().min(1).max(200),
+    done: t.bool().default(false),
+  },
+});
+
+a.route("POST /todos")
+  .body({ title: t.string().min(1).max(200) })
+  .status(201)
+  .handle(($, { body }) => Todo.insert({ ownerId: $.caller, title: body.title }));
+
+a.route("GET /todos")
+  .handle(($) => Todo.query({ prefix: [$.caller], limit: 50 }));
+
+export default a;
+```
+
+The code reads like ordinary TypeScript, but it doesn't run per request. It runs once, at build time, and records a **plan**: a tree of operations drawn from a closed set of built-ins. Because the plan is data, Aleph can tell you things about it before it ever runs.
+
+## What you get
+
+- **A known worst-case cost for every request.** Reads, writes, operations, bytes read, effects, integration calls, and memory are all bounded statically. A runtime meter enforces the same bounds. A request that could scan a million rows isn't slow; it's rejected before deploy.
+- **Correctness by default.** Every request is one serializable transaction. Events, jobs, and outgoing messages are released exactly once, after commit.
+- **Isolation by construction.** Every storage key is built inside the caller's tenant keyspace. A plan can't name another tenant's data.
+- **Types end to end.** One schema drives input validation, inferred response types, a generated typed client, OpenAPI, and MCP tools for AI agents.
+- **One core everywhere.** The same Rust core runs natively and as WebAssembly, so `aleph dev`, your tests, and production execute identical code.
+
+## Where to go next
+
+<Cards>
+  <Card href="/docs/quickstart/" title="Quickstart">Write, check, test, and serve an app in five minutes.</Card>
+  <Card href="/docs/why-declarative/" title="Why declarative">What changes when a backend is data instead of code.</Card>
+  <Card href="/docs/concepts/how-it-works/" title="How it works">From app.ts to a validated plan.</Card>
+  <Card href="/docs/reference/sdk/" title="SDK reference">Every builder and helper.</Card>
+</Cards>

@@ -17,6 +17,7 @@ This repository is the open-source half of Aleph:
 | [`packages/sdk`](packages/sdk) | `@aleph/sdk`: the TypeScript builder that produces manifests |
 | [`packages/cli`](packages/cli) | `@aleph/cli`: the `aleph` command (`build`, `check`, `test`, `client`, `dev`, `openapi`, `mcp`) |
 | [`examples`](examples) | Example apps with a minimal React UI and an inspector panel (`pnpm --filter @aleph-examples/shop dev`) |
+| [`website`](website) | The documentation site (Next.js, static export): `pnpm --filter @aleph/website dev` |
 | [`conformance`](conformance) | Golden apps, manifests, bounds, and request scenarios that the SDK, WASM, and native core must all agree on |
 | [`schema`](schema) | `manifest.schema.json`, for third-party SDKs and platforms |
 
@@ -162,6 +163,7 @@ See [`conformance/cases`](conformance/cases) for complete apps:
 - a document pipeline with queues, retries, a dead-letter handler, an OCR integration, a realtime
   channel, and a scanning cron
 - a shop (`commerce`) that exercises nearly every v0.3 feature
+- order fulfillment (`fulfillment`) as a durable workflow with compensation
 
 ## How it fits together
 
@@ -234,6 +236,9 @@ Manifest format `0.2` (language v0.3 features are additive). The core and SDK co
 - **Async:** events, entity-change triggers, queues with retries, backoff and dead letters, delayed
   and keyed jobs (replace or cancel by key), interval and calendar schedules (`"mon 09:00"` in a
   time zone), optionally scanning an entity in batches, and realtime channel publishes.
+- **Workflows:** durable multi-step processes. Each step is a bounded transaction with typed state
+  carried between steps, signals with timeouts (early signals are kept), delays, retries,
+  compensation steps, cancellation, and `maxSteps` so every instance finishes.
 - **Integrations:** journaled calls and after-commit sends, with mock providers for tests and `aleph dev`.
 - **Guarantees:** worst-case reads, writes, ops, bytes, effects, calls, and memory for every route
   and handler, enforced by a runtime meter. A differential test over 100k+ generated plans checks
@@ -249,7 +254,7 @@ Manifest format `0.2` (language v0.3 features are additive). The core and SDK co
 
   Source maps make diagnostics point at your code.
 
-Platform-side capabilities aren't here yet: durable multi-step workflows, streaming LLM routes,
+Platform-side capabilities aren't here yet: streaming LLM routes,
 blob storage, search and vector indexes, channel subscriptions, and real providers behind
 integrations. See the tickets in `aleph-infra/todo/platform`.
 

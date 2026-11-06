@@ -1,0 +1,96 @@
+# Durable workflows
+
+A **workflow** is a process that spans many steps and possibly days: charge, reserve stock, wait for approval, ship, and refund if anything fails. Each **step** is its own bounded transaction. **State** is carried between steps, steps can **wait for signals** with timeouts, failed steps are **retried** and then **compensated**, and every instance is guaranteed to finish.
+
+## Declare it
+
+```ts
+const Fulfill = a.workflow("fulfill", {
+  input: { orderId: t.string().max(32) },                     // what an instance starts with
+  state: { chargeId: t.string().max(64), reservationId: t.string().max(64) },  // carried between steps
+  signals: { approved: { by: t.string().max(64) } },          // what it can wait for
+  maxSteps: 10,                                               // every instance finishes
+  retries: 2,
+  backoff: "1s",
+});
+```
+
+## Add steps
+
+A step ends by choosing what's next:
+- `w.next(step, { delay?, state? })`
+- `w.waitFor(signal, { timeout, onSignal, onTimeout, state? })`
+- `w.complete(result?)`
+
+A step that ends without one completes the workflow.
+
+```ts
+Fulfill.step("charge", (_, w) => {
+  const order = Order.getOrFail({ orderId: w.input.orderId }, w.errors.gone);
+  const charge = payments.call("charge", { orderId: order.orderId, amountCents: order.amountCents });
+  w.next("reserve", { state: { chargeId: charge.chargeId } });
+}, { errors: { gone: err.notFound() } });
+
+Fulfill.step("reserve", (_, w) => {
+  const stock = inventory.call("reserve", { orderId: w.input.orderId });
+  w.waitFor("approved", {
+    timeout: "1d",
+    onSignal: "ship",
+    onTimeout: "refund",
+    state: { reservationId: stock.reservationId },
+  });
+}, { onFail: "refund" });                                     // compensation after the last retry
+
+Fulfill.step("ship", ($, w) => {
+  mail.send("send", { to: "warehouse", subject: $.fmt`Ship ${w.input.orderId}, approved by ${w.signals.approved.by}` });
+  w.complete({ shipped: true });
+});
+
+Fulfill.step("refund", ($, w) => {
+  $.when(w.state.chargeId.isSet(), () => payments.send("refund", { chargeId: w.state.chargeId.ifNull("") }));
+  w.complete({ shipped: false, reason: w.error.ifNull("not approved in time") });
+});
+```
+
+Inside a step, `w` gives you:
+- `w.input`, read-only
+- `w.state`, where every field may be `null` until a step sets it
+- `w.signals`, holding the signal that resumed the step
+- `w.error`, the failure that triggered a compensation step
+- `w.instanceId`
+
+## Use it from routes
+
+```ts
+a.route("POST /orders").handle(($, { body }) => {
+  Order.insert(body);
+  return { started: Fulfill.start(body.orderId, { orderId: body.orderId }) };  // false if it exists
+});
+
+a.route("POST /orders/:orderId/approve").handle(($, { params }) => {
+  Fulfill.signal(params.orderId, "approved", { by: $.caller });
+});
+
+a.route("GET /orders/:orderId/fulfillment").handle((_, { params }) => {
+  const run = Fulfill.get(params.orderId);      // { status, step, state, result, error, steps } | null
+  return { status: run.status, step: run.step, result: run.result };
+});
+
+a.route("DELETE /orders/:orderId/fulfillment").handle((_, { params }) => Fulfill.cancel(params.orderId));
+```
+
+The key you start an instance with (an order id, a user id) is how you find, signal, and cancel it later. Starting is idempotent: a second `start` with the same key returns `false`.
+
+## Guarantees
+
+- **Atomic steps.** A step's writes, its state changes, and scheduling the next step commit together. A crash between steps loses nothing, and a step never half-runs.
+- **Exactly-once transitions.** Every scheduled step is numbered. A stale entry, like a timeout after the signal already came or a step of a cancelled instance, is recognized and dropped.
+- **Early signals work.** A signal that arrives before the instance waits for it is kept, and used as soon as it waits.
+- **Bounded, and guaranteed to finish.** Each step is checked against the job limits, like any handler. `maxSteps` caps how many steps an instance runs, so loops between steps still end.
+- **Journaled calls.** Integration calls in a step aren't repeated when its transaction re-runs after a conflict.
+
+Instance statuses are `running`, `waiting`, `completed`, `failed` (a step failed with no `onFail`, or `maxSteps` ran out), and `cancelled`.
+
+## How it compares
+
+Code-replay workflow engines require deterministic workflow code and re-run it to rebuild state. Aleph workflows are declared steps with explicit, typed state, so nothing is replayed and determinism isn't something you have to maintain.

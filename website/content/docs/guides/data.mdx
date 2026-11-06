@@ -1,0 +1,87 @@
+# Reading and writing data
+
+## Reading
+
+```ts
+const task = Task.get({ orgId, taskId });              // a row, or null: check task.exists()
+const sure = Task.getOrFail({ orgId, taskId }, errors.missing);  // fails with 404-style declared error
+const many = Task.getMany(ids.map((id) => ({ orgId, taskId: id })));
+const member = Member.findBy("byEmail", [orgId, email.lower()]);  // first row of a (unique) index
+```
+
+## Queries
+
+```ts
+Task.query({ prefix: [orgId], limit: 20 });                                  // key order
+Task.query({ prefix: [orgId], limit: 20, order: "desc" });                   // newest ids first
+Task.query({ index: "byDue", prefix: [orgId, false], range: { lt: cutoff }, limit: 50 });
+Task.query({ index: "byStatus", prefix: [orgId], anyOf: ["open", "blocked"], limit: 50 });
+```
+
+- `prefix` gives values for the first key (or index) fields.
+- `range` bounds the next one. Ranges never match `null`, like SQL.
+- `anyOf` matches any of several values for the next field and merges the results in key order.
+- `limit` must have a static upper bound: a constant, an int input with a `.max()`, or `$.min(limit, 50)`.
+
+## Pagination
+
+```ts
+a.route("GET /tasks")
+  .query({ cursor: t.cursor() })
+  .handle(($, { query }) => Task.page({ prefix: [$.caller], limit: 20, after: query.cursor }));
+// → { items: [...], cursor: "..." | null }
+```
+
+Cursors are opaque, and can't be forged to escape their range.
+
+## Writing
+
+```ts
+Task.insert({ orgId, title });            // 409 already_exists if the key exists
+Task.upsert({ orgId, taskId, title });    // insert, or update the given fields
+Task.insertIfAbsent({ orgId, taskId });   // → bool
+task.update({ done: true });              // or Task.update(key, set)
+task.delete();                            // or Task.delete(key)
+tasks.updateAll({ done: true });          // a bounded list of rows
+```
+
+Every write validates the row against its fields and invariants, and maintains indexes and counters in the same transaction.
+
+## Optimistic concurrency
+
+```ts
+const Doc = a.entity("Doc", { key: ["docId"], fields: { docId: t.id(), body: t.string().max(5000), version: t.version() }, versioned: true });
+
+a.route("PUT /docs/:docId")
+  .params({ docId: t.id() })
+  .body({ body: t.string().max(5000), version: t.int().min(1) })
+  .handle((_, { params, body }) => Doc.update({ docId: params.docId }, { body: body.body }, { ifVersion: body.version }));
+```
+
+A stale version fails with `409 version_conflict`.
+
+## Expiry
+
+```ts
+const Session = a.entity("Session", {
+  key: ["token"],
+  fields: { token: t.string().max(64), userId: t.string().max(64), seenAt: t.timestamp().defaultNow() },
+  ttl: { field: "seenAt", after: "30d" },
+});
+```
+
+Expired rows are invisible to reads and queries, and an insert replaces them.
+
+## Parents and children
+
+```ts
+const Comment = a.entity("Comment", {
+  key: ["postId", "commentId"],
+  fields: { postId: t.id(), commentId: t.id().generated(), text: t.string().max(500) },
+  parent: { entity: Post, key: { postId: "postId" }, onDelete: "cascade" },
+});
+
+Comment.childrenOf(post, { limit: 50 });   // one range scan
+```
+
+With `onDelete: "cascade"`, deleting a post deletes its comments in the background, in bounded batches.

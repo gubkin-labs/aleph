@@ -1,0 +1,26 @@
+# Use cases
+
+Aleph fits backends whose work is mostly data, rules, and coordination: the large middle of application backends.
+
+## SaaS APIs
+Orgs, members, roles, API keys, plan limits, and per-tenant data. Org membership checks are part of the route declaration. Plan limits are counters read in O(1). See the [tutorial](/docs/tutorial/).
+
+## Money and ledgers
+Exact decimals, serializable transactions, invariants like "a balance never goes negative", and idempotency keys so a retried transfer applies once.
+
+## Commerce
+Orders with line items as nested objects, prices as decimals, inventory reservations, payment webhooks, and fulfillment as a [durable workflow](/docs/guides/workflows/) with compensation.
+
+## Pipelines and background work
+Uploads processed by queue jobs that call integrations, with retries, backoff, and dead letters, plus scheduled jobs that walk an entity in bounded batches.
+
+## Webhooks and integrations
+Signed inbound webhooks from Stripe, GitHub, or any HMAC sender, deduplicated by event id. Outbound calls are journaled, so a retried request never repeats a call.
+
+## Tools for AI agents
+Every route can be exposed as an [MCP tool](/docs/guides/clients/) with the same inputs, auth, and limits. Agents get a typed, bounded API, and the bounds mean an agent can't accidentally run an expensive operation.
+
+## When Aleph isn't the right fit
+- **Compute-heavy work**, like image processing or ML inference. Do it behind an integration.
+- **Unbounded analytics**, like ad-hoc SQL over all your data. Export to a warehouse instead.
+- **Long-lived connections and streaming**, which aren't part of the language yet. See the [roadmap](/docs/roadmap/).

@@ -1,0 +1,36 @@
+# Transactions and effects
+
+## One transaction per request
+
+A route's plan runs as **one optimistic, serializable transaction**:
+- Reads see a consistent snapshot.
+- Writes are buffered and committed together.
+- If another request changed something this one read, including a range it scanned (phantoms), the commit conflicts and the plan re-runs from the start.
+
+A plan that fails, with a declared error or a broken invariant or unique index, rolls back completely. A failure decided on stale data is re-run too, so you never get an error that wouldn't have happened on fresh reads.
+
+Under heavy contention on one hot spot, executions that conflicted take turns instead of racing. Hot counters can also be sharded (`shards: 8`).
+
+## Effects
+
+Some operations don't touch storage directly; they **release effects**:
+- `Event.emit(...)` runs every handler of the event.
+- `Queue.enqueue(...)` runs a job, optionally delayed or keyed.
+- `Channel.publish(...)` sends a realtime message.
+- `integration.send(...)` sends an outgoing message, such as an email.
+- Writes to an entity trigger its change handlers.
+- Starting or signalling a workflow.
+
+Effects are buffered while the plan runs and written to a **transactional outbox in the same commit**. A rolled-back or retried attempt releases nothing; a committed one releases each effect exactly once into the outbox. Delivery from the outbox is at-least-once, with retries and exponential backoff.
+
+## Integration calls
+
+`integration.call(...)` is different: it runs during the plan and returns data, like a payment provider's charge id. Calls are **journaled**: if the transaction conflicts and re-runs, the call's recorded result is reused instead of calling again. A retried request doesn't charge a card twice.
+
+## Idempotency
+
+Clients retry. `.idempotent({ ttl: "24h" })` stores the response with the request's `Idempotency-Key`, in the same transaction as its writes, and replays it for a repeat. Webhooks get the same treatment from their event id.
+
+## Handlers and jobs
+
+Each handler run is its own bounded transaction, against the job limits. Its writes, its new effects, and the removal of the outbox entry that triggered it commit together. If a worker crashes mid-run, the entry is still there and runs again. That's why handlers should be idempotent with respect to the outside world, and Aleph's journaled calls help with that.

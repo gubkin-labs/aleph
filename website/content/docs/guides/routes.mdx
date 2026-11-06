@@ -1,0 +1,81 @@
+# Routes and HTTP
+
+```ts
+a.route("POST /orgs/:orgId/projects")
+  .params({ orgId: t.string().max(64) })        // path params (default: strings ≤ 128 chars)
+  .query({ dryRun: t.bool().default(false) })   // query string
+  .body({ name: t.string().min(1).max(120) })   // JSON body
+  .member("orgId", { roles: ["owner", "admin"] })
+  .errors({ taken: err.conflict("That name is taken") })
+  .status(201)
+  .describe("Create a project")
+  .handle(($, { params, query, body, errors }) => { /* ... */ });
+```
+
+The route's id defaults to the method and path (`post_orgs_orgId_projects`); set one with `.id("createProject")`.
+
+## Inputs
+
+Inputs are validated before the plan runs. Invalid requests get a `400` that lists every problem, with exact paths for nested values:
+
+```json
+{ "error": "invalid_input", "message": "the request has invalid inputs",
+  "details": [{ "field": "body.items.2.qty", "message": "must be between 1 and 99, got 0" }] }
+```
+
+Lists and objects can only come in the body.
+
+## Responses
+
+The handler's return value is the JSON body. Shape the rest with:
+
+| | |
+|---|---|
+| `.status(201)` | The success status for the route (204 drops the body) |
+| `$.status(202)` | Set it on one branch |
+| `$.header("location", url)` | Set a header (lowercase names) |
+| `$.cookie("session", value, { maxAge: 3600 })` | Add a `Set-Cookie` (HttpOnly, Secure, SameSite=Lax by default) |
+| `$.redirect(url, 302)` | Redirect now |
+| `$.return(value)` | Respond now, skipping the rest (the transaction still commits) |
+| `.returns(type)` | Declare the response type (checked; undeclared fields are dropped) |
+
+## Errors
+
+Declare the business errors a route can fail with. Fail with `$.fail(error)`, or `$.ensure(cond, error)`:
+
+```ts
+.errors({ insufficientFunds: err.unprocessable("Insufficient funds", { balance: t.int(), needed: t.int() }) })
+.handle(($, { body, errors }) => {
+  const account = Account.getOrFail({ accountId: body.from }, errors.notFound);
+  $.ensure(account.balance.gte(body.amount), errors.insufficientFunds, {
+    balance: account.balance,
+    needed: body.amount,
+  });
+  // ...
+});
+```
+
+```json
+{ "error": "insufficientFunds", "message": "Insufficient funds", "details": { "balance": 40, "needed": 100 } }
+```
+
+The transaction rolls back. Built-in errors include `404 not_found` (`update` of a missing row), `409 already_exists`, `409 unique_violation`, `409 version_conflict`, `422 invariant_violation`, and `429 rate_limited`.
+
+## Idempotency and rate limits
+
+```ts
+.idempotent({ ttl: "24h", required: true })    // replay responses for a repeated Idempotency-Key
+.rateLimit({ per: "user", max: 10, window: "1m" })
+```
+
+## CORS
+
+```ts
+const a = app("shop", { cors: { origins: ["https://shop.example.com"], credentials: true, maxAge: "1h" } });
+```
+
+Preflight `OPTIONS` requests are answered without running anything.
+
+## Deprecation and versions
+
+`.deprecated("Use GET /v2/items")` adds `Deprecation: true` to responses and marks the route in OpenAPI and generated clients. `.version("2024-06-01")` labels it in docs.

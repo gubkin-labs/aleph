@@ -1,0 +1,69 @@
+# Expressions and logic
+
+Values in a plan are **expressions**: they only exist when the plan runs. So you use methods instead of operators, and `$` helpers instead of `if` and `for`.
+
+```ts
+total.plus(tax).gte(100)      // not total + tax >= 100
+$.fmt`Hello ${user.name}`     // not `Hello ${user.name}`
+```
+
+## Control flow
+
+| | |
+|---|---|
+| `$.ensure(cond, error, details?)` | Fail unless `cond` |
+| `$.fail(error, details?)` | Fail |
+| `$.when(cond, () => { ... })` | Run when `cond` |
+| `$.if(cond).then(() => ...).else(() => ...)` | Branch |
+| `$.forEach(list, (item) => { ... })` | Loop over a bounded list (may write) |
+| `$.select(cond, a, b)` | Choose a value |
+| `$.match(value, { a: ..., b: ..., _: ... })` | Choose by an enum or string (exhaustive, or with `_`) |
+| `$.all(...)`, `$.any(...)` | Combine conditions |
+| `$.return(value)` | Respond now |
+| `$.log(label, value)` | Log for debugging |
+
+## Lists
+
+Lists always have a known maximum length.
+
+```ts
+const lines = body.items.map((item) => ({ sku: item.sku, total: item.price.times(item.qty) }));
+lines.sum((l) => l.total);
+lines.count((l) => l.total.gt(100));
+lines.some((l) => l.sku.eq("GIFT"));
+lines.every((l) => l.total.gt(0));
+lines.min((l) => l.total);  lines.max((l) => l.total);       // null when empty
+lines.sortBy((l) => l.total, "desc").take(3);
+tags.distinct();  tags.includes("urgent");  a.concat(b);  list.slice(1, 4);  list.first();
+```
+
+`map` and `filter` bodies may read (a `get` inside `map` is a join) but never write. Use `$.forEach` to write.
+
+## Strings
+
+`.lower()`, `.upper()`, `.trim()`, `.truncate(n)`, `.slice(start, end)`, `.replace(find, with)`, `.padStart(n, "0")`, `.padEnd(n)`, `.startsWith()`, `.endsWith()`, `.contains()`, `.matches(/^[a-z]+$/)` (linear-time regex), `.length()`, and `.split(",", 10)` (into a list of at most 10 parts).
+
+## Numbers
+
+- **Ints:** `.plus()`, `.minus()`, `.times()`, `.div()` (truncates), `.divFloor()`, `.divCeil()`, `.mod()`, `.pow()`, `.abs()`, `.negate()`, `$.min(a, b)`, `$.max(a, b)`.
+- **Decimals** (`t.decimal(2)`, or `$.decimal("0.08")` as a constant) mix with ints and stay exact:
+
+```ts
+const tax = price.times($.decimal("0.08")).round(2);         // half-even by default
+price.round(0, "up");  price.toInt("floor");  price.format({ decimals: 2, grouping: true }); // "1,234.50"
+```
+
+## Time
+
+Timestamps are milliseconds. Calendar math takes an IANA time zone (UTC by default), and handles daylight-saving changes:
+
+```ts
+$.now().startOf("day", "Europe/Berlin");
+order.placedAt.add(1, "week", order.tz);
+order.placedAt.part("weekday", order.tz);                     // 1 = Monday
+order.placedAt.formatTime("%Y-%m-%d %H:%M", order.tz);
+```
+
+## Null
+
+Values that may be `null` propagate it through arithmetic and string functions. Use `.isNull()`, `.isSet()`, and `.ifNull(fallback)`. See [Types and null](/docs/concepts/types/).

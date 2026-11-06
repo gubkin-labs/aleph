@@ -3,6 +3,7 @@
  * so it has methods instead of operators: `a.plus(b).gte(c)`, not `a + b >= c`.
  */
 import type { BinaryOp, Expr as Node, Rounding, TimePart, TimeUnit } from "@aleph/manifest";
+import { List } from "./data.js";
 import type { Decimal } from "./fields.js";
 import { toLiteral, toNode } from "./node.js";
 import { AlephBuildError } from "./recorder.js";
@@ -226,6 +227,14 @@ export class Expr<T> {
       start: toNode(start),
       ...(end === undefined ? {} : { end: toNode(end) }),
     });
+  }
+
+  /** Splits on `separator` into at most `max` parts (the last keeps the rest). */
+  split(this: Expr<string | null>, separator: ExprLike<string>, max: number): List<Expr<string>> {
+    return new List<Expr<string>>(
+      { kind: "split", of: this["~node"], sep: toNode(separator), max },
+      { kind: "scalar" },
+    );
   }
 
   /** Every occurrence of `find` replaced with `replacement`. */

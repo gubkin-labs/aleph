@@ -1,0 +1,64 @@
+# Diagnostics
+
+Validation reports every problem it finds, each with a stable **code**, a **path** into the manifest, and a message that says how to fix it. With source maps (`aleph check` adds them), each diagnostic also points at the line in your app:
+
+```text
+✖ unbounded_limit at app.ts:24:5 (routes[1].plan.body[0].op.limit)
+  query limit must have a static upper bound, found int. Use a literal, an int input with a max, or $.min(limit, N).
+```
+
+Codes are stable: tools and agents can match on them.
+
+| Code | Meaning |
+|---|---|
+| `invalid_manifest` | The JSON doesn't match the manifest format. |
+| `unsupported_format_version` | The manifest's `formatVersion` isn't one this core reads. |
+| `invalid_name` | A name isn't 1-64 characters of letters, digits, and `_`. |
+| `invalid_field_type` | A field type is malformed: min above max, an empty enum, nested arrays, objects too deep, a bad decimal scale. |
+| `invalid_default` | A default doesn't fit its field. |
+| `invalid_key` | An entity's key is empty, repeats a field, or uses an optional, array, or object field. |
+| `invalid_index` | An index has no fields or uses an unorderable field. |
+| `row_too_large` | A row's worst-case size is over 64 KB. Lower string and array maximums. |
+| `unknown_entity` | The plan names an entity that isn't declared. |
+| `unknown_field` | A field, object field, or state field isn't declared. |
+| `unknown_index` | A query names an undeclared index. |
+| `unknown_counter` | A counter isn't declared. |
+| `unknown_error` | `fail` or `ensure` names an error the route or handler doesn't declare. |
+| `unknown_input` | The plan reads an input the route doesn't declare. |
+| `duplicate_route_id` | Two routes share an id. |
+| `duplicate_route` | Two routes have the same method and path shape. |
+| `invalid_path` | A path doesn't start with `/` or has empty segments. |
+| `path_param_mismatch` | The path's `:params` don't match the declared params. |
+| `invalid_error_status` | An error status isn't 400-599, or a success status isn't 200-399. |
+| `undefined_var` | A plan uses a variable outside its scope. |
+| `duplicate_var` | A plan defines a variable twice. |
+| `missing_key_field` | A key is missing a field, or an insert has no value for a key field. |
+| `missing_required_field` | An insert or object is missing a required field. |
+| `immutable_key_field` | An update tries to change a key field. |
+| `invalid_prefix` | A prefix or `anyOf` doesn't fit the scanned key, or `anyOf` is combined with paging. |
+| `invalid_counter_key` | A counter's grouping, aggregate, or shards are invalid. |
+| `unbounded_list` | A loop or aggregate is over something without a known maximum length. |
+| `unbounded_limit` | A query's `limit` has no static upper bound. Use a constant, an int input with a max, or `$.min(limit, N)`. |
+| `write_in_pure_block` | A `map` or `filter` body writes, releases an effect, or returns. |
+| `non_exhaustive_match` | A `$.match` doesn't cover every enum value and has no `_` case. |
+| `unknown_match_case` | A `$.match` case isn't a value of the enum. |
+| `invalid_field_access` | A field is read from something that isn't a row or object. |
+| `type_mismatch` | An operand, written value, or response has the wrong type, or may be `null` where it can't be. |
+| `invalid_predicate` | A row expression (index, counter, invariant) depends on something other than the row. |
+| `invalid_auth` | A route's auth rule is malformed. |
+| `unknown_role` | A route requires an undeclared role. |
+| `unknown_scope` | A route requires an undeclared API key scope. |
+| `invalid_idempotency` | An idempotency TTL is out of range. |
+| `immutable_entity` | An append-only entity is updated or deleted. |
+| `unknown_event` | An event isn't declared. |
+| `unknown_queue` | A queue isn't declared. |
+| `unknown_channel` | A channel isn't declared. |
+| `unknown_integration` | An integration isn't declared. |
+| `unknown_operation` | An integration operation isn't declared, or is called with the wrong mode. |
+| `invalid_payload` | Payload or input values don't match their declared fields. |
+| `invalid_handler` | A handler's trigger, schedule, or workflow transition is invalid. |
+| `invalid_declaration` | A declaration is invalid: a queue without a handler, a workflow without its start step, a bad CORS origin, or a versioned entity without `version`. |
+| `invalid_route` | A route-level rule is broken: a reserved header, a webhook that isn't public `POST`, or `OPTIONS` routes. |
+| `invalid_range` | A query range has two lower or two upper bounds, or no field to bound. |
+| `invalid_expression` | An expression's static arguments are invalid: a bad regex, an unknown time zone, a bad pattern or scale. |
+| `over_budget` | The worst case of a route or handler is over a limit. Lower the bounds that drive it, or move the work to a job. |

@@ -1,0 +1,71 @@
+# Testing with examples
+
+A route's **examples** are worked cases: given some data, this request gets this response. They live in the manifest next to the route, so they're documentation, tests, and an OpenAPI annotation at once.
+
+```ts
+a.route("POST /orgs/:orgId/members")
+  .member("orgId", { roles: ["owner"] })
+  .body({ email: t.string().min(3).max(200) })
+  .errors({ seatLimit: err.forbidden("No seats left", { seats: t.int() }) })
+  .example({
+    name: "a full free plan says how many seats it has",
+    as: { userId: "u1", orgs: { acme: "owner" } },
+    given: {
+      Org: [{ orgId: "acme", name: "Acme" }],
+      Member: [
+        { orgId: "acme", email: "a@acme.test" },
+        { orgId: "acme", email: "b@acme.test" },
+        { orgId: "acme", email: "c@acme.test" },
+      ],
+    },
+    request: { params: { orgId: "acme" }, body: { email: "d@acme.test" } },
+    expect: { status: 403, body: { error: "seatLimit", details: { seats: 3 } } },
+  })
+  .handle(/* ... */);
+```
+
+```bash
+npx aleph test app.ts
+```
+
+## What an example can set
+
+| Field | |
+|---|---|
+| `given` | Rows that exist first, by entity (validated; defaults, indexes, and counters apply) |
+| `users` | User profiles in the directory |
+| `as` | The caller: `{ userId, orgs, apiKey, profile }` |
+| `request` | `params`, `query`, `body`, `headers` |
+| `mocks` | Integration responses: `{ integration, operation, response \| error }` |
+| `secrets` | Test secrets, such as a webhook signing key |
+| `process` | Also run the async work the request caused |
+| `expect` | `status` (default 200), `body` (a subset), and with `process`: `runs` and `deliveries` |
+
+Bodies match as subsets: listed keys must be equal, others are ignored, and arrays match item by item.
+
+## What every example also checks
+
+Each example runs on a fresh in-memory store, with a fixed clock (`2023-11-14T22:13:20Z`) and deterministic ids. Beyond the expected response, it fails if the request used **more than its static bounds** on any resource. Examples double as a check of the cost analysis.
+
+## In your test runner
+
+```ts
+import { runExamples } from "@aleph/core";
+import app from "../app.ts";
+
+test("examples pass", () => {
+  expect(runExamples(app.toJSON()).filter((r) => r.failures.length > 0)).toEqual([]);
+});
+```
+
+For longer flows across many requests, use the dev engine directly:
+
+```ts
+import { DevEngine } from "@aleph/core";
+
+const engine = new DevEngine(app.build());
+engine.seed("Product", [{ sku: "BK-1", price: "19.99" }]);
+const response = engine.handle({ method: "POST", path: "/orders", caller: { userId: "ada" }, body: { /* ... */ } }, 1_000);
+engine.process(2_000);               // run due async work at t = 2s
+engine.takeDeliveries();             // emails and messages sent
+```

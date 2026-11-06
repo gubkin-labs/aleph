@@ -1,0 +1,69 @@
+# Data model
+
+Aleph's storage is an **ordered key-value store** with transactions. Entities, indexes, and counters map onto it, and every access is a key lookup or a bounded range scan.
+
+## Entities and keys
+
+```ts
+const Task = a.entity("Task", {
+  key: ["orgId", "taskId"],
+  fields: { orgId: t.string().max(64), taskId: t.id().generated(), title: t.string().max(200) },
+});
+```
+
+Rows are stored sorted by their key tuple. A **prefix** of the key selects a contiguous range: `prefix: [orgId]` is every task of one org, in `taskId` order. Generated ids are ULIDs, which sort by creation time, so the newest come last (or first with `order: "desc"`).
+
+Choose keys by how you read: put the field you'll filter by first.
+
+## Field types
+
+| Builder | Notes |
+|---|---|
+| `t.string().max(n)` | A maximum is required; it bounds the row size |
+| `t.int()` | 64-bit; `.min()` and `.max()` bound it, and a max makes it usable as a query limit |
+| `t.decimal(scale)` | Exact decimal, sent as a string like `"12.50"` |
+| `t.bool()`, `t.enum(...)` | |
+| `t.id()` | A ULID; `.generated()` creates one on insert |
+| `t.timestamp()` | Milliseconds; `.defaultNow()` |
+| `t.timeZone()` | An IANA name like `"Europe/Berlin"` |
+| `t.array(item, max)` | A list of at most `max` items |
+| `t.object({...})` | Nested fields, at most 4 deep |
+
+Fields can be `.optional()` (stored as `null`), have a `.default(...)`, or be marked `.deprecated(note)`.
+
+## Indexes
+
+```ts
+indexes: {
+  byDue: ["orgId", "done", "dueAt"],
+  byEmail: { fields: ["orgId", { name: "email", value: (m) => m.email.lower() }], unique: true },
+  overdue: { fields: ["dueAt"], where: (t) => t.done.not() },
+}
+```
+
+- Indexes can be **computed** (index a value derived from the row), **unique** (a conflicting write fails with 409), or **partial** (`where`).
+- Queries scan an index by prefix, optionally with a range on the next part (`range: { gte, lt }`), or with several values for it (`anyOf`, like SQL's `IN`).
+- Each index costs writes on every change, so add the ones your queries need.
+
+## Counters
+
+```ts
+a.counter("openTasks", { of: Task, groupBy: ["orgId"], where: (t) => t.done.not() });
+a.counter("revenue", { of: Order, groupBy: [], sum: (o) => o.totalCents });
+a.counter("cheapest", { of: Product, groupBy: ["category"], agg: { min: "price" } });
+a.counter("perDay", { of: Order, groupBy: [{ name: "day", value: (o) => o.placedAt.startOf("day") }], shards: 8 });
+```
+
+Counters are maintained on write, inside the same transaction, and read in O(1). They can count rows, sum a value, track a minimum, maximum, or distinct count, group by computed parts like the day, and spread a hot count over shards.
+
+## Other entity options
+
+- `appendOnly: true`: rows can be inserted, never updated or deleted.
+- `invariants`: rules every row must satisfy, checked on every write.
+- `versioned: true`: a `version` field for optimistic concurrency (`update(..., { ifVersion })`).
+- `ttl: { field, after }`: rows expire and become invisible.
+- `parent: { entity, key, onDelete: "cascade" }`: children found with `childrenOf`, and deleted with their parent.
+
+## What's deliberately missing
+
+There are no unbounded scans, no joins, and no ad-hoc queries. Joins are written as a query plus `map` with `get` inside, which keeps the cost visible. Aggregations are counters, maintained as you write.

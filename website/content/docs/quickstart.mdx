@@ -1,0 +1,113 @@
+# Quickstart
+
+In five minutes: write a small backend, see its worst-case costs, add an example that doubles as a test, and serve it locally.
+
+## 1. Describe the app
+
+Create `app.ts`:
+
+```ts
+import { app, err, t } from "@aleph/sdk";
+
+const a = app("notes");
+
+const Note = a.entity("Note", {
+  key: ["ownerId", "noteId"],
+  fields: {
+    ownerId: t.string().max(64),
+    noteId: t.id().generated(),
+    text: t.string().min(1).max(500),
+    pinned: t.bool().default(false),
+  },
+});
+
+a.route("POST /notes")
+  .body({ text: t.string().min(1).max(500) })
+  .status(201)
+  .example({
+    name: "creates a note",
+    as: { userId: "ada" },
+    request: { body: { text: "  hello  " } },
+    expect: { status: 201, body: { text: "hello", pinned: false } },
+  })
+  .handle(($, { body }) => Note.insert({ ownerId: $.caller, text: body.text.trim() }));
+
+a.route("GET /notes")
+  .query({ cursor: t.cursor() })
+  .handle(($, { query }) => Note.page({ prefix: [$.caller], limit: 20, after: query.cursor }));
+
+a.route("POST /notes/:noteId/pin")
+  .params({ noteId: t.id() })
+  .errors({ missing: err.notFound("No such note") })
+  .handle(($, { params, errors }) =>
+    Note.getOrFail({ ownerId: $.caller, noteId: params.noteId }, errors.missing).update({ pinned: true }),
+  );
+
+export default a;
+```
+
+Routes default to signed-in callers, and `$.caller` is the user's id. Every string has a maximum length: that's what lets Aleph bound the size of a row.
+
+## 2. Check it
+
+```bash
+npx aleph check app.ts
+```
+
+```text
+✔ valid: worst-case cost (share of the limit)
+
+route                    reads  writes      ops    bytes read  effects   calls         memory
+get_notes              20 (8%)  0 (0%)   6 (0%)  67.6 KB (3%)   0 (0%)  0 (0%)  199.3 KB (2%)
+post_notes              1 (0%)  1 (2%)   7 (0%)   3.4 KB (0%)   0 (0%)  0 (0%)    6.8 KB (0%)
+post_notes_noteId_pin   2 (1%)  1 (2%)  16 (1%)   6.8 KB (0%)   0 (0%)  0 (0%)   10.1 KB (0%)
+```
+
+Each number is the most that route can ever use, against the [per-request limits](/docs/reference/limits/). Try changing the `GET` route's `limit: 20` to `limit: 5000`, and the check fails with a diagnostic explaining which bound to lower.
+
+## 3. Test it
+
+```bash
+npx aleph test app.ts
+```
+
+```text
+✔ post_notes: creates a note
+
+1 passed, 0 failed
+```
+
+Each example runs on a fresh in-memory store with fixed time and ids, and also checks that the request stayed within its static bounds. See [Testing with examples](/docs/guides/testing/).
+
+## 4. Serve it
+
+```bash
+npx aleph dev app.ts --watch
+```
+
+Authentication is faked with headers in development:
+
+```bash
+curl -X POST localhost:3000/notes -H 'x-aleph-user: ada' -H 'content-type: application/json' -d '{"text":"first"}'
+curl localhost:3000/notes -H 'x-aleph-user: ada'
+```
+
+Every response carries an `x-aleph-usage` header with what the request actually used.
+
+## 5. Generate a typed client
+
+```bash
+npx aleph client app.ts -o client.ts
+```
+
+```ts
+import { createClient } from "./client";
+
+const api = createClient({ baseUrl: "http://127.0.0.1:3000", headers: () => ({ "x-aleph-user": "ada" }) });
+const note = await api.postNotes({ text: "typed" }); // note.pinned: boolean
+```
+
+## Next
+
+- [Tutorial: a team task tracker](/docs/tutorial/) covers orgs, roles, counters, and async work.
+- [How Aleph works](/docs/concepts/how-it-works/) explains what happened above.

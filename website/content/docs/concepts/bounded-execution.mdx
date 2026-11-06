@@ -1,0 +1,45 @@
+# Bounded execution
+
+Every route and handler has a **static bound**: the most it can use of each resource, whatever the input or data.
+
+| Resource | What counts |
+|---|---|
+| `reads` | Rows, index entries, and counters read |
+| `writes` | Rows, index entries, and counters written |
+| `ops` | Plan operations and expression nodes evaluated |
+| `bytesRead` | Bytes read from storage |
+| `effects` | Events, jobs, messages, sends, and change triggers released |
+| `calls` | Integration calls |
+| `memory` | Bytes of values bound while running |
+
+## How bounds are computed
+
+The checker folds over the plan:
+- **Sequences add**, and **branches take the maximum.**
+- **Loops multiply** the body's cost by the list's maximum length. Lists get a maximum from where they come from: a query's `limit`, an array field's `max`, a list literal, or `map`/`filter` over those.
+- **Queries** cost `limit` reads, and `limit × max row size` bytes.
+- **Writes** cost the row, plus each index entry and counter it maintains (twice for updates, which may move an entry).
+- **Sorting** costs `n × ⌈log₂ n⌉` comparisons.
+
+Everything traces back to a declaration: `.max(...)` on strings, ints, and arrays, and `limit` on queries. That's why a string field without a maximum isn't a field.
+
+## When a bound is too high
+
+```text
+✖ over_budget at app.ts:41:3 (routes[2].plan)
+  route "bulkComplete" can use up to 75 writes in the worst case, over the limit of 50.
+  Lower the bounds that drive it (query limits, list sizes) or split the work.
+```
+
+The fix is always one of:
+- **Lower a bound**, such as a smaller `limit` or a smaller `max` on a list input.
+- **Move the work to a job**: a queue job, a scanning schedule, or a [workflow](/docs/guides/workflows/). Each run is bounded against the larger job limits.
+- **Remove amplification**: an index or counter you don't need costs writes on every change.
+
+## The meter
+
+At runtime every charge goes through a meter configured with the same limits. Static analysis promises the meter never trips. If it ever does (a bug), the request stops with `budget_exceeded` and its transaction rolls back. You never get a half-done, over-budget request.
+
+## Why this matters
+
+Bounds make a shared runtime safe. A runtime can admit a request knowing its worst case, schedule work fairly, and bill predictably. One app's bad loop can't starve the others, because the bad loop can't be expressed.

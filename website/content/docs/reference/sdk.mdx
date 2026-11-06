@@ -1,0 +1,85 @@
+# SDK
+
+`@aleph/sdk` builds manifests. Everything below is exported from the package root.
+
+## `app(name, options?)`
+
+| Option | |
+|---|---|
+| `roles` | Org roles routes may require |
+| `apiKeyScopes` | API key scopes routes may require |
+| `profile` | User profile fields the app reads |
+| `cors` | `{ origins, credentials?, headers?, maxAge? }` |
+
+| Method | |
+|---|---|
+| `a.entity(name, def)` | `{ key, fields, indexes?, invariants?, appendOnly?, versioned?, ttl?, parent?, deprecated? }` |
+| `a.counter(name, def)` | `{ of, groupBy, where?, sum?, agg?, shards? }` |
+| `a.route("METHOD /path")` | A route builder |
+| `a.webhook("POST /path", { verify, dedupe? })` | A webhook route builder |
+| `a.event(name, { payload })` | `.emit(payload)` |
+| `a.queue(name, { payload, retries?, backoff?, maxBackoff? })` | `.enqueue(payload, { delay?, key? })`, `.cancel(key)` |
+| `a.channel(name, { key, message })` | `.publish(key, message)` |
+| `a.integration(name, { provider, config?, operations })` | `.call(op, input)`, `.send(op, input)` |
+| `a.workflow(name, def)` | `.step(name, fn, options?)`, `.start(key, input)`, `.signal(key, name, payload)`, `.get(key)`, `.cancel(key)` |
+| `a.onEvent`, `a.onInsert`, `a.onUpdate`, `a.onDelete`, `a.onQueue`, `a.onDeadLetter` | Handlers: `(id, source, fn, options?)` |
+| `a.every(id, interval \| "mon 09:00", fn, { tz?, scan?, offset? })`, `a.cron(id, expr, fn, { tz?, scan? })` | Schedules |
+| `a.caller.id`, `a.caller.profile` | The caller |
+| `a.users.get(userId)` | A user from the directory |
+| `a.build()`, `a.toJSON()` | The manifest (object, or deterministic JSON) |
+
+## Route builder
+
+`.params(fields)`, `.query(fields)`, `.body(fields)`, `.auth("public" | "signedIn")`, `.member(param, { roles?, apiKeyScopes? })`, `.errors({...})`, `.status(code)`, `.returns(type)`, `.idempotent({ ttl, required? })`, `.rateLimit({ per, max, window })`, `.describe(text)`, `.mcp(name)`, `.deprecated(note)`, `.version(label)`, `.example({...})`, `.id(id)`, and `.handle(($, ctx) => value)`.
+
+## Field types: `t`
+
+| | |
+|---|---|
+| `t.string().min(n).max(n)` | Required max |
+| `t.int().min(n).max(n)` | |
+| `t.decimal(scale).min("0").max("100")` | |
+| `t.bool()`, `t.enum("a", "b")` | |
+| `t.id()`, `.generated()` | ULIDs |
+| `t.timestamp()`, `.defaultNow()` | |
+| `t.timeZone()` | |
+| `t.array(item, max)`, `t.object({...})` | |
+| `t.cursor()`, `t.version()` | Pagination cursors, entity versions |
+
+Every field: `.optional()`, `.default(value)`, `.deprecated(note)`.
+
+## Errors: `err`
+
+`err.badRequest`, `err.unauthorized`, `err.forbidden`, `err.notFound`, `err.conflict`, `err.gone`, `err.unprocessable`, `err.tooManyRequests`, and `err.status(code, message)`. Each is `(message?, details?: fields)`.
+
+## Control flow: `$`
+
+`$.ensure`, `$.fail`, `$.when`, `$.if(...).then(...).else(...)`, `$.forEach`, `$.select`, `$.match`, `$.all`, `$.any`, `$.min`, `$.max`, `$.fmt`, `$.decimal`, `$.now()`, `$.caller`, `$.callerRole(org)`, `$.return`, `$.status`, `$.header`, `$.cookie`, `$.redirect`, and `$.log`.
+
+## Entities
+
+| | |
+|---|---|
+| Reads | `get(key)`, `getOrFail(key, error)`, `exists(key)`, `getMany(keys)`, `findBy(index, values)` |
+| Queries | `query({ index?, prefix?, anyOf?, range?, limit, order?, after? })`, `page(...)`, `childrenOf(parent, options)` |
+| Writes | `insert(values)`, `upsert(values)`, `insertIfAbsent(values)`, `update(key, set, { ifVersion? })`, `delete(key)` |
+| Rows | `row.field`, `row.exists()`, `row.update(set)`, `row.delete()` |
+
+## Lists
+
+`length`, `first()`, `isEmpty()`, `map(fn)`, `filter(fn)`, `sum(fn?)`, `min(fn?)`, `max(fn?)`, `some(fn)`, `every(fn)`, `count(fn?)`, `sortBy(fn, order?)`, `slice(start, end?)`, `take(n)`, `distinct()`, `concat(...lists)`, `includes(value)`, `updateAll(set)`, and `deleteAll()`.
+
+## Expressions
+
+| | |
+|---|---|
+| Comparison | `eq`, `neq`, `lt`, `lte`, `gt`, `gte`, `in`, `notIn` |
+| Null | `isNull`, `isSet`, `ifNull` |
+| Boolean | `and`, `or`, `not` |
+| Numbers | `plus`, `minus`, `times`, `div`, `divFloor`, `divCeil`, `mod`, `pow`, `abs`, `negate`, `round`, `toInt`, `format` |
+| Strings | `lower`, `upper`, `trim`, `truncate`, `slice`, `split`, `replace`, `padStart`, `padEnd`, `matches`, `startsWith`, `endsWith`, `contains`, `length` |
+| Time | `startOf(unit, tz?)`, `add(n, unit, tz?)`, `part(part, tz?)`, `formatTime(pattern?, tz?)` |
+
+## Webhook verification: `verify`
+
+`verify.stripe(secret)`, `verify.github(secret)`, and `verify.hmacSha256({ secret, header, ... })`.

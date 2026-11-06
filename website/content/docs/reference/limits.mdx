@@ -1,0 +1,45 @@
+# Limits
+
+## Per execution
+
+| Resource | Route | Job (handler, scheduled run, or workflow step) |
+|---|---|---|
+| Reads | 250 | 500 |
+| Writes | 50 | 200 |
+| Operations | 2,000 | 5,000 |
+| Bytes read | 2 MB | 8 MB |
+| Effects released | 50 | 200 |
+| Integration calls | 3 | 5 |
+| Memory (bytes of bound values) | 8 MB | 32 MB |
+
+Plans are checked against these statically, and metered at runtime. A route that conflicts is re-run up to 5 times before failing with `503 conflict`.
+
+## Data
+
+| | |
+|---|---|
+| Encoded row size | 64 KB (computed from the fields' maximums) |
+| Object nesting | 4 levels |
+| Decimal scale | 0-18 digits, magnitude below 10²⁰ |
+| Query `anyOf` values | 10 |
+| Counter shards | 2-64 |
+
+## Async
+
+| | |
+|---|---|
+| Job delay, workflow delay, or wait timeout | 30 days |
+| Queue and workflow step retries | 10 |
+| Interval schedules | 1 second to 30 days |
+| Workflow `maxSteps` | 1-1000 (default 100) |
+| Idempotency and webhook dedupe window | 7 days |
+| Job and workflow keys | 1-256 bytes |
+
+## Strings and patterns
+
+| | |
+|---|---|
+| Regex patterns | 256 characters, linear-time matching |
+| Time format patterns | 64 characters |
+| Padding target length | 1,000 |
+| Split parts | 1-1,000 |
