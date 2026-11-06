@@ -185,6 +185,11 @@ pub enum Expr {
         /// The items.
         items: Vec<Expr>,
     },
+    /// The first item of a list, or `null` if it's empty.
+    First {
+        /// The list.
+        of: Box<Expr>,
+    },
     /// The length of a list or string.
     Length {
         /// The list or string.

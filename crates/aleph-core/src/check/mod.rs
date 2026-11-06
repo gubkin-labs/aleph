@@ -12,7 +12,7 @@ use crate::diagnostics::{Diagnostic, DiagnosticCode as Code};
 use crate::limits::{Cost, Limits, Resource};
 use crate::manifest::{
     Auth, AuthConfig, Counter, DefaultValue, Entity, FORMAT_VERSION, Field, FieldType, Idempotency,
-    Literal, Manifest, Route,
+    IndexPart, Literal, Manifest, Route, RowPredicate,
 };
 
 mod handlers;
@@ -138,6 +138,7 @@ fn locate(source_map: &BTreeMap<String, String>, path: &str) -> Option<String> {
 pub(crate) struct EntityInfo {
     pub(crate) row_bytes: u64,
     pub(crate) index_count: u64,
+    pub(crate) unique_count: u64,
     pub(crate) counter_count: u64,
 }
 
@@ -160,24 +161,14 @@ fn check_manifest(m: &Manifest, limits: &Limits, diags: &mut Vec<Diagnostic>) ->
         let path = format!("entities.{name}");
         check_name(name, &path, diags);
         let row_bytes = check_entity(entity, &path, limits, diags);
-        for (invariant, predicate) in &entity.invariants {
-            let invariant_path = format!("{path}.invariants.{invariant}");
-            check_name(invariant, &invariant_path, diags);
-            plan::check_row_predicate(
-                m,
-                name,
-                predicate,
-                &invariant_path,
-                plan::RowExprKind::Bool,
-                diags,
-            );
-        }
+        check_row_rules(m, name, entity, &path, diags);
         let counter_count = m.counters.values().filter(|c| &c.of == name).count() as u64;
         infos.insert(
             name.clone(),
             EntityInfo {
                 row_bytes,
                 index_count: entity.indexes.len() as u64,
+                unique_count: entity.indexes.values().filter(|i| i.unique).count() as u64,
                 counter_count,
             },
         );
@@ -231,6 +222,60 @@ fn check_manifest(m: &Manifest, limits: &Limits, diags: &mut Vec<Diagnostic>) ->
     }
     handlers::check_all(m, &infos, &mut report.handlers, diags);
     report
+}
+
+/// Checks an entity's row expressions: invariants, computed index parts, and partial index
+/// predicates. They need the whole manifest, so they run after the entity's own checks.
+fn check_row_rules(
+    m: &Manifest,
+    name: &str,
+    entity: &Entity,
+    path: &str,
+    diags: &mut Vec<Diagnostic>,
+) {
+    for (invariant, predicate) in &entity.invariants {
+        let invariant_path = format!("{path}.invariants.{invariant}");
+        check_name(invariant, &invariant_path, diags);
+        plan::check_row_predicate(
+            m,
+            name,
+            predicate,
+            &invariant_path,
+            plan::RowExprKind::Bool,
+            diags,
+        );
+    }
+    for (index_name, index) in &entity.indexes {
+        let index_path = format!("{path}.indexes.{index_name}");
+        for part in &index.fields {
+            if let IndexPart::Computed(part) = part {
+                let part_path = format!("{index_path}.fields.{}", part.name);
+                check_name(&part.name, &part_path, diags);
+                let predicate = RowPredicate {
+                    var: part.var,
+                    expr: part.expr.clone(),
+                };
+                plan::check_row_predicate(
+                    m,
+                    name,
+                    &predicate,
+                    &part_path,
+                    plan::RowExprKind::Scalar,
+                    diags,
+                );
+            }
+        }
+        if let Some(filter) = &index.filter {
+            plan::check_row_predicate(
+                m,
+                name,
+                filter,
+                &format!("{index_path}.where"),
+                plan::RowExprKind::Bool,
+                diags,
+            );
+        }
+    }
 }
 
 pub(crate) fn check_name(name: &str, path: &str, diags: &mut Vec<Diagnostic>) {
@@ -300,7 +345,10 @@ fn check_entity(entity: &Entity, path: &str, limits: &Limits, diags: &mut Vec<Di
                 "an index needs at least one field",
             ));
         }
-        for name in &index.fields {
+        for part in &index.fields {
+            let IndexPart::Field(name) = part else {
+                continue; // computed parts are checked with the manifest, in check_manifest
+            };
             match entity.fields.get(name) {
                 None => diags.push(unknown_field(&index_path, name, entity)),
                 Some(field) if !is_keyable(&field.ty) => diags.push(Diagnostic::new(

@@ -145,6 +145,11 @@ export class List<T> implements HasNode {
     return new Expr({ kind: "length", of: this["~node"] });
   }
 
+  /** The first item, or `null` if the list is empty. */
+  first(): T {
+    return materialize(this.itemShape, { kind: "first", of: this["~node"] }) as T;
+  }
+
   /** `true` if the list has no items. */
   isEmpty(): Expr<boolean> {
     return this.length.eq(0);
@@ -224,12 +229,38 @@ export interface EntityDef<F extends Fields, K extends keyof F & string, I exten
   key: readonly K[];
   /** Fields, by name. */
   fields: F;
-  /** Secondary indexes: name → indexed fields, in order. */
-  indexes?: Record<I, readonly (keyof F & string)[]>;
+  /**
+   * Secondary indexes: name → indexed fields in order, or an {@link IndexDef} for unique,
+   * partial, or computed indexes.
+   */
+  indexes?: Record<I, readonly (keyof F & string)[] | IndexDef<F>>;
   /** Rules every row must satisfy, checked on every write. A violation fails the request (422). */
   invariants?: Record<string, (row: Row<F>) => Expr<boolean>>;
   /** Rows can be inserted but never updated or deleted. */
   appendOnly?: boolean;
+}
+
+/** One part of an index: a field, or a named value computed from the row. */
+export type IndexField<F extends Fields> =
+  | (keyof F & string)
+  | { name: string; value: (row: Row<F>) => Expr<unknown> };
+
+/** An index with options. */
+export interface IndexDef<F extends Fields> {
+  /** Indexed parts, in order. */
+  fields: readonly IndexField<F>[];
+  /** At most one row per value. A conflicting write fails with 409. Rows with a `null` part are skipped. */
+  unique?: boolean;
+  /** Only rows matching this predicate are indexed. */
+  where?: (row: Row<F>) => Expr<boolean>;
+}
+
+/** Bounds on the field after a query's prefix. At most one lower and one upper bound. */
+export interface RangeBounds {
+  gt?: ExprLike<unknown>;
+  gte?: ExprLike<unknown>;
+  lt?: ExprLike<unknown>;
+  lte?: ExprLike<unknown>;
 }
 
 /** Options for {@link Entity.query}. */
@@ -242,6 +273,8 @@ export interface QueryOptions<I extends string> {
   limit: ExprLike<number>;
   /** Scan order. Defaults to ascending. */
   order?: "asc" | "desc";
+  /** Bounds on the field right after the prefix, like `{ gte: from, lt: to }`. */
+  range?: RangeBounds;
   /** Continue after a cursor from a previous page (`null` starts from the beginning). */
   after?: ExprLike<string | null>;
 }
@@ -283,8 +316,22 @@ export class Entity<F extends Fields, K extends keyof F & string, I extends stri
   /** @internal The manifest declaration. */
   spec(): EntitySpec {
     const indexes: EntitySpec["indexes"] = {};
-    for (const [name, fields] of Object.entries<readonly string[]>(this.#def.indexes ?? {})) {
-      indexes[name] = { fields: [...fields] };
+    for (const [name, def] of Object.entries<readonly string[] | IndexDef<F>>(
+      this.#def.indexes ?? {},
+    )) {
+      const options: IndexDef<F> = isIndexDef(def)
+        ? def
+        : { fields: def as readonly (keyof F & string)[] };
+      const self = this as unknown as Entity<F, string, string>;
+      indexes[name] = {
+        fields: options.fields.map((part) =>
+          typeof part === "string"
+            ? part
+            : { name: part.name, ...rowExpression(self, `index ${name}`, part.value) },
+        ),
+        ...(options.unique ? { unique: true } : {}),
+        ...(options.where ? { where: rowExpression(self, `index ${name}`, options.where) } : {}),
+      };
     }
     const spec: EntitySpec = { key: [...this.#def.key], fields: fieldSpecs(this.fields), indexes };
     const invariants = Object.entries(this.#def.invariants ?? {});
@@ -378,6 +425,11 @@ export class Entity<F extends Fields, K extends keyof F & string, I extends stri
     return new List<Row<F>>(this.#scan(options, false), this.#rowShape());
   }
 
+  /** Reads the row with these values in a (typically unique) index, or `null`: check `.exists()`. */
+  findBy(index: I, values: readonly ExprLike<unknown>[]): Row<F> {
+    return this.query({ index, prefix: values, limit: 1 }).first();
+  }
+
   /** Reads one page of rows: `{ items, cursor }`. Pass the cursor back as `after` for the next. */
   page(options: QueryOptions<I>): Page<Row<F>> {
     return new Page<Row<F>>(this.#scan(options, true), this.#rowShape());
@@ -391,6 +443,7 @@ export class Entity<F extends Fields, K extends keyof F & string, I extends stri
       prefix: (options.prefix ?? []).map(toNode),
       limit: toNode(options.limit),
       ...(options.order === "desc" ? { order: "desc" as const } : {}),
+      ...(options.range ? { range: rangeNodes(options.range) } : {}),
       ...(options.after === undefined ? {} : { after: toNode(options.after) }),
       ...(page ? { page: true } : {}),
     });
@@ -399,6 +452,23 @@ export class Entity<F extends Fields, K extends keyof F & string, I extends stri
   #rowShape(): Shape {
     return { kind: "row", entity: this as unknown as Entity<Fields, string, string> };
   }
+}
+
+function isIndexDef<F extends Fields>(def: readonly string[] | IndexDef<F>): def is IndexDef<F> {
+  return !Array.isArray(def);
+}
+
+function rangeNodes(range: RangeBounds): Record<string, Node> {
+  const out: Record<string, Node> = {};
+  for (const bound of ["gt", "gte", "lt", "lte"] as const) {
+    if (range[bound] !== undefined) out[bound] = toNode(range[bound]);
+  }
+  if (("gt" in out && "gte" in out) || ("lt" in out && "lte" in out)) {
+    throw new AlephBuildError(
+      "a range takes at most one lower bound (gt or gte) and one upper (lt or lte)",
+    );
+  }
+  return out;
 }
 
 /** Records a pure expression over one row (a counter predicate or sum, or an invariant). */

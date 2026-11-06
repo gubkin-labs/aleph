@@ -35,7 +35,8 @@ describe("aleph check", () => {
   it("prints the cost table for a valid app", async () => {
     const { io, out } = capture();
     expect(await main(["check", join(cases, "projects", "manifest.json")], io)).toBe(0);
-    expect(out.join("\n")).toMatch(/createProject\s+3 \(1%\)\s+3 \(6%\)/);
+    // 4 reads: billing, counter, the row's existence, and the unique slug probe.
+    expect(out.join("\n")).toMatch(/createProject\s+4 \(2%\)\s+5 \(10%\)/);
   });
 
   it("prints every diagnostic and exits 1 for an invalid manifest", async () => {

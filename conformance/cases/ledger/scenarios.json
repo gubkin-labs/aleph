@@ -369,6 +369,31 @@
           "accounts": [{}, {}]
         }
       }
+    },
+    {
+      "name": "entries in a time range (only the transfer, not the deposit)",
+      "request": {
+        "method": "GET",
+        "path": "/accounts/{{a}}/entries/between",
+        "caller": {
+          "userId": "u1"
+        },
+        "query": {
+          "from": "1700000005000",
+          "to": "1700000007500"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "entries": [
+            {
+              "amount": -300,
+              "memo": "rent"
+            }
+          ]
+        }
+      }
     }
   ]
 }

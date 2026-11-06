@@ -96,7 +96,11 @@ fields: { [key in string]: Expr }, } | { "kind": "list",
 /**
  * The items.
  */
-items: Array<Expr>, } | { "kind": "length", 
+items: Array<Expr>, } | { "kind": "first", 
+/**
+ * The list.
+ */
+of: Expr, } | { "kind": "length", 
 /**
  * The list or string.
  */

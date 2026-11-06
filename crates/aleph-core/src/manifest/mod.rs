@@ -23,7 +23,7 @@ pub use effects::{
 };
 
 pub use expr::{BinaryOp, Expr, InputSource, Literal, StrOp, StrTest};
-pub use plan::{Op, Order, Plan, Stmt, VarId};
+pub use plan::{Op, Order, Plan, QueryRange, Stmt, VarId};
 
 /// The manifest format version this crate reads and writes.
 pub const FORMAT_VERSION: &str = "0.2";
@@ -154,13 +154,46 @@ fn is_true(value: &bool) -> bool {
     *value
 }
 
-/// A secondary index over a list of fields.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// A secondary index.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Index {
-    /// Indexed fields, in order. Queries may filter on a prefix of these.
-    pub fields: Vec<String>,
+    /// Indexed parts, in order: field names or computed values. Queries match a prefix of these,
+    /// optionally with a range on the next one.
+    pub fields: Vec<IndexPart>,
+    /// At most one row per indexed value. Rows with a `null` part aren't constrained.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "codegen", ts(as = "Option<bool>", optional))]
+    pub unique: bool,
+    /// Only rows matching this predicate are indexed (a partial index).
+    #[serde(default, rename = "where", skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub filter: Option<RowPredicate>,
+}
+
+/// One part of an index: a field, or a value computed from the row.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(untagged)]
+pub enum IndexPart {
+    /// A field name.
+    Field(String),
+    /// A computed value, such as a lowercased email.
+    Computed(ComputedPart),
+}
+
+/// A computed index part: a pure expression over the row, bound to `var`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ComputedPart {
+    /// A name for the part, for diagnostics and docs.
+    pub name: String,
+    /// The variable the row is bound to.
+    pub var: VarId,
+    /// The value.
+    pub expr: Expr,
 }
 
 /// A field declaration: a type, optionality, and an optional default.

@@ -22,10 +22,20 @@ const Project = a.entity("Project", {
     orgId,
     projectId: t.id().generated(),
     name: t.string().min(1).max(120),
+    slug: t.string().min(1).max(60).optional(),
     status: t.enum("active", "archived").default("active"),
     createdAt: t.timestamp().defaultNow(),
   },
-  indexes: { byStatus: ["orgId", "status", "createdAt"] },
+  indexes: {
+    byStatus: ["orgId", "status", "createdAt"],
+    // Case-insensitive unique slugs per org. Projects without a slug aren't constrained.
+    bySlug: {
+      fields: ["orgId", { name: "slugLower", value: (p) => p.slug.lower() }],
+      unique: true,
+    },
+    // A partial index: only archived projects, by creation time.
+    archived: { fields: ["orgId", "createdAt"], where: (p) => p.status.eq("archived") },
+  },
 });
 
 const Task = a.entity("Task", {
@@ -69,14 +79,14 @@ a.route("POST /orgs/:orgId/projects")
   .id("createProject")
   .params({ orgId })
   .member("orgId", { roles: ["owner", "admin"] })
-  .body({ name: t.string().min(1).max(120) })
+  .body({ name: t.string().min(1).max(120), slug: t.string().min(1).max(60).optional() })
   .errors({ planLimit: err.forbidden("Your plan's project limit is reached") })
   .handle(($, { params, body, errors }) => {
     const billing = OrgBilling.get({ orgId: params.orgId });
     const plan = $.select(billing.exists(), billing.plan, "free");
     const maxProjects = $.match(plan, { free: 3, pro: 1000 });
     $.ensure(activeProjects.get({ orgId: params.orgId }).lt(maxProjects), errors.planLimit);
-    return Project.insert({ orgId: params.orgId, name: body.name });
+    return Project.insert({ orgId: params.orgId, name: body.name, slug: body.slug });
   });
 
 a.route("GET /orgs/:orgId/projects")
@@ -97,6 +107,31 @@ a.route("GET /orgs/:orgId/projects")
       after: query.cursor,
     }),
   );
+
+a.route("GET /orgs/:orgId/projects/by-slug/:slug")
+  .id("projectBySlug")
+  .params({ orgId, slug: t.string().min(1).max(60) })
+  .member("orgId")
+  .errors({ notFound: err.notFound("Project not found") })
+  .handle(($, { params, errors }) => {
+    const project = Project.findBy("bySlug", [params.orgId, params.slug.lower()]);
+    $.ensure(project.exists(), errors.notFound);
+    return project;
+  });
+
+a.route("GET /orgs/:orgId/archived")
+  .id("archivedSince")
+  .params({ orgId })
+  .member("orgId")
+  .query({ since: t.timestamp().default(0) })
+  .handle((_, { params, query }) => ({
+    projects: Project.query({
+      index: "archived",
+      prefix: [params.orgId],
+      range: { gte: query.since },
+      limit: 50,
+    }),
+  }));
 
 a.route("POST /orgs/:orgId/projects/:projectId/archive")
   .id("archiveProject")

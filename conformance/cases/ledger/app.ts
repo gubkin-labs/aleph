@@ -28,7 +28,9 @@ const Entry = a.entity("Entry", {
     amount: t.int(),
     balanceAfter: t.int().min(0),
     memo: t.string().max(140).optional(),
+    at: t.timestamp().defaultNow(),
   },
+  indexes: { byTime: ["accountId", "at"] },
 });
 
 a.route("POST /accounts")
@@ -108,6 +110,24 @@ a.route("GET /accounts/:accountId/entries")
     $.ensure(account.ownerId.eq($.caller), errors.notFound);
     return {
       entries: Entry.query({ prefix: [params.accountId], limit: query.limit, order: "desc" }),
+    };
+  });
+
+a.route("GET /accounts/:accountId/entries/between")
+  .id("entriesBetween")
+  .params({ accountId: t.id() })
+  .query({ from: t.timestamp(), to: t.timestamp() })
+  .errors({ notFound: err.notFound("Account not found") })
+  .handle(($, { params, query, errors }) => {
+    const account = Account.getOrFail({ accountId: params.accountId }, errors.notFound);
+    $.ensure(account.ownerId.eq($.caller), errors.notFound);
+    return {
+      entries: Entry.query({
+        index: "byTime",
+        prefix: [params.accountId],
+        range: { gte: query.from, lt: query.to },
+        limit: 100,
+      }),
     };
   });
 

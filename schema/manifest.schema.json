@@ -252,6 +252,32 @@
         "message"
       ]
     },
+    "ComputedPart": {
+      "description": "A computed index part: a pure expression over the row, bound to `var`.",
+      "type": "object",
+      "properties": {
+        "expr": {
+          "description": "The value.",
+          "$ref": "#/$defs/Expr"
+        },
+        "name": {
+          "description": "A name for the part, for diagnostics and docs.",
+          "type": "string"
+        },
+        "var": {
+          "description": "The variable the row is bound to.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "var",
+        "expr"
+      ]
+    },
     "Counter": {
       "description": "A counter over the rows of an entity, grouped by some of its fields.",
       "type": "object",
@@ -819,6 +845,25 @@
           ]
         },
         {
+          "description": "The first item of a list, or `null` if it's empty.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "first"
+            },
+            "of": {
+              "description": "The list.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of"
+          ]
+        },
+        {
           "description": "The length of a list or string.",
           "type": "object",
           "properties": {
@@ -1194,20 +1239,48 @@
       ]
     },
     "Index": {
-      "description": "A secondary index over a list of fields.",
+      "description": "A secondary index.",
       "type": "object",
       "properties": {
         "fields": {
-          "description": "Indexed fields, in order. Queries may filter on a prefix of these.",
+          "description": "Indexed parts, in order: field names or computed values. Queries match a prefix of these,\noptionally with a range on the next one.",
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/IndexPart"
           }
+        },
+        "unique": {
+          "description": "At most one row per indexed value. Rows with a `null` part aren't constrained.",
+          "type": "boolean"
+        },
+        "where": {
+          "description": "Only rows matching this predicate are indexed (a partial index).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RowPredicate"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
       "required": [
         "fields"
+      ]
+    },
+    "IndexPart": {
+      "description": "One part of an index: a field, or a value computed from the row.",
+      "anyOf": [
+        {
+          "description": "A field name.",
+          "type": "string"
+        },
+        {
+          "description": "A computed value, such as a lowercased email.",
+          "$ref": "#/$defs/ComputedPart"
+        }
       ]
     },
     "Input": {
@@ -1588,6 +1661,17 @@
               "items": {
                 "$ref": "#/$defs/Expr"
               }
+            },
+            "range": {
+              "description": "Bounds on the scanned field right after the prefix.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/QueryRange"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           },
           "additionalProperties": false,
@@ -1938,6 +2022,57 @@
         "body",
         "output"
       ]
+    },
+    "QueryRange": {
+      "description": "Bounds on the field after a query's prefix. At most one lower and one upper bound.",
+      "type": "object",
+      "properties": {
+        "gt": {
+          "description": "Greater than.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Expr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gte": {
+          "description": "Greater than or equal.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Expr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lt": {
+          "description": "Less than.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Expr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lte": {
+          "description": "Less than or equal.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Expr"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
     },
     "QueueDecl": {
       "description": "A declared queue: jobs with a typed payload, retried with exponential backoff.",

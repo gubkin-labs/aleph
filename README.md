@@ -164,8 +164,10 @@ condition, so tests and typechecking don't need a build. Published packages use 
 ## Status
 
 Manifest format `0.2`. The core and SDK cover:
-- **Data:** entities, indexes, invariants, append-only entities, counters and sums, serializable
-  transactions, cursor pagination, `upsert`, `insertIfAbsent`.
+- **Data:** entities; indexes that can be unique, partial (`where`), or computed (`lower(email)`);
+  queries by prefix with a range on the next field (`gte`/`lt`, ...); `findBy` on unique indexes;
+  invariants; append-only entities; counters and sums; serializable transactions; cursor
+  pagination; `upsert` and `insertIfAbsent`.
 - **Logic:** guards, branches, bounded loops, `map`/`filter`, string and number helpers.
 - **Routes:** auth (signed-in users, org roles, API key scopes), idempotency keys, rate limits,
   descriptions, MCP tools.

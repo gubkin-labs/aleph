@@ -10,8 +10,8 @@ use super::input::{Inputs, check_value, missing};
 use super::meter::{Meter, OverBudget};
 use crate::keys::{Key, KeyPart, Keyspace, TenantId};
 use crate::manifest::{
-    BinaryOp, Change, Counter, Entity, Expr, Field, InputSource, Manifest, Op, Order, Plan, Stmt,
-    StrOp, StrTest, Trigger, VarId,
+    BinaryOp, Change, Counter, Entity, Expr, Field, IndexPart, InputSource, Manifest, Op, Order,
+    Plan, QueryRange, Stmt, StrOp, StrTest, Trigger, VarId,
 };
 use crate::store::{Direction, StoreError, Transaction};
 use crate::value::Value;
@@ -33,6 +33,9 @@ pub(crate) enum ExecError {
     Duplicate(String),
     #[error(transparent)]
     Store(#[from] StoreError),
+    /// A write would give two rows the same value in a unique index (`Entity.index`).
+    #[error("unique index {0} already has a row with this value")]
+    Unique(String),
     /// A write would break an entity invariant (`Entity.name`).
     #[error("invariant {0} would be violated")]
     Invariant(String),
@@ -59,6 +62,7 @@ struct Scan<'a> {
     prefix: &'a [Expr],
     limit: &'a Expr,
     order: Order,
+    range: Option<&'a QueryRange>,
 }
 
 fn runtime(message: impl Into<String>) -> ExecError {
@@ -171,6 +175,7 @@ impl<'a> Exec<'a> {
                 prefix,
                 limit,
                 order,
+                range,
                 after,
                 page,
             } => {
@@ -192,6 +197,7 @@ impl<'a> Exec<'a> {
                     prefix,
                     limit,
                     order: *order,
+                    range: range.as_deref(),
                 };
                 let (rows, cursor) = self.query(entity, &scan, after.as_deref())?;
                 Ok(if *page {
@@ -507,10 +513,10 @@ impl<'a> Exec<'a> {
     fn write_new_row(&mut self, entity_name: &str, key: &[Value], row: &Row) -> R<()> {
         let entity = self.entity(entity_name)?;
         self.write_row(entity_name, key, row)?;
-        for index_name in entity.indexes.keys() {
-            let (index_key, pk) = self.index_entry(entity_name, entity, index_name, row)?;
-            self.tx.put(index_key, pk);
-            self.meter.write(1)?;
+        for (index_name, index) in &entity.indexes {
+            if let Some((index_key, pk)) = self.index_entry(entity_name, entity, index_name, row)? {
+                self.put_index_entry(entity_name, index_name, index.unique, index_key, pk)?;
+            }
         }
         self.maintain_counters(entity_name, None, Some(row))?;
         self.changed(entity_name, Change::Inserted, None, Some(row))
@@ -599,13 +605,18 @@ impl<'a> Exec<'a> {
     fn replace_row(&mut self, entity_name: &str, key: &[Value], old: &Row, new: &Row) -> R<()> {
         let entity = self.entity(entity_name)?;
         self.write_row(entity_name, key, new)?;
-        for index_name in entity.indexes.keys() {
-            let (old_key, _) = self.index_entry(entity_name, entity, index_name, old)?;
-            let (new_key, pk) = self.index_entry(entity_name, entity, index_name, new)?;
-            if old_key != new_key {
+        for (index_name, index) in &entity.indexes {
+            let old_entry = self.index_entry(entity_name, entity, index_name, old)?;
+            let new_entry = self.index_entry(entity_name, entity, index_name, new)?;
+            if old_entry.as_ref().map(|e| &e.0) == new_entry.as_ref().map(|e| &e.0) {
+                continue;
+            }
+            if let Some((old_key, _)) = old_entry {
                 self.tx.delete(old_key);
-                self.tx.put(new_key, pk);
-                self.meter.write(2)?;
+                self.meter.write(1)?;
+            }
+            if let Some((new_key, pk)) = new_entry {
+                self.put_index_entry(entity_name, index_name, index.unique, new_key, pk)?;
             }
         }
         self.maintain_counters(entity_name, Some(old), Some(new))?;
@@ -621,9 +632,10 @@ impl<'a> Exec<'a> {
         self.tx.delete(row_key);
         self.meter.write(1)?;
         for index_name in entity.indexes.keys() {
-            let (index_key, _) = self.index_entry(entity_name, entity, index_name, &old)?;
-            self.tx.delete(index_key);
-            self.meter.write(1)?;
+            if let Some((index_key, _)) = self.index_entry(entity_name, entity, index_name, &old)? {
+                self.tx.delete(index_key);
+                self.meter.write(1)?;
+            }
         }
         self.maintain_counters(entity_name, Some(&old), None)?;
         self.changed(entity_name, Change::Deleted, Some(&old), None)?;
@@ -646,25 +658,65 @@ impl<'a> Exec<'a> {
     }
 
     /// The key of a row's entry in an index, and the stored value (the row's primary key).
+    /// The key and value of a row's entry in an index, or `None` if the row isn't indexed (a
+    /// partial index's predicate excludes it, or a unique index part is `null`). Non-unique
+    /// entries append the primary key so they're distinct; unique ones don't, so a second row
+    /// with the same values collides.
     fn index_entry(
-        &self,
+        &mut self,
         entity_name: &str,
-        entity: &Entity,
+        entity: &'a Entity,
         index_name: &str,
         row: &Row,
-    ) -> R<(Key, Vec<u8>)> {
+    ) -> R<Option<(Key, Vec<u8>)>> {
         let index = &entity.indexes[index_name];
-        let values: Vec<Value> = index
-            .fields
-            .iter()
-            .map(|f| row.get(f).cloned().unwrap_or_default())
-            .collect();
+        if let Some(filter) = &index.filter
+            && self.eval_on_row(filter.var, &filter.expr, row)? != Value::Bool(true)
+        {
+            return Ok(None);
+        }
+        let mut values = Vec::with_capacity(index.fields.len());
+        for part in &index.fields {
+            values.push(match part {
+                IndexPart::Field(name) => row.get(name).cloned().unwrap_or_default(),
+                IndexPart::Computed(part) => self.eval_on_row(part.var, &part.expr, row)?,
+            });
+        }
+        if index.unique && values.iter().any(Value::is_null) {
+            return Ok(None);
+        }
         let pk = row_key_values(entity, row);
+        let pk_parts = if index.unique {
+            Vec::new()
+        } else {
+            parts(&pk)?
+        };
         let key = self
             .keys
-            .index_entry(entity_name, index_name, &parts(&values)?, &parts(&pk)?);
+            .index_entry(entity_name, index_name, &parts(&values)?, &pk_parts);
         let pk_bytes = serde_json::to_vec(&pk).map_err(|e| runtime(e.to_string()))?;
-        Ok((key, pk_bytes))
+        Ok(Some((key, pk_bytes)))
+    }
+
+    /// Writes an index entry, first checking that a unique index has no other row with it.
+    fn put_index_entry(
+        &mut self,
+        entity_name: &str,
+        index_name: &str,
+        unique: bool,
+        key: Key,
+        pk: Vec<u8>,
+    ) -> R<()> {
+        if unique {
+            let existing = self.tx.get(&key)?;
+            self.meter.read(existing.as_ref().map_or(0, Vec::len))?;
+            if existing.is_some_and(|other| other != pk) {
+                return Err(ExecError::Unique(format!("{entity_name}.{index_name}")));
+            }
+        }
+        self.tx.put(key, pk);
+        self.meter.write(1)?;
+        Ok(())
     }
 
     /// Moves a row between counter groups after a write. Counter maintenance is part of the
@@ -790,13 +842,27 @@ impl<'a> Exec<'a> {
             None => self.keys.row_range(entity_name, &parts(&values)?),
             Some(index) => self.keys.index_range(entity_name, index, &parts(&values)?),
         };
-        let range = match after {
+        // Bounds on the next part narrow the scan; cursors stay relative to the full prefix range.
+        let bounded = match scan.range {
             None => full.clone(),
+            Some(range) => {
+                let lower = self.bound(range.gt.as_ref(), range.gte.as_ref())?;
+                let upper = self.bound(range.lt.as_ref(), range.lte.as_ref())?;
+                full.bounded(key_bound(lower.as_ref()), key_bound(upper.as_ref()))
+            }
+        };
+        let range = match after {
+            None => bounded.clone(),
             Some(cursor) => full
                 .resume(cursor, forward)
-                .ok_or_else(|| ExecError::BadInput("invalid cursor".into()))?,
+                .ok_or_else(|| ExecError::BadInput("invalid cursor".into()))?
+                .intersect(&bounded),
         };
-        let entries = self.tx.scan(&range, limit, direction)?;
+        let entries = if range.start < range.end {
+            self.tx.scan(&range, limit, direction)?
+        } else {
+            Vec::new()
+        };
         let cursor = match entries.last() {
             Some((last, _)) if entries.len() == limit => full.cursor_after(last),
             _ => None,
@@ -820,6 +886,25 @@ impl<'a> Exec<'a> {
         Ok((rows, cursor))
     }
 
+    /// Evaluates one side of a range: the exclusive bound if given, else the inclusive one.
+    fn bound(
+        &mut self,
+        exclusive: Option<&'a Expr>,
+        inclusive: Option<&'a Expr>,
+    ) -> R<Option<(Value, bool)>> {
+        let (expr, is_inclusive) = match (exclusive, inclusive) {
+            (Some(e), _) => (e, false),
+            (None, Some(e)) => (e, true),
+            (None, None) => return Ok(None),
+        };
+        match self.eval(expr)? {
+            Value::List(_) | Value::Object(_) => Err(runtime(
+                "a range bound must be a string, int, bool, or null",
+            )),
+            value => Ok(Some((value, is_inclusive))),
+        }
+    }
+
     fn eval_bool(&mut self, expr: &'a Expr) -> R<bool> {
         match self.eval(expr)? {
             Value::Bool(b) => Ok(b),
@@ -827,10 +912,12 @@ impl<'a> Exec<'a> {
         }
     }
 
-    fn eval_string(&mut self, expr: &'a Expr) -> R<String> {
+    /// Evaluates a string operand. `None` means `null`: string operations propagate it, so
+    /// optional fields stay optional (and unique indexes over them skip rows without a value).
+    fn eval_opt_string(&mut self, expr: &'a Expr) -> R<Option<String>> {
         match self.eval(expr)? {
-            Value::String(s) => Ok(s),
-            Value::Null => Ok(String::new()),
+            Value::String(s) => Ok(Some(s)),
+            Value::Null => Ok(None),
             other => Err(runtime(format!(
                 "expected string, got {}",
                 other.type_name()
@@ -950,6 +1037,16 @@ impl<'a> Exec<'a> {
             Expr::List { items } => {
                 Value::List(items.iter().map(|i| self.eval(i)).collect::<R<_>>()?)
             }
+            Expr::First { of } => match self.eval(of)? {
+                Value::List(items) => items.into_iter().next().unwrap_or_default(),
+                Value::Null => Value::Null,
+                other => {
+                    return Err(runtime(format!(
+                        "can't take the first item of {}",
+                        other.type_name()
+                    )));
+                }
+            },
             Expr::Length { of } => {
                 let len = match self.eval(of)? {
                     Value::List(items) => items.len(),
@@ -963,26 +1060,28 @@ impl<'a> Exec<'a> {
                 };
                 Value::Int(i64::try_from(len).unwrap_or(i64::MAX))
             }
-            Expr::Str { op, of } => {
-                let text = self.eval_string(of)?;
-                Value::String(match op {
+            Expr::Str { op, of } => match self.eval_opt_string(of)? {
+                None => Value::Null,
+                Some(text) => Value::String(match op {
                     StrOp::Lower => text.to_lowercase(),
                     StrOp::Upper => text.to_uppercase(),
                     StrOp::Trim => text.trim().to_owned(),
-                })
-            }
+                }),
+            },
             Expr::StrTest { op, of, arg } => {
-                let (text, other) = (self.eval_string(of)?, self.eval_string(arg)?);
-                Value::Bool(match op {
-                    StrTest::StartsWith => text.starts_with(&other),
-                    StrTest::EndsWith => text.ends_with(&other),
-                    StrTest::Contains => text.contains(&other),
-                })
+                match (self.eval_opt_string(of)?, self.eval_opt_string(arg)?) {
+                    (Some(text), Some(other)) => Value::Bool(match op {
+                        StrTest::StartsWith => text.starts_with(&other),
+                        StrTest::EndsWith => text.ends_with(&other),
+                        StrTest::Contains => text.contains(&other),
+                    }),
+                    _ => Value::Bool(false),
+                }
             }
-            Expr::Truncate { of, max } => {
-                let text = self.eval_string(of)?;
-                Value::String(text.chars().take(*max as usize).collect())
-            }
+            Expr::Truncate { of, max } => match self.eval_opt_string(of)? {
+                None => Value::Null,
+                Some(text) => Value::String(text.chars().take(*max as usize).collect()),
+            },
             Expr::Abs { arg } => Value::Int(
                 self.eval_int(arg)?
                     .checked_abs()
@@ -1068,6 +1167,12 @@ fn row_key_values(entity: &Entity, row: &Row) -> Vec<Value> {
         .iter()
         .map(|f| row.get(f).cloned().unwrap_or_default())
         .collect()
+}
+
+/// A range bound as a key part (lists and objects aren't orderable, so they bound nothing).
+fn key_bound(bound: Option<&(Value, bool)>) -> Option<(KeyPart<'_>, bool)> {
+    let (value, inclusive) = bound?;
+    Some((KeyPart::from_value(value)?, *inclusive))
 }
 
 fn decode_row(bytes: &[u8]) -> R<Row> {

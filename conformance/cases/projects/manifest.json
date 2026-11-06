@@ -121,6 +121,14 @@
             "kind": "id"
           }
         },
+        "slug": {
+          "optional": true,
+          "type": {
+            "kind": "string",
+            "max": 60,
+            "min": 1
+          }
+        },
         "status": {
           "default": {
             "kind": "literal",
@@ -136,6 +144,53 @@
         }
       },
       "indexes": {
+        "archived": {
+          "fields": [
+            "orgId",
+            "createdAt"
+          ],
+          "where": {
+            "expr": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "field",
+                "name": "status",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "op": "eq",
+              "rhs": {
+                "kind": "lit",
+                "value": "archived"
+              }
+            },
+            "var": 0
+          }
+        },
+        "bySlug": {
+          "fields": [
+            "orgId",
+            {
+              "expr": {
+                "kind": "str",
+                "of": {
+                  "kind": "field",
+                  "name": "slug",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                },
+                "op": "lower"
+              },
+              "name": "slugLower",
+              "var": 0
+            }
+          ],
+          "unique": true
+        },
         "byStatus": {
           "fields": [
             "orgId",
@@ -317,6 +372,14 @@
               "max": 120,
               "min": 1
             }
+          },
+          "slug": {
+            "optional": true,
+            "type": {
+              "kind": "string",
+              "max": 60,
+              "min": 1
+            }
           }
         },
         "params": {
@@ -429,6 +492,11 @@
                   "kind": "input",
                   "name": "orgId",
                   "source": "params"
+                },
+                "slug": {
+                  "kind": "input",
+                  "name": "slug",
+                  "source": "body"
                 }
               }
             },
@@ -539,6 +607,175 @@
         "output": {
           "id": 0,
           "kind": "var"
+        }
+      }
+    },
+    {
+      "auth": {
+        "apiKeyScopes": [],
+        "kind": "member",
+        "org": "orgId",
+        "roles": []
+      },
+      "errors": {
+        "notFound": {
+          "message": "Project not found",
+          "status": 404
+        }
+      },
+      "id": "projectBySlug",
+      "input": {
+        "body": {},
+        "params": {
+          "orgId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 1
+            }
+          },
+          "slug": {
+            "type": {
+              "kind": "string",
+              "max": 60,
+              "min": 1
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "GET",
+      "path": "/orgs/:orgId/projects/by-slug/:slug",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Project",
+              "index": "bySlug",
+              "limit": {
+                "kind": "lit",
+                "value": 1
+              },
+              "op": "query",
+              "prefix": [
+                {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                },
+                {
+                  "kind": "str",
+                  "of": {
+                    "kind": "input",
+                    "name": "slug",
+                    "source": "params"
+                  },
+                  "op": "lower"
+                }
+              ]
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "kind": "first",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              },
+              "kind": "not"
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          }
+        ],
+        "output": {
+          "kind": "first",
+          "of": {
+            "id": 0,
+            "kind": "var"
+          }
+        }
+      }
+    },
+    {
+      "auth": {
+        "apiKeyScopes": [],
+        "kind": "member",
+        "org": "orgId",
+        "roles": []
+      },
+      "errors": {},
+      "id": "archivedSince",
+      "input": {
+        "body": {},
+        "params": {
+          "orgId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 1
+            }
+          }
+        },
+        "query": {
+          "since": {
+            "default": {
+              "kind": "literal",
+              "value": 0
+            },
+            "type": {
+              "kind": "timestamp"
+            }
+          }
+        }
+      },
+      "method": "GET",
+      "path": "/orgs/:orgId/archived",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Project",
+              "index": "archived",
+              "limit": {
+                "kind": "lit",
+                "value": 50
+              },
+              "op": "query",
+              "prefix": [
+                {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                }
+              ],
+              "range": {
+                "gte": {
+                  "kind": "input",
+                  "name": "since",
+                  "source": "query"
+                }
+              }
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "fields": {
+            "projects": {
+              "id": 0,
+              "kind": "var"
+            }
+          },
+          "kind": "object"
         }
       }
     },

@@ -68,6 +68,14 @@
             "kind": "int"
           }
         },
+        "at": {
+          "default": {
+            "kind": "now"
+          },
+          "type": {
+            "kind": "timestamp"
+          }
+        },
         "balanceAfter": {
           "type": {
             "kind": "int",
@@ -91,7 +99,14 @@
           }
         }
       },
-      "indexes": {},
+      "indexes": {
+        "byTime": {
+          "fields": [
+            "accountId",
+            "at"
+          ]
+        }
+      },
       "key": [
         "accountId",
         "entryId"
@@ -878,6 +893,135 @@
                   "source": "params"
                 }
               ]
+            },
+            "var": 1
+          }
+        ],
+        "output": {
+          "fields": {
+            "entries": {
+              "id": 1,
+              "kind": "var"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {
+        "notFound": {
+          "message": "Account not found",
+          "status": 404
+        }
+      },
+      "id": "entriesBetween",
+      "input": {
+        "body": {},
+        "params": {
+          "accountId": {
+            "type": {
+              "kind": "id"
+            }
+          }
+        },
+        "query": {
+          "from": {
+            "type": {
+              "kind": "timestamp"
+            }
+          },
+          "to": {
+            "type": {
+              "kind": "timestamp"
+            }
+          }
+        }
+      },
+      "method": "GET",
+      "path": "/accounts/:accountId/entries/between",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Account",
+              "key": {
+                "accountId": {
+                  "kind": "input",
+                  "name": "accountId",
+                  "source": "params"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          },
+          {
+            "cond": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "field",
+                "name": "ownerId",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "op": "eq",
+              "rhs": {
+                "kind": "caller"
+              }
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Entry",
+              "index": "byTime",
+              "limit": {
+                "kind": "lit",
+                "value": 100
+              },
+              "op": "query",
+              "prefix": [
+                {
+                  "kind": "input",
+                  "name": "accountId",
+                  "source": "params"
+                }
+              ],
+              "range": {
+                "gte": {
+                  "kind": "input",
+                  "name": "from",
+                  "source": "query"
+                },
+                "lt": {
+                  "kind": "input",
+                  "name": "to",
+                  "source": "query"
+                }
+              }
             },
             "var": 1
           }

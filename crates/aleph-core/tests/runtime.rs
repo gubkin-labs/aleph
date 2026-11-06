@@ -261,6 +261,47 @@ fn effects_are_released_exactly_once_under_conflict_retries() {
 }
 
 #[test]
+fn concurrent_inserts_never_break_a_unique_index() {
+    let engine = Arc::new(Engine::new(
+        load("projects"),
+        Arc::new(MemoryStore::new()),
+        Arc::new(FixedEnv::new(1, 4)),
+    ));
+    let t = tenant("u");
+    engine.handle(
+        &t,
+        &request(
+            Method::Put,
+            "/orgs/acme/billing",
+            Some(json!({ "plan": "pro" })),
+        ),
+    );
+    // Eight writers race for the same slug, in different cases.
+    let statuses: Vec<u16> = thread::scope(|scope| {
+        let handles: Vec<_> = (0..8)
+            .map(|i| {
+                let engine = &engine;
+                let t = &t;
+                let slug = if i % 2 == 0 { "shared" } else { "SHARED" };
+                scope.spawn(move || {
+                    let body = json!({ "name": format!("p{i}"), "slug": slug });
+                    engine
+                        .handle(t, &request(Method::Post, "/orgs/acme/projects", Some(body)))
+                        .status
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    let created = statuses.iter().filter(|s| **s == 200).count();
+    assert_eq!(created, 1, "exactly one writer wins: {statuses:?}");
+    assert!(
+        statuses.iter().all(|s| matches!(s, 200 | 409 | 503)),
+        "{statuses:?}"
+    );
+}
+
+#[test]
 fn the_meter_stops_executions_the_analysis_allowed() {
     let engine = Engine::new(
         load("projects"),

@@ -782,6 +782,155 @@
           "error": "method_not_allowed"
         }
       }
+    },
+    {
+      "name": "create a project with a slug",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
+        "body": {
+          "name": "Epsilon",
+          "slug": "Launch"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "slug": "Launch"
+        }
+      }
+    },
+    {
+      "name": "slugs are unique per org, case-insensitively",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
+        "body": {
+          "name": "Zeta",
+          "slug": "LAUNCH"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "error": "unique_violation"
+        }
+      }
+    },
+    {
+      "name": "projects without a slug aren't constrained",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/projects",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
+        "body": {
+          "name": "Eta"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "look a project up by slug, in any case",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/projects/by-slug/LaUnCh",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "name": "Epsilon"
+        }
+      }
+    },
+    {
+      "name": "an unknown slug is a 404",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/projects/by-slug/nope",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "error": "notFound"
+        }
+      }
+    },
+    {
+      "name": "the partial index holds only archived projects",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/archived",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "projects": [
+            {
+              "name": "Alpha",
+              "status": "archived"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a range on the next field narrows it",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/archived",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
+        "query": {
+          "since": "1800000000000"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "projects": []
+        }
+      }
     }
   ]
 }

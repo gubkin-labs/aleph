@@ -110,6 +110,41 @@ impl KeyRange {
         *key >= self.start && *key < self.end
     }
 
+    /// The keys of this prefix range whose next tuple part is within the bounds. Each bound is
+    /// `(value, inclusive)`.
+    #[must_use]
+    pub fn bounded(
+        &self,
+        lower: Option<(KeyPart<'_>, bool)>,
+        upper: Option<(KeyPart<'_>, bool)>,
+    ) -> Self {
+        // `start` is the prefix itself; every key in the range extends it with more parts.
+        let at = |part: KeyPart<'_>, past: bool| {
+            let mut bytes = self.start.0.clone();
+            part.encode_into(&mut bytes);
+            if past {
+                // Past every key whose next part equals `part`.
+                bytes.push(ESCAPE);
+            }
+            Key(bytes)
+        };
+        let start = lower.map_or_else(
+            || self.start.clone(),
+            |(part, inclusive)| at(part, !inclusive),
+        );
+        let end = upper.map_or_else(|| self.end.clone(), |(part, inclusive)| at(part, inclusive));
+        Self { start, end }
+    }
+
+    /// The overlap of two ranges (possibly empty).
+    #[must_use]
+    pub fn intersect(&self, other: &Self) -> Self {
+        Self {
+            start: self.start.clone().max(other.start.clone()),
+            end: self.end.clone().min(other.end.clone()),
+        }
+    }
+
     /// An opaque cursor for resuming a scan of this range after `key`: the hex-encoded part of
     /// the key after the range's start. `None` if `key` isn't in the range.
     pub fn cursor_after(&self, key: &Key) -> Option<String> {
@@ -413,6 +448,17 @@ mod tests {
             if let Some(resumed) = range.resume(&cursor, false) {
                 prop_assert!(resumed.start >= range.start && resumed.end <= range.end);
             }
+        }
+
+        #[test]
+        fn bounded_ranges_match_comparisons(prefix in "[a-z]{1,3}", lo: i64, hi: i64, v: i64, lo_inc: bool, hi_inc: bool) {
+            let ks = tenant("t");
+            let range = ks.row_range("E", &[KeyPart::Str(&prefix)])
+                .bounded(Some((KeyPart::Int(lo), lo_inc)), Some((KeyPart::Int(hi), hi_inc)));
+            let key = ks.row("E", &[KeyPart::Str(&prefix), KeyPart::Int(v), KeyPart::Str("pk")]);
+            let above = if lo_inc { v >= lo } else { v > lo };
+            let below = if hi_inc { v <= hi } else { v < hi };
+            prop_assert_eq!(range.contains(&key), above && below);
         }
 
         #[test]

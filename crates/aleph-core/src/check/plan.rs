@@ -83,6 +83,8 @@ pub(crate) fn event_handlers(m: &Manifest, event: &str) -> u64 {
 pub(crate) enum RowExprKind {
     Bool,
     Int,
+    /// A key-able scalar (an index part).
+    Scalar,
 }
 
 pub(crate) fn check_row_predicate(
@@ -109,6 +111,14 @@ pub(crate) fn check_row_predicate(
     match kind {
         RowExprKind::Bool if !ty.is_boolish() => checker.type_mismatch(&expr_path, "bool", &ty),
         RowExprKind::Int if !ty.is_intish() => checker.type_mismatch(&expr_path, "int", &ty),
+        RowExprKind::Scalar
+            if matches!(
+                ty,
+                Ty::List { .. } | Ty::Object(_) | Ty::Row(_) | Ty::OptRow(_)
+            ) =>
+        {
+            checker.type_mismatch(&expr_path, "a string, int, or bool", &ty);
+        }
         _ => {}
     }
 }
@@ -126,6 +136,7 @@ fn impurity(expr: &Expr) -> Option<&'static str> {
         | Expr::Str { of, .. }
         | Expr::Truncate { of, .. }
         | Expr::Abs { arg: of }
+        | Expr::First { of }
         | Expr::Not { arg: of }
         | Expr::Neg { arg: of }
         | Expr::In { value: of, .. } => impurity(of),
@@ -394,10 +405,20 @@ impl<'a> Checker<'a> {
                 prefix,
                 limit,
                 order: _,
+                range,
                 after,
                 page,
             } => {
                 let (list, mut cost) = self.query(entity, index.as_deref(), prefix, limit, path);
+                if let Some(range) = range {
+                    cost += self.range(
+                        entity,
+                        index.as_deref(),
+                        prefix.len(),
+                        range,
+                        &format!("{path}.range"),
+                    );
+                }
                 if let Some(after) = after {
                     let (ty, after_cost) = self.expr(after, &format!("{path}.after"));
                     if !matches!(ty, Ty::String | Ty::Null | Ty::Unknown) {
@@ -869,6 +890,44 @@ impl<'a> Checker<'a> {
         );
     }
 
+    /// Checks a query's range bounds: a field must follow the prefix, with at most one lower and
+    /// one upper bound.
+    fn range(
+        &mut self,
+        entity: &str,
+        index: Option<&str>,
+        prefix_len: usize,
+        range: &crate::manifest::QueryRange,
+        path: &str,
+    ) -> Cost {
+        let parts = self.m.entities.get(entity).and_then(|e| match index {
+            None => Some(e.key.len()),
+            Some(name) => e.indexes.get(name).map(|ix| ix.fields.len()),
+        });
+        if parts.is_some_and(|parts| prefix_len >= parts) {
+            self.diag(Code::InvalidRange, path, "a range bounds the field after the prefix, but the prefix already covers every field");
+        }
+        if range.gt.is_some() && range.gte.is_some() || range.lt.is_some() && range.lte.is_some() {
+            self.diag(
+                Code::InvalidRange,
+                path,
+                "use at most one lower bound (gt or gte) and one upper bound (lt or lte)",
+            );
+        }
+        let mut cost = Cost::default();
+        for (name, bound) in [
+            ("gt", &range.gt),
+            ("gte", &range.gte),
+            ("lt", &range.lt),
+            ("lte", &range.lte),
+        ] {
+            if let Some(bound) = bound {
+                cost += self.expr(bound, &format!("{path}.{name}")).1;
+            }
+        }
+        cost
+    }
+
     fn row_bytes(&self, entity: &str) -> u64 {
         self.infos.get(entity).map_or(0, |info| info.row_bytes)
     }
@@ -881,15 +940,17 @@ impl<'a> Checker<'a> {
         let writes = self.infos.get(entity).map_or(1, |info| {
             1 + per_index * info.index_count + per_index * info.counter_count
         });
+        // Each unique index is probed before its entry is written.
+        let probes = self.infos.get(entity).map_or(0, |info| info.unique_count);
         let effects = changes
             .iter()
             .map(|c| change_handlers(self.m, entity, *c))
             .max()
             .unwrap_or(0);
         Cost {
-            reads: 1,
+            reads: 1 + probes,
             writes,
-            bytes_read: self.row_bytes(entity),
+            bytes_read: self.row_bytes(entity) * (1 + probes),
             effects,
             ..Cost::ZERO
         }
@@ -1100,6 +1161,18 @@ impl<'a> Checker<'a> {
                     max: items.len() as u64,
                 };
                 (ty, cost)
+            }
+            Expr::First { of } => {
+                let (ty, cost) = self.expr(of, &format!("{path}.of"));
+                let item = match ty {
+                    Ty::List { item, .. } => item.join(Ty::Null),
+                    Ty::Unknown => Ty::Unknown,
+                    other => {
+                        self.type_mismatch(&format!("{path}.of"), "list", &other);
+                        Ty::Unknown
+                    }
+                };
+                (item, own + cost)
             }
             Expr::Length { of } => {
                 let (ty, cost) = self.expr(of, &format!("{path}.of"));

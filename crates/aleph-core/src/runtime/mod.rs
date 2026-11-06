@@ -705,6 +705,11 @@ fn error_response(route: &crate::manifest::Route, error: ExecError) -> Response 
         ExecError::OverBudget(e) => Response::error(500, "budget_exceeded", e.to_string()),
         ExecError::BadInput(message) => Response::error(400, "invalid_input", message),
         ExecError::CallFailed(message) => Response::error(502, "integration_error", message),
+        ExecError::Unique(name) => Response::error(
+            409,
+            "unique_violation",
+            format!("another row already has this value in {name}"),
+        ),
         ExecError::Invariant(name) => Response::error(
             422,
             "invariant_violation",

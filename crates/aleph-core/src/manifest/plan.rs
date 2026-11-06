@@ -87,6 +87,29 @@ impl Order {
     }
 }
 
+/// Bounds on the field after a query's prefix. At most one lower and one upper bound.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct QueryRange {
+    /// Greater than.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub gt: Option<Expr>,
+    /// Greater than or equal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub gte: Option<Expr>,
+    /// Less than.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub lt: Option<Expr>,
+    /// Less than or equal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub lte: Option<Expr>,
+}
+
 /// An operation. Operations are the only way a plan touches storage.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
@@ -155,6 +178,10 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Order::is_asc")]
         #[cfg_attr(feature = "codegen", ts(as = "Option<Order>", optional))]
         order: Order,
+        /// Bounds on the scanned field right after the prefix.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        range: Option<Box<QueryRange>>,
         /// Continue after this cursor (a string from a previous page, or `null` for the start).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "codegen", ts(optional))]

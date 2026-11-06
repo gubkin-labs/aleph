@@ -4,16 +4,16 @@
       "maxRowBytes": 503
     },
     "Entry": {
-      "maxRowBytes": 998
+      "maxRowBytes": 1024
     }
   },
   "routes": {
     "deposit": {
       "bounds": {
         "reads": 3,
-        "writes": 4,
+        "writes": 5,
         "ops": 31,
-        "bytesRead": 2004,
+        "bytesRead": 2030,
         "effects": 0,
         "calls": 0
       }
@@ -23,7 +23,17 @@
         "reads": 101,
         "writes": 0,
         "ops": 18,
-        "bytesRead": 100303,
+        "bytesRead": 102903,
+        "effects": 0,
+        "calls": 0
+      }
+    },
+    "entriesBetween": {
+      "bounds": {
+        "reads": 101,
+        "writes": 0,
+        "ops": 20,
+        "bytesRead": 102903,
         "effects": 0,
         "calls": 0
       }
@@ -51,9 +61,9 @@
     "transfer": {
       "bounds": {
         "reads": 7,
-        "writes": 9,
+        "writes": 11,
         "ops": 78,
-        "bytesRead": 69544,
+        "bytesRead": 69596,
         "effects": 0,
         "calls": 0
       }

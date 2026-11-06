@@ -6,6 +6,9 @@ import type { BinaryOp, Expr as Node } from "@aleph/manifest";
 import { toLiteral, toNode } from "./node.js";
 import { AlephBuildError } from "./recorder.js";
 
+/** The result of a string operation: `null` in, `null` out. */
+type StrResult<T> = null extends T ? string | null : string;
+
 /** A value accepted where an `Expr<T>` is expected: the expression or a constant. */
 export type ExprLike<T> = Expr<T> | T;
 
@@ -108,35 +111,38 @@ export class Expr<T> {
     return new Expr({ kind: "abs", arg: this["~node"] });
   }
 
-  /** Lowercase. */
-  lower(this: Expr<string>): Expr<string> {
+  /** Lowercase (`null` stays `null`). */
+  lower<T extends string | null>(this: Expr<T>): Expr<StrResult<T>> {
     return new Expr({ kind: "str", op: "lower", of: this["~node"] });
   }
 
   /** Uppercase. */
-  upper(this: Expr<string>): Expr<string> {
+  upper<T extends string | null>(this: Expr<T>): Expr<StrResult<T>> {
     return new Expr({ kind: "str", op: "upper", of: this["~node"] });
   }
 
   /** Without leading and trailing whitespace. */
-  trim(this: Expr<string>): Expr<string> {
+  trim<T extends string | null>(this: Expr<T>): Expr<StrResult<T>> {
     return new Expr({ kind: "str", op: "trim", of: this["~node"] });
   }
 
   /** The first `max` characters. */
-  truncate(this: Expr<string>, max: number): Expr<string> {
+  truncate<T extends string | null>(this: Expr<T>, max: number): Expr<StrResult<T>> {
     return new Expr({ kind: "truncate", of: this["~node"], max });
   }
 
-  startsWith(this: Expr<string>, other: ExprLike<string>): Expr<boolean> {
+  /** `false` if either side is `null`. */
+  startsWith(this: Expr<string | null>, other: ExprLike<string | null>): Expr<boolean> {
     return new Expr({ kind: "strTest", op: "startsWith", of: this["~node"], arg: toNode(other) });
   }
 
-  endsWith(this: Expr<string>, other: ExprLike<string>): Expr<boolean> {
+  /** `false` if either side is `null`. */
+  endsWith(this: Expr<string | null>, other: ExprLike<string | null>): Expr<boolean> {
     return new Expr({ kind: "strTest", op: "endsWith", of: this["~node"], arg: toNode(other) });
   }
 
-  contains(this: Expr<string>, other: ExprLike<string>): Expr<boolean> {
+  /** `false` if either side is `null`. */
+  contains(this: Expr<string | null>, other: ExprLike<string | null>): Expr<boolean> {
     return new Expr({ kind: "strTest", op: "contains", of: this["~node"], arg: toNode(other) });
   }
 
