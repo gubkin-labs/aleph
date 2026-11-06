@@ -16,13 +16,23 @@ import type {
   QueueDecl,
   Trigger,
 } from "@aleph/manifest";
-import { type Entity, ErrorRef, type InsertValues, List, materialize, type Row } from "./data.js";
+import {
+  type Accessor,
+  type Entity,
+  ErrorRef,
+  type InsertValues,
+  List,
+  materialize,
+  type Row,
+  shapeOfFields,
+} from "./data.js";
 import { $ } from "./dsl.js";
 import { Expr, type ExprLike } from "./expr.js";
 import { type FieldBuilder, type Fields, type FieldValue, fieldSpecs } from "./fields.js";
 import { toLiteral, toNode } from "./node.js";
 import { AlephBuildError, callSite, Recorder, recorder, recording } from "./recorder.js";
-import { type Duration, durationMs, type InputValues, inputs } from "./route.js";
+import { type InputValues, inputs } from "./route.js";
+import { type Duration, durationMs } from "./units.js";
 
 function nodes(values: Record<string, unknown>): Record<string, Node> {
   return Object.fromEntries(Object.entries(values).map(([k, v]) => [k, toNode(v)]));
@@ -88,8 +98,14 @@ export class Queue<P extends Fields> {
     };
   }
 
-  /** Puts a job on the queue, after commit, optionally delayed (at most 30 days). */
-  enqueue(payload: InsertValues<P>, options: { delay?: Duration | Expr<number> } = {}): void {
+  /**
+   * Puts a job on the queue, after commit, optionally delayed (at most 30 days). With a `key`,
+   * a pending job with the same key is replaced, and {@link Queue.cancel} can remove it.
+   */
+  enqueue(
+    payload: InsertValues<P>,
+    options: { delay?: Duration | Expr<number>; key?: ExprLike<string> } = {},
+  ): void {
     const delay = options.delay;
     const delayMs =
       delay === undefined ? undefined : delay instanceof Expr ? delay : durationMs(delay);
@@ -98,7 +114,13 @@ export class Queue<P extends Fields> {
       queue: this.name,
       payload: nodes(payload),
       ...(delayMs === undefined ? {} : { delayMs: toNode(delayMs) }),
+      ...(options.key === undefined ? {} : { key: toNode(options.key) }),
     });
+  }
+
+  /** Cancels the pending job with this key, if any, after commit. */
+  cancel(key: ExprLike<string>): void {
+    recorder().let({ op: "cancel", queue: this.name, key: toNode(key) });
   }
 }
 
@@ -181,7 +203,7 @@ export class IntegrationHandle<O extends Record<string, OperationDef>> {
   call<K extends CallOps<O>>(
     operation: K,
     input: InsertValues<InputOf<O[K]>>,
-  ): { readonly [F in keyof OutputOf<O[K]>]: Expr<FieldValue<OutputOf<O[K]>[F]>> } {
+  ): { readonly [F in keyof OutputOf<O[K]>]: Accessor<FieldValue<OutputOf<O[K]>[F]>> } {
     const node = recorder().let({
       op: "call",
       integration: this.name,
@@ -189,12 +211,8 @@ export class IntegrationHandle<O extends Record<string, OperationDef>> {
       input: nodes(input),
     });
     const def = this.#def.operations[operation];
-    const fields = def && def.mode === "call" ? Object.keys(def.output) : [];
-    const shape = {
-      kind: "object" as const,
-      fields: Object.fromEntries(fields.map((f) => [f, { kind: "scalar" as const }])),
-    };
-    return materialize(shape, node) as never;
+    const output = def && def.mode === "call" ? def.output : {};
+    return materialize({ kind: "object", fields: shapeOfFields(output) }, node) as never;
   }
 
   /** Sends an effect operation, after commit. */
@@ -296,6 +314,21 @@ export const triggers = {
   ): [Trigger, ChangePayload<F>] {
     const payload = { before: rowPayload(entity, "before"), after: rowPayload(entity, "after") };
     return [{ kind: "entity", entity: entity.name, change }, payload];
+  },
+  schedule<F extends Fields>(
+    cron: string,
+    tz: string | undefined,
+    scan: ScanOptions<F> | undefined,
+  ): [Trigger, CronPayload & { batch: List<Row<F>> }] {
+    const [trigger, payload] = triggers.cron<F>(60_000, scan ? { scan } : {});
+    if (trigger.kind !== "cron") throw new AlephBuildError("internal: not a cron trigger");
+    const scheduled: Trigger = {
+      ...trigger,
+      everyMs: 0,
+      offsetMs: 0,
+      schedule: { cron, ...(tz === undefined ? {} : { tz }) },
+    };
+    return [scheduled, payload];
   },
   cron<F extends Fields>(
     every: Duration,

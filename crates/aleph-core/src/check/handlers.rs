@@ -70,7 +70,13 @@ pub(crate) fn check_all(
                 ));
             }
         }
-        reports.insert(handler.id.clone(), RouteReport { bounds });
+        reports.insert(
+            handler.id.clone(),
+            RouteReport {
+                bounds,
+                output: None,
+            },
+        );
     }
     for queue in m.queues.keys() {
         let handled = m
@@ -90,7 +96,7 @@ pub(crate) fn check_all(
 fn payload_types(fields: &BTreeMap<String, Field>) -> BTreeMap<String, Ty> {
     fields
         .iter()
-        .map(|(n, f)| (n.clone(), Ty::from_field_type(&f.ty)))
+        .map(|(n, f)| (n.clone(), Ty::from_field(f)))
         .collect()
 }
 
@@ -124,7 +130,7 @@ fn trigger_payload(
         Trigger::DeadLetter { queue } => match m.queues.get(queue) {
             Some(decl) => {
                 let mut payload = payload_types(&decl.payload);
-                payload.insert("error".into(), Ty::String);
+                payload.insert("error".into(), Ty::string(4096));
                 payload.insert("attempts".into(), Ty::Int { max: None });
                 Some((payload, Cost::ZERO))
             }
@@ -142,9 +148,34 @@ fn trigger_payload(
             every_ms,
             offset_ms,
             scan,
+            schedule,
         } => {
             const MAX_EVERY_MS: u32 = 30 * 24 * 60 * 60 * 1000;
-            if !(1_000..=MAX_EVERY_MS).contains(every_ms) || offset_ms >= every_ms {
+            if let Some(schedule) = schedule {
+                if let Err(e) = crate::runtime::parse_cron(&schedule.cron) {
+                    diags.push(Diagnostic::new(
+                        Code::InvalidHandler,
+                        format!("{trigger_path}.schedule.cron"),
+                        e,
+                    ));
+                }
+                if let Some(tz) = &schedule.tz
+                    && !crate::runtime::time_zone_exists(tz)
+                {
+                    diags.push(Diagnostic::new(
+                        Code::InvalidHandler,
+                        format!("{trigger_path}.schedule.tz"),
+                        format!("{tz:?} isn't an IANA time zone"),
+                    ));
+                }
+                if *every_ms != 0 || *offset_ms != 0 {
+                    diags.push(Diagnostic::new(
+                        Code::InvalidHandler,
+                        &trigger_path,
+                        "a cron has either a schedule or an interval (everyMs), not both",
+                    ));
+                }
+            } else if !(1_000..=MAX_EVERY_MS).contains(every_ms) || offset_ms >= every_ms {
                 diags.push(Diagnostic::new(
                     Code::InvalidHandler,
                     &trigger_path,

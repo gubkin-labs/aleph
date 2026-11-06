@@ -29,6 +29,10 @@ effects: number,
  */
 calls: number, 
 /**
+ * Maximum bytes of values a plan binds (rows read, lists built, results), summed.
+ */
+memory: number, 
+/**
  * Maximum encoded size of a single row.
  */
 maxRowBytes: number, 

@@ -1,5 +1,5 @@
 /** `aleph check`: diagnostics, or a per-route cost table. */
-import { defaultLimits, jobLimits, validate } from "@aleph/core";
+import { defaultLimits, type Evolution, jobLimits, validate } from "@aleph/core";
 import type { CheckReport, Cost, Diagnostic, Limits, RouteReport } from "@aleph/manifest";
 
 /** Formats diagnostics for a terminal. */
@@ -19,7 +19,7 @@ function bytes(n: number): string {
 }
 
 function table(title: string, reports: Record<string, RouteReport>, limits: Limits): string {
-  const header = [title, "reads", "writes", "ops", "bytes read", "effects", "calls"];
+  const header = [title, "reads", "writes", "ops", "bytes read", "effects", "calls", "memory"];
   const rows = Object.entries(reports).map(([id, { bounds }]) => [id, ...cells(bounds, limits)]);
   const widths = header.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]?.length ?? 0)));
   const line = (cells: string[]) =>
@@ -47,7 +47,30 @@ function cells(bounds: Cost, limits: Limits): string[] {
     `${bytes(bounds.bytesRead)} (${pct(bounds.bytesRead, limits.bytesRead)})`,
     `${bounds.effects} (${pct(bounds.effects, limits.effects)})`,
     `${bounds.calls} (${pct(bounds.calls, limits.calls)})`,
+    `${bytes(bounds.memory)} (${pct(bounds.memory, limits.memory)})`,
   ];
+}
+
+/** Formats a schema evolution report. */
+export function formatEvolution(evolution: Evolution): string {
+  const mark = { safe: "✔", needsBackfill: "↻", breaking: "✖" } as const;
+  const lines = evolution.changes.map((c) => {
+    const allowed = c.kind === "breaking" && c.allowed ? " (allowed: deprecated first)" : "";
+    return `${mark[c.kind]} ${c.path}: ${c.message}${allowed}`;
+  });
+  const tasks = evolution.migration.map((t) =>
+    t.task === "buildIndex" || t.task === "dropIndex"
+      ? `  ${t.task} ${t.entity}.${t.index}`
+      : `  ${t.task} ${t.counter}`,
+  );
+  return [
+    evolution.changes.length === 0 ? "no changes from the deployed manifest" : lines.join("\n"),
+    ...(tasks.length > 0 ? ["", "migration plan:", ...tasks] : []),
+    "",
+    evolution.deployable
+      ? "✔ deployable"
+      : "✖ not deployable: breaking changes need a deprecation in the deployed manifest first",
+  ].join("\n");
 }
 
 /** Validates a manifest. Returns the text to print and whether it's valid. */

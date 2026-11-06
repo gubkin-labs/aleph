@@ -23,6 +23,17 @@
         "$ref": "#/$defs/ChannelDecl"
       }
     },
+    "cors": {
+      "description": "Cross-origin access for browsers.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Cors"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "counters": {
       "description": "Declared counters, by name. Counters are maintained on write and read in O(1).",
       "type": "object",
@@ -93,6 +104,61 @@
     "app"
   ],
   "$defs": {
+    "AggKind": {
+      "description": "What an aggregate counter tracks.",
+      "oneOf": [
+        {
+          "description": "The smallest value (`null` for an empty group).",
+          "type": "string",
+          "const": "min"
+        },
+        {
+          "description": "The largest value: with a timestamp field, the latest.",
+          "type": "string",
+          "const": "max"
+        },
+        {
+          "description": "How many distinct values there are.",
+          "type": "string",
+          "const": "distinct"
+        }
+      ]
+    },
+    "AggOp": {
+      "description": "List aggregations.",
+      "oneOf": [
+        {
+          "description": "The sum of the values (0 for an empty list).",
+          "type": "string",
+          "const": "sum"
+        },
+        {
+          "description": "The smallest value, or `null` for an empty list.",
+          "type": "string",
+          "const": "min"
+        },
+        {
+          "description": "The largest value, or `null` for an empty list.",
+          "type": "string",
+          "const": "max"
+        },
+        {
+          "description": "`true` if the predicate holds for any item.",
+          "type": "string",
+          "const": "some"
+        },
+        {
+          "description": "`true` if the predicate holds for every item.",
+          "type": "string",
+          "const": "every"
+        },
+        {
+          "description": "How many items the predicate holds for (or all items, without one).",
+          "type": "string",
+          "const": "count"
+        }
+      ]
+    },
     "App": {
       "description": "Application metadata.",
       "type": "object",
@@ -187,6 +253,13 @@
             "type": "string"
           }
         },
+        "profile": {
+          "description": "User profile fields the app reads (`email`, `name`, custom claims), resolved by the\nplatform for the caller and readable for any user of the tenant.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Field"
+          }
+        },
         "roles": {
           "description": "Org member roles, for example `[\"owner\", \"admin\", \"member\"]`.",
           "type": "array",
@@ -200,22 +273,46 @@
     },
     "BinaryOp": {
       "description": "Binary operators.",
-      "type": "string",
-      "enum": [
-        "eq",
-        "neq",
-        "lt",
-        "lte",
-        "gt",
-        "gte",
-        "and",
-        "or",
-        "add",
-        "sub",
-        "mul",
-        "div",
-        "min",
-        "max"
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "eq",
+            "neq",
+            "lt",
+            "lte",
+            "gt",
+            "gte",
+            "and",
+            "or",
+            "add",
+            "sub",
+            "mul",
+            "div",
+            "min",
+            "max"
+          ]
+        },
+        {
+          "description": "Remainder with the sign of the divisor's absolute value (always `0 <= r < |b|`).",
+          "type": "string",
+          "const": "mod"
+        },
+        {
+          "description": "Integer power. The exponent must be 0-63.",
+          "type": "string",
+          "const": "pow"
+        },
+        {
+          "description": "Division rounding toward negative infinity.",
+          "type": "string",
+          "const": "divFloor"
+        },
+        {
+          "description": "Division rounding toward positive infinity.",
+          "type": "string",
+          "const": "divCeil"
+        }
       ]
     },
     "Change": {
@@ -278,20 +375,78 @@
         "expr"
       ]
     },
-    "Counter": {
-      "description": "A counter over the rows of an entity, grouped by some of its fields.",
+    "Cors": {
+      "description": "Cross-origin access for browsers.",
       "type": "object",
       "properties": {
-        "groupBy": {
-          "description": "Fields the count is grouped by.",
+        "credentials": {
+          "description": "Whether browsers may send cookies and auth headers.",
+          "type": "boolean"
+        },
+        "headers": {
+          "description": "Extra request headers allowed (`content-type`, `authorization`, and `idempotency-key` always are).",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
+        "maxAgeS": {
+          "description": "How long browsers may cache a preflight answer, in seconds.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "origins": {
+          "description": "Allowed origins, like `https://app.example.com`, or `*` for any.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "origins"
+      ]
+    },
+    "Counter": {
+      "description": "A counter over the rows of an entity, grouped by some of its fields.",
+      "type": "object",
+      "properties": {
+        "agg": {
+          "description": "Track the smallest or largest value of a field, or how many distinct values it has,\ninstead of counting rows.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CounterAgg"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "groupBy": {
+          "description": "What the count is grouped by: fields, or values computed from the row (like the day of a\ntimestamp, for time-bucketed counts).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/IndexPart"
+          }
+        },
         "of": {
           "description": "The counted entity.",
           "type": "string"
+        },
+        "shards": {
+          "description": "Spread a hot count over this many shards (2-64), so concurrent writers rarely conflict.\nReads sum the shards.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
         },
         "sum": {
           "description": "Sum this integer expression over the rows instead of counting them.",
@@ -320,6 +475,25 @@
       "required": [
         "of",
         "groupBy"
+      ]
+    },
+    "CounterAgg": {
+      "description": "A derived aggregate a counter maintains instead of a count.",
+      "type": "object",
+      "properties": {
+        "field": {
+          "description": "The field (a string, int, decimal, bool, enum, id, or timestamp).",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What to track.",
+          "$ref": "#/$defs/AggKind"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "field"
       ]
     },
     "CronScan": {
@@ -356,6 +530,57 @@
       "required": [
         "entity",
         "batch"
+      ]
+    },
+    "CronSchedule": {
+      "description": "A calendar schedule: a five-field cron expression in a time zone.",
+      "type": "object",
+      "properties": {
+        "cron": {
+          "description": "`minute hour day-of-month month weekday`, like `0 9 * * mon`.",
+          "type": "string"
+        },
+        "tz": {
+          "description": "An IANA time zone (default UTC).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "cron"
+      ]
+    },
+    "Dedupe": {
+      "description": "Where a webhook delivery's event id is.",
+      "type": "object",
+      "properties": {
+        "bodyField": {
+          "description": "A top-level body field holding the event id.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "header": {
+          "description": "A header holding the event id, lowercase.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ttlMs": {
+          "description": "How long event ids are remembered, in milliseconds (at most 7 days).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ttlMs"
       ]
     },
     "DefaultValue": {
@@ -414,6 +639,13 @@
       "description": "A stored entity: a schema plus an ordered primary key.",
       "type": "object",
       "properties": {
+        "deprecated": {
+          "description": "Marks the entity deprecated, with a note. A later revision may then remove it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "fields": {
           "description": "Fields, by name.",
           "type": "object",
@@ -446,6 +678,21 @@
         "mutable": {
           "description": "`false` for append-only entities: rows can be inserted but never updated or deleted.",
           "type": "boolean"
+        },
+        "ttl": {
+          "description": "Rows expire: they're invisible once `field + ms` has passed, and swept in the background.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Ttl"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "versioned": {
+          "description": "Keeps an int `version` field: 1 on insert, incremented on every update. Updates can\nrequire an expected version (optimistic concurrency for clients).",
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -458,6 +705,13 @@
       "description": "A declared business error.",
       "type": "object",
       "properties": {
+        "details": {
+          "description": "Data the error carries, returned as `details`. Every `fail` and `ensure` of this error\nprovides the required fields.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Field"
+          }
+        },
         "message": {
           "description": "Human-readable message returned to the client.",
           "type": "string"
@@ -493,6 +747,75 @@
         "payload"
       ]
     },
+    "ExampleExpect": {
+      "description": "What an example expects. Bodies and deliveries match as subsets: listed keys must be equal,\nothers are ignored; arrays match item by item.",
+      "type": "object",
+      "properties": {
+        "body": {
+          "description": "A subset of the response body."
+        },
+        "deliveries": {
+          "description": "With `process`: the deliveries made, in any order (each a subset).",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": true
+        },
+        "runs": {
+          "description": "With `process`: the handlers that ran, in any order.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "description": "The status (default 200).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExampleRequest": {
+      "description": "An example's request: the route's method and path are implied.",
+      "type": "object",
+      "properties": {
+        "body": {
+          "description": "The JSON body."
+        },
+        "headers": {
+          "description": "Headers (lowercase names).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "params": {
+          "description": "Path parameters.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "query": {
+          "description": "Query string parameters.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "Expr": {
       "description": "An expression.",
       "oneOf": [
@@ -507,6 +830,25 @@
             "value": {
               "description": "The value.",
               "$ref": "#/$defs/Literal"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "A decimal constant, like `\"0.08\"`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "decimal"
+            },
+            "value": {
+              "description": "The value, as decimal text.",
+              "type": "string"
             }
           },
           "additionalProperties": false,
@@ -591,6 +933,25 @@
           "required": [
             "kind",
             "org"
+          ]
+        },
+        {
+          "description": "A field of the caller's profile (declared in `auth.profile`), or `null`.",
+          "type": "object",
+          "properties": {
+            "field": {
+              "description": "The profile field.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "callerProfile"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "field"
           ]
         },
         {
@@ -1001,6 +1362,536 @@
             "kind",
             "parts"
           ]
+        },
+        {
+          "description": "Aggregates a bounded list. `value` is evaluated per item with the item bound to `item`:\nthe summed or compared value, or the predicate for `some`, `every`, and `count`. Without\nit, the items themselves are used.",
+          "type": "object",
+          "properties": {
+            "item": {
+              "description": "The variable each item is bound to.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "agg"
+            },
+            "list": {
+              "description": "The list.",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "description": "The aggregation.",
+              "$ref": "#/$defs/AggOp"
+            },
+            "value": {
+              "description": "The per-item value or predicate.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Expr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "op",
+            "list",
+            "item"
+          ]
+        },
+        {
+          "description": "The items of a bounded list sorted by a key (stable).",
+          "type": "object",
+          "properties": {
+            "by": {
+              "description": "The sort key: a string, int, decimal, or bool.",
+              "$ref": "#/$defs/Expr"
+            },
+            "desc": {
+              "description": "Largest first.",
+              "type": "boolean"
+            },
+            "item": {
+              "description": "The variable each item is bound to.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "sort"
+            },
+            "list": {
+              "description": "The list.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "list",
+            "item",
+            "by"
+          ]
+        },
+        {
+          "description": "Items (of a list) or characters (of a string) from `start` up to `end`, like JavaScript's\n`slice`: negative positions count from the end.",
+          "type": "object",
+          "properties": {
+            "end": {
+              "description": "The position after the last, or the end.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Expr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "slice"
+            },
+            "of": {
+              "description": "The list or string.",
+              "$ref": "#/$defs/Expr"
+            },
+            "start": {
+              "description": "The first position.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of",
+            "start"
+          ]
+        },
+        {
+          "description": "The list without repeated items (first occurrences kept, in order).",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "distinct"
+            },
+            "of": {
+              "description": "The list.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of"
+          ]
+        },
+        {
+          "description": "The items of several lists, in order.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "listConcat"
+            },
+            "parts": {
+              "description": "The lists.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Expr"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "parts"
+          ]
+        },
+        {
+          "description": "`true` if the list contains the value.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "includes"
+            },
+            "list": {
+              "description": "The list.",
+              "$ref": "#/$defs/Expr"
+            },
+            "value": {
+              "description": "The value.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "list",
+            "value"
+          ]
+        },
+        {
+          "description": "Splits a string by a separator into at most `max` parts; the last part keeps the rest.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "split"
+            },
+            "max": {
+              "description": "Maximum number of parts.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "of": {
+              "description": "The string.",
+              "$ref": "#/$defs/Expr"
+            },
+            "sep": {
+              "description": "The separator (not empty).",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of",
+            "sep",
+            "max"
+          ]
+        },
+        {
+          "description": "Replaces every occurrence of `find` (not empty) with `with`.",
+          "type": "object",
+          "properties": {
+            "find": {
+              "description": "The text to find.",
+              "$ref": "#/$defs/Expr"
+            },
+            "kind": {
+              "type": "string",
+              "const": "replace"
+            },
+            "of": {
+              "description": "The string.",
+              "$ref": "#/$defs/Expr"
+            },
+            "with": {
+              "description": "The replacement.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of",
+            "find",
+            "with"
+          ]
+        },
+        {
+          "description": "Pads a string to `length` characters with `fill`, at the start or the end.",
+          "type": "object",
+          "properties": {
+            "end": {
+              "description": "Pad at the end instead of the start.",
+              "type": "boolean"
+            },
+            "fill": {
+              "description": "The fill text (not empty).",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "pad"
+            },
+            "length": {
+              "description": "The target length in characters (at most 1000).",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "of": {
+              "description": "The string.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of",
+            "length",
+            "fill"
+          ]
+        },
+        {
+          "description": "`true` if the string matches a regular expression. Matching takes linear time.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "matches"
+            },
+            "of": {
+              "description": "The string.",
+              "$ref": "#/$defs/Expr"
+            },
+            "pattern": {
+              "description": "The pattern (at most 256 characters).",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of",
+            "pattern"
+          ]
+        },
+        {
+          "description": "Formats an int or decimal with `decimals` digits after the point, optionally grouping\nthousands with commas.",
+          "type": "object",
+          "properties": {
+            "decimals": {
+              "description": "Digits after the point (the decimal's own scale if omitted).",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0
+            },
+            "grouping": {
+              "description": "Group thousands with commas.",
+              "type": "boolean"
+            },
+            "kind": {
+              "type": "string",
+              "const": "formatNumber"
+            },
+            "of": {
+              "description": "The number.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of"
+          ]
+        },
+        {
+          "description": "An int or decimal as a decimal with `scale` digits after the point.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "round"
+            },
+            "mode": {
+              "description": "How to round.",
+              "$ref": "#/$defs/Rounding"
+            },
+            "of": {
+              "description": "The number.",
+              "$ref": "#/$defs/Expr"
+            },
+            "scale": {
+              "description": "Digits after the point (0-18).",
+              "type": "integer",
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of",
+            "scale"
+          ]
+        },
+        {
+          "description": "An int or decimal as an int.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "toInt"
+            },
+            "mode": {
+              "description": "How to round.",
+              "$ref": "#/$defs/Rounding"
+            },
+            "of": {
+              "description": "The number.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of"
+          ]
+        },
+        {
+          "description": "The start of the unit containing a timestamp, in a time zone (UTC if `null`).",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "startOf"
+            },
+            "of": {
+              "description": "The timestamp (ms).",
+              "$ref": "#/$defs/Expr"
+            },
+            "tz": {
+              "description": "An IANA time zone name, or `null` for UTC.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Expr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unit": {
+              "description": "The unit.",
+              "$ref": "#/$defs/TimeUnit"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of",
+            "unit"
+          ]
+        },
+        {
+          "description": "A timestamp moved by `amount` units (negative moves back). Days and larger units follow\nthe calendar in the time zone, so `+1 day` keeps the wall-clock time across DST changes.",
+          "type": "object",
+          "properties": {
+            "amount": {
+              "description": "How many units.",
+              "$ref": "#/$defs/Expr"
+            },
+            "kind": {
+              "type": "string",
+              "const": "addTime"
+            },
+            "of": {
+              "description": "The timestamp (ms).",
+              "$ref": "#/$defs/Expr"
+            },
+            "tz": {
+              "description": "An IANA time zone name, or `null` for UTC.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Expr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unit": {
+              "description": "The unit.",
+              "$ref": "#/$defs/TimeUnit"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of",
+            "amount",
+            "unit"
+          ]
+        },
+        {
+          "description": "One part of a timestamp, such as its weekday, in a time zone.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "timePart"
+            },
+            "of": {
+              "description": "The timestamp (ms).",
+              "$ref": "#/$defs/Expr"
+            },
+            "part": {
+              "description": "The part.",
+              "$ref": "#/$defs/TimePart"
+            },
+            "tz": {
+              "description": "An IANA time zone name, or `null` for UTC.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Expr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of",
+            "part"
+          ]
+        },
+        {
+          "description": "Formats a timestamp: ISO 8601 by default, or a `strftime` pattern.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "formatTime"
+            },
+            "of": {
+              "description": "The timestamp (ms).",
+              "$ref": "#/$defs/Expr"
+            },
+            "pattern": {
+              "description": "A `strftime` pattern such as `%Y-%m-%d` (at most 64 characters).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tz": {
+              "description": "An IANA time zone name, or `null` for UTC.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Expr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of"
+          ]
         }
       ]
     },
@@ -1017,6 +1908,13 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "deprecated": {
+          "description": "Marks the field deprecated, with a note. A later revision may then remove it.",
+          "type": [
+            "string",
+            "null"
           ]
         },
         "optional": {
@@ -1182,6 +2080,78 @@
             "kind",
             "items",
             "max"
+          ]
+        },
+        {
+          "description": "An object with declared fields (nested at most 4 deep). Fields may be optional but can't\nhave defaults.",
+          "type": "object",
+          "properties": {
+            "fields": {
+              "description": "Fields, by name.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Field"
+              }
+            },
+            "kind": {
+              "type": "string",
+              "const": "object"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "fields"
+          ]
+        },
+        {
+          "description": "An exact decimal with `scale` digits after the point. Sent and returned as a string\n(`\"12.50\"`) so no precision is lost; JSON numbers are accepted on input.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "decimal"
+            },
+            "max": {
+              "description": "Inclusive maximum, as a decimal string.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "min": {
+              "description": "Inclusive minimum, as a decimal string.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "scale": {
+              "description": "Digits after the point (0-18).",
+              "type": "integer",
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "scale"
+          ]
+        },
+        {
+          "description": "An IANA time zone name, such as `\"Europe/Berlin\"`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "timeZone"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
           ]
         }
       ]
@@ -1430,13 +2400,22 @@
     },
     "Method": {
       "description": "HTTP methods.",
-      "type": "string",
-      "enum": [
-        "GET",
-        "POST",
-        "PUT",
-        "PATCH",
-        "DELETE"
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        {
+          "description": "CORS preflight requests only; routes can't use it.",
+          "type": "string",
+          "const": "OPTIONS"
+        }
       ]
     },
     "Op": {
@@ -1558,6 +2537,17 @@
               "description": "The entity.",
               "type": "string"
             },
+            "ifVersion": {
+              "description": "For versioned entities: fail with 409 unless the row has this version.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Expr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "key": {
               "description": "A value for every primary key field.",
               "type": "object",
@@ -1626,6 +2616,16 @@
                   "type": "null"
                 }
               ]
+            },
+            "anyOf": {
+              "description": "Values for the field after the prefix: rows matching any of them are merged in key\norder (at most 10 values). Can't be combined with `after` or `page`.",
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/$defs/Expr"
+              }
             },
             "entity": {
               "description": "The entity.",
@@ -1828,6 +2828,17 @@
                 }
               ]
             },
+            "key": {
+              "description": "A key for the job (a string). A pending job with the same key is replaced, and\n`cancel` with the key removes it.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Expr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "op": {
               "type": "string",
               "const": "enqueue"
@@ -1849,6 +2860,49 @@
             "op",
             "queue",
             "payload"
+          ]
+        },
+        {
+          "description": "Cancel the pending job with this key, if any. Released after commit.",
+          "type": "object",
+          "properties": {
+            "key": {
+              "description": "The job's key.",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "type": "string",
+              "const": "cancel"
+            },
+            "queue": {
+              "description": "The queue.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "queue",
+            "key"
+          ]
+        },
+        {
+          "description": "Read a user's profile from the tenant's user directory. Evaluates to\n`{ userId, ...profile fields }`, or `null` if there's no such user.",
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "getUser"
+            },
+            "userId": {
+              "description": "The user id.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "userId"
           ]
         },
         {
@@ -2165,6 +3219,41 @@
         }
       ]
     },
+    "Rounding": {
+      "description": "How to round a decimal.",
+      "oneOf": [
+        {
+          "description": "To the nearest value; ties to the even neighbor (banker's rounding).",
+          "type": "string",
+          "const": "halfEven"
+        },
+        {
+          "description": "To the nearest value; ties away from zero.",
+          "type": "string",
+          "const": "halfUp"
+        },
+        {
+          "description": "Toward zero.",
+          "type": "string",
+          "const": "down"
+        },
+        {
+          "description": "Away from zero.",
+          "type": "string",
+          "const": "up"
+        },
+        {
+          "description": "Toward negative infinity.",
+          "type": "string",
+          "const": "floor"
+        },
+        {
+          "description": "Toward positive infinity.",
+          "type": "string",
+          "const": "ceil"
+        }
+      ]
+    },
     "Route": {
       "description": "An HTTP route.",
       "type": "object",
@@ -2172,6 +3261,13 @@
         "auth": {
           "description": "Who may call the route.",
           "$ref": "#/$defs/Auth"
+        },
+        "deprecated": {
+          "description": "Marks the route deprecated, with a note for clients. Responses carry `Deprecation: true`.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "description": {
           "description": "What the route does, for generated API docs and MCP tools.",
@@ -2187,6 +3283,13 @@
             "$ref": "#/$defs/ErrorDecl"
           },
           "default": {}
+        },
+        "examples": {
+          "description": "Worked examples: given some data, this request gets this response. Documentation and\ntests (`aleph test`); never part of what runs.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RouteExample"
+          }
         },
         "id": {
           "description": "Stable identifier, unique within the manifest.",
@@ -2245,6 +3348,35 @@
               "type": "null"
             }
           ]
+        },
+        "returns": {
+          "description": "The declared response type. The checker verifies the plan's responses match it, and\ngenerated clients use it.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FieldType"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "description": "An API version label for docs, such as `\"2024-06-01\"`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "webhook": {
+          "description": "Makes the route an inbound webhook: the signature is verified before the plan runs, and\nrepeated deliveries of one event run once.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Webhook"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -2254,6 +3386,62 @@
         "path",
         "auth",
         "plan"
+      ]
+    },
+    "RouteExample": {
+      "description": "A worked example of a route.",
+      "type": "object",
+      "properties": {
+        "caller": {
+          "description": "Who calls (a `Caller`: `userId`, `orgs`, `apiKey`, `profile`), or anonymous."
+        },
+        "expect": {
+          "description": "What should happen.",
+          "$ref": "#/$defs/ExampleExpect",
+          "default": {}
+        },
+        "given": {
+          "description": "Rows that exist before the request, by entity.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": true
+          }
+        },
+        "mocks": {
+          "description": "Integration responses (`{ integration, operation, response | error }`).",
+          "type": "array",
+          "items": true
+        },
+        "name": {
+          "description": "What the example shows.",
+          "type": "string"
+        },
+        "process": {
+          "description": "Run the async work the request caused (handlers, deliveries) before checking.",
+          "type": "boolean"
+        },
+        "request": {
+          "description": "The request.",
+          "$ref": "#/$defs/ExampleRequest",
+          "default": {}
+        },
+        "secrets": {
+          "description": "Test secret values (webhook signing keys), by name. Never real secrets: examples ship in\nthe manifest.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "users": {
+          "description": "User profiles in the directory, by user id.",
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
       ]
     },
     "RowPredicate": {
@@ -2275,6 +3463,14 @@
       "required": [
         "var",
         "expr"
+      ]
+    },
+    "SignatureEncoding": {
+      "description": "How a signature is encoded.",
+      "type": "string",
+      "enum": [
+        "hex",
+        "base64"
       ]
     },
     "Stmt": {
@@ -2314,6 +3510,13 @@
               "description": "The condition that must hold.",
               "$ref": "#/$defs/Expr"
             },
+            "details": {
+              "description": "Values for the error's declared `details` fields.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
             "error": {
               "description": "The declared error to fail with.",
               "type": "string"
@@ -2334,6 +3537,13 @@
           "description": "Fail with a declared error.",
           "type": "object",
           "properties": {
+            "details": {
+              "description": "Values for the error's declared `details` fields.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
             "error": {
               "description": "The declared error.",
               "type": "string"
@@ -2347,6 +3557,95 @@
           "required": [
             "kind",
             "error"
+          ]
+        },
+        {
+          "description": "Finish successfully now, responding with `value` (routes) or ending the run (handlers).\nThe transaction commits.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "return"
+            },
+            "value": {
+              "description": "The response body.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "value"
+          ]
+        },
+        {
+          "description": "Set a response header. `set-cookie` adds a cookie each time; other headers are replaced.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "setHeader"
+            },
+            "name": {
+              "description": "The header name, lowercase.",
+              "type": "string"
+            },
+            "value": {
+              "description": "The value (a string).",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "name",
+            "value"
+          ]
+        },
+        {
+          "description": "Set the success status (200-399; the default is 200).",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "setStatus"
+            },
+            "status": {
+              "description": "The status.",
+              "type": "integer",
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "status"
+          ]
+        },
+        {
+          "description": "Record a value for debugging. Logs are returned with the response in development and\nsampled in production; they never change what the plan does.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "log"
+            },
+            "label": {
+              "description": "A short label.",
+              "type": "string"
+            },
+            "value": {
+              "description": "The value logged.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "label",
+            "value"
           ]
         },
         {
@@ -2438,6 +3737,65 @@
         "contains"
       ]
     },
+    "TimePart": {
+      "description": "Parts of a point in time, in a time zone.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "year",
+            "minute",
+            "second"
+          ]
+        },
+        {
+          "description": "1-12.",
+          "type": "string",
+          "const": "month"
+        },
+        {
+          "description": "Day of the month, 1-31.",
+          "type": "string",
+          "const": "day"
+        },
+        {
+          "description": "0-23.",
+          "type": "string",
+          "const": "hour"
+        },
+        {
+          "description": "ISO weekday: 1 is Monday, 7 is Sunday.",
+          "type": "string",
+          "const": "weekday"
+        },
+        {
+          "description": "1-366.",
+          "type": "string",
+          "const": "dayOfYear"
+        }
+      ]
+    },
+    "TimeUnit": {
+      "description": "Calendar units for time arithmetic.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "second",
+            "minute",
+            "hour",
+            "day",
+            "month",
+            "year"
+          ]
+        },
+        {
+          "description": "ISO weeks, starting on Monday.",
+          "type": "string",
+          "const": "week"
+        }
+      ]
+    },
     "Trigger": {
       "description": "What runs a handler. The handler reads its payload with `input` expressions of source\n`payload`:\n- `event`, `queue`: the declared payload fields\n- `deadLetter`: the job's payload fields, plus `error` and `attempts`\n- `entity`: `before` and `after` (rows, `null` when absent)\n- `cron`: `firedAt`, plus `batch` (a list of rows) when it scans",
       "oneOf": [
@@ -2527,9 +3885,10 @@
           "type": "object",
           "properties": {
             "everyMs": {
-              "description": "Interval, in milliseconds (1 second to 30 days).",
+              "description": "Interval, in milliseconds (1 second to 30 days). Ignored (and 0) with `schedule`.",
               "type": "integer",
               "format": "uint32",
+              "default": 0,
               "minimum": 0
             },
             "kind": {
@@ -2553,14 +3912,174 @@
                   "type": "null"
                 }
               ]
+            },
+            "schedule": {
+              "description": "A calendar schedule instead of an interval.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CronSchedule"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "Ttl": {
+      "description": "When an entity's rows expire.",
+      "type": "object",
+      "properties": {
+        "field": {
+          "description": "A timestamp field the lifetime counts from, such as `createdAt`.",
+          "type": "string"
+        },
+        "ms": {
+          "description": "How long rows live after it, in milliseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "ms"
+      ]
+    },
+    "Verify": {
+      "description": "A webhook signature scheme. `secret` names a secret the platform holds; the manifest never\ncontains secret values.",
+      "oneOf": [
+        {
+          "description": "HMAC-SHA256 of the raw body (or of `timestamp.body`) in a header.",
+          "type": "object",
+          "properties": {
+            "encoding": {
+              "description": "How the signature is encoded.",
+              "$ref": "#/$defs/SignatureEncoding",
+              "default": "hex"
+            },
+            "header": {
+              "description": "The signature header, lowercase.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "hmacSha256"
+            },
+            "prefix": {
+              "description": "Text before the signature in the header, such as `sha256=`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "secret": {
+              "description": "The secret's name.",
+              "type": "string"
+            },
+            "timestampHeader": {
+              "description": "A header with the delivery time in seconds. When set, the signed text is\n`timestamp.body` and stale deliveries are rejected.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "toleranceS": {
+              "description": "How old a delivery may be, in seconds (default 300).",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0
             }
           },
           "additionalProperties": false,
           "required": [
             "kind",
-            "everyMs"
+            "secret",
+            "header"
+          ]
+        },
+        {
+          "description": "Stripe's `Stripe-Signature` scheme.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "stripe"
+            },
+            "secret": {
+              "description": "The secret's name.",
+              "type": "string"
+            },
+            "toleranceS": {
+              "description": "How old a delivery may be, in seconds (default 300).",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "secret"
+          ]
+        },
+        {
+          "description": "GitHub's `X-Hub-Signature-256` scheme.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "github"
+            },
+            "secret": {
+              "description": "The secret's name.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "secret"
           ]
         }
+      ]
+    },
+    "Webhook": {
+      "description": "An inbound webhook: how to verify deliveries, and how to recognize repeats.",
+      "type": "object",
+      "properties": {
+        "dedupe": {
+          "description": "Runs each event once: later deliveries with the same event id get the first response.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Dedupe"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verify": {
+          "description": "How the sender signs deliveries.",
+          "$ref": "#/$defs/Verify"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "verify"
       ]
     }
   }

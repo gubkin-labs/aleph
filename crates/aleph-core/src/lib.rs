@@ -13,7 +13,10 @@
 //! ```
 
 pub mod check;
+pub mod decimal;
 pub mod diagnostics;
+pub mod evolution;
+pub mod examples;
 pub mod keys;
 pub mod limits;
 pub mod manifest;

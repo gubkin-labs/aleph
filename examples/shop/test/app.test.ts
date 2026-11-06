@@ -25,7 +25,7 @@ describe("shop", () => {
         now,
       );
 
-    expect(order("k1").status).toBe(200);
+    expect(order("k1").status).toBe(201);
     expect(order("k1").replayed).toBe(true); // no second order
     const report = engine.process(1_000);
     expect(report.runs.map((r) => r.handler).sort()).toEqual([

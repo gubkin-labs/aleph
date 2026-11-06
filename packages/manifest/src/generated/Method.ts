@@ -2,4 +2,4 @@
 /**
  * HTTP methods.
  */
-export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";

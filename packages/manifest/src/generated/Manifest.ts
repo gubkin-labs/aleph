@@ -2,6 +2,7 @@
 import type { App } from "./App.js";
 import type { AuthConfig } from "./AuthConfig.js";
 import type { ChannelDecl } from "./ChannelDecl.js";
+import type { Cors } from "./Cors.js";
 import type { Counter } from "./Counter.js";
 import type { Entity } from "./Entity.js";
 import type { EventDecl } from "./EventDecl.js";
@@ -62,4 +63,8 @@ sourceMap?: { [key in string]: string },
 /**
  * Asynchronous handlers: triggers, jobs, and schedules.
  */
-handlers?: Array<Handler>, };
+handlers?: Array<Handler>, 
+/**
+ * Cross-origin access for browsers.
+ */
+cors?: Cors, };

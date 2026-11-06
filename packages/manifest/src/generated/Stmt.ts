@@ -21,11 +21,43 @@ cond: Expr,
 /**
  * The declared error to fail with.
  */
-error: string, } | { "kind": "fail", 
+error: string, 
+/**
+ * Values for the error's declared `details` fields.
+ */
+details?: { [key in string]: Expr }, } | { "kind": "fail", 
 /**
  * The declared error.
  */
-error: string, } | { "kind": "if", 
+error: string, 
+/**
+ * Values for the error's declared `details` fields.
+ */
+details?: { [key in string]: Expr }, } | { "kind": "return", 
+/**
+ * The response body.
+ */
+value: Expr, } | { "kind": "setHeader", 
+/**
+ * The header name, lowercase.
+ */
+name: string, 
+/**
+ * The value (a string).
+ */
+value: Expr, } | { "kind": "setStatus", 
+/**
+ * The status.
+ */
+status: number, } | { "kind": "log", 
+/**
+ * A short label.
+ */
+label: string, 
+/**
+ * The value logged.
+ */
+value: Expr, } | { "kind": "if", 
 /**
  * The condition.
  */

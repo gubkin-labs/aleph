@@ -34,4 +34,13 @@ ip?: string,
 /**
  * The client's idempotency key (from the `Idempotency-Key` header), if any.
  */
-idempotencyKey?: string, };
+idempotencyKey?: string, 
+/**
+ * Request headers, with lowercase names. Used for webhook signatures and CORS.
+ */
+headers?: { [key in string]: string }, 
+/**
+ * The exact body text, for webhook signatures. When set and `body` isn't, the body is
+ * parsed from it.
+ */
+rawBody?: string, };

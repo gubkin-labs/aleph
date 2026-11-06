@@ -14,7 +14,8 @@
       "!**/wasm",
       "!schema",
       "!conformance/cases/*/manifest.json",
-      "!conformance/cases/*/bounds.json"
+      "!conformance/cases/*/bounds.json",
+      "!examples/*/src/client.ts"
     ]
   },
   "formatter": {

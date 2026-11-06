@@ -24,6 +24,18 @@ export class LoadError extends Error {
   }
 }
 
+/** Imports a module (TypeScript runs through Node's type stripping). */
+export async function loadModule(path: string, fresh = false): Promise<{ default?: unknown }> {
+  const url = `${pathToFileURL(resolve(path)).href}${fresh ? `?v=${Date.now()}` : ""}`;
+  try {
+    return (await import(url)) as { default?: unknown };
+  } catch (error) {
+    throw new LoadError(
+      `couldn't load ${path}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 /**
  * Returns the manifest JSON for `path`: the file itself if it's `.json`, otherwise the default
  * export of the module (TypeScript runs through Node's built-in type stripping).

@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use aleph_core::check::CheckReport;
-use aleph_core::runtime::{MemorySink, MockIntegrations};
+use aleph_core::runtime::{MemorySecrets, MemorySink, MockIntegrations};
 use aleph_core::{Engine, FixedEnv, Limits, MemoryStore, Request, TenantId, parse_and_validate};
 use serde::Deserialize;
 use serde_json::Value as Json;
@@ -43,12 +43,33 @@ struct Step {
     advance_ms: i64,
     request: Option<Json>,
     mock: Option<Mock>,
+    secret: Option<SecretStep>,
+    user: Option<UserStep>,
+    seed: Option<SeedStep>,
     #[serde(default)]
     process: bool,
     #[serde(default)]
     expect: Expectation,
     #[serde(default)]
     capture: BTreeMap<String, String>,
+}
+
+#[derive(Deserialize)]
+struct SecretStep {
+    name: String,
+    value: String,
+}
+
+#[derive(Deserialize)]
+struct UserStep {
+    id: String,
+    profile: serde_json::Map<String, Json>,
+}
+
+#[derive(Deserialize)]
+struct SeedStep {
+    entity: String,
+    rows: Vec<Json>,
 }
 
 #[derive(Deserialize)]
@@ -171,6 +192,18 @@ fn cases_validate_with_golden_bounds() {
 }
 
 #[test]
+fn route_examples_pass() {
+    for dir in cases() {
+        let valid = parse_and_validate(&read(&dir.join("manifest.json")), &Limits::ROUTE).unwrap();
+        let failures: Vec<_> = aleph_core::examples::run_all(&valid)
+            .into_iter()
+            .filter(|r| !r.failures.is_empty())
+            .collect();
+        assert!(failures.is_empty(), "{}: {failures:#?}", dir.display());
+    }
+}
+
+#[test]
 fn scenarios_behave_as_expected_within_bounds() {
     for dir in cases() {
         let valid = parse_and_validate(&read(&dir.join("manifest.json")), &Limits::ROUTE).unwrap();
@@ -179,11 +212,13 @@ fn scenarios_behave_as_expected_within_bounds() {
         let env = Arc::new(FixedEnv::new(0, scenario.seed));
         let sink = Arc::new(MemorySink::new());
         let integrations = Arc::new(MockIntegrations::new());
+        let secrets = Arc::new(MemorySecrets::new());
         // The WASM dev engine uses tenant "dev"; ids and responses must match it exactly.
         let tenant = TenantId::new("dev").unwrap();
         let engine = Engine::new(valid, Arc::new(MemoryStore::new()), env.clone())
             .with_sink(sink.clone())
-            .with_integrations(integrations.clone());
+            .with_integrations(integrations.clone())
+            .with_secrets(secrets.clone());
         let mut vars = BTreeMap::new();
         let mut extra = 0;
 
@@ -191,6 +226,20 @@ fn scenarios_behave_as_expected_within_bounds() {
             let at = format!("{} step {i} {:?}", dir.display(), step.name);
             extra += step.advance_ms;
             env.set_now(scenario.start_ms + i64::try_from(i).unwrap() * scenario.step_ms + extra);
+            if let Some(secret) = &step.secret {
+                secrets.set(&secret.name, &secret.value);
+                continue;
+            }
+            if let Some(user) = &step.user {
+                engine.put_user(&tenant, &user.id, &user.profile).unwrap();
+                continue;
+            }
+            if let Some(seed) = &step.seed {
+                let rows = substitute(&Json::Array(seed.rows.clone()), &vars);
+                let rows = rows.as_array().cloned().unwrap_or_default();
+                engine.seed(&tenant, &seed.entity, &rows).unwrap();
+                continue;
+            }
             if let Some(mock) = &step.mock {
                 let response = match &mock.error {
                     Some(error) => Err(error.clone()),
@@ -334,4 +383,72 @@ fn invalid_manifests_are_rejected_with_expected_codes() {
         checked += 1;
     }
     assert!(checked > 0);
+}
+
+/// Applies `{ "set": path, "value": v }` and `{ "delete": path }` edits to a JSON value.
+fn apply_edits(target: &mut Json, edits: Option<&Json>) {
+    for edit in edits.and_then(Json::as_array).into_iter().flatten() {
+        let (path, set) = match (edit.get("set"), edit.get("delete")) {
+            (Some(path), _) => (path, true),
+            (_, Some(path)) => (path, false),
+            _ => panic!("bad edit {edit}"),
+        };
+        let keys: Vec<&str> = path
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|k| k.as_str().unwrap())
+            .collect();
+        let (last, parents) = keys.split_last().unwrap();
+        let mut node = &mut *target;
+        for key in parents {
+            node = node.get_mut(*key).unwrap();
+        }
+        let map = node.as_object_mut().unwrap();
+        if set {
+            map.insert((*last).to_owned(), edit["value"].clone());
+        } else {
+            map.remove(*last);
+        }
+    }
+}
+
+#[test]
+fn schema_evolution_is_classified() {
+    let spec: Json =
+        serde_json::from_str(&read(&conformance_dir().join("evolution.json"))).unwrap();
+    let base: Json = serde_json::from_str(&read(
+        &conformance_dir().join(spec["base"].as_str().unwrap()),
+    ))
+    .unwrap();
+    for case in spec["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let mut deployed = base.clone();
+        apply_edits(&mut deployed, case.get("base_edits"));
+        let mut next = deployed.clone();
+        apply_edits(&mut next, case.get("edits"));
+        let old: aleph_core::Manifest = serde_json::from_value(deployed).unwrap();
+        let new: aleph_core::Manifest = serde_json::from_value(next).unwrap();
+        let report = aleph_core::evolution::compare(&old, &new);
+        assert_eq!(
+            report.deployable(),
+            case["deployable"].as_bool().unwrap(),
+            "{name}: {report:#?}"
+        );
+        let kinds: BTreeMap<String, Json> = report
+            .changes
+            .iter()
+            .map(|c| (c.path.clone(), serde_json::to_value(c.kind).unwrap()))
+            .collect();
+        let expected: BTreeMap<String, Json> =
+            serde_json::from_value(case["expect"].clone()).unwrap();
+        assert_eq!(kinds, expected, "{name}");
+        if let Some(migration) = case.get("migration") {
+            assert_eq!(
+                &serde_json::to_value(&report.migration).unwrap(),
+                migration,
+                "{name}"
+            );
+        }
+    }
 }

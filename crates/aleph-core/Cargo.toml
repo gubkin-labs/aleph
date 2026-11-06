@@ -14,14 +14,24 @@ default = []
 codegen = ["dep:schemars", "dep:ts-rs"]
 
 [dependencies]
+base64.workspace = true
+hmac.workspace = true
+jiff.workspace = true
+regex-lite.workspace = true
 schemars = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 ts-rs = { workspace = true, optional = true }
 
 [dev-dependencies]
+criterion = { version = "0.8", default-features = false }
 proptest.workspace = true
+
+[[bench]]
+name = "routes"
+harness = false
 
 [lints]
 workspace = true

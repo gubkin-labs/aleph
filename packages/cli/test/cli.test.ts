@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -194,6 +195,174 @@ describe("aleph dev", () => {
       expect((await fetch(`${base}/__aleph/nope`)).status).toBe(404);
     } finally {
       await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
+describe("aleph test", () => {
+  it("runs every route example and reports each", async () => {
+    const { io, out } = capture();
+    expect(await main(["test", join(cases, "commerce", "manifest.json")], io)).toBe(0);
+    const text = out.join("\n");
+    expect(text).toMatch(/✔ post_orders: prices the items, totals exactly/);
+    expect(text).toMatch(/\d+ passed, 0 failed/);
+  });
+
+  it("fails with the mismatch when an example is wrong", async () => {
+    const manifest = JSON.parse(readFileSync(join(cases, "commerce", "manifest.json"), "utf8")) as {
+      routes: { examples?: { expect: { status?: number } }[] }[];
+    };
+    const example = manifest.routes.flatMap((r) => r.examples ?? [])[0];
+    if (example) example.expect.status = 418;
+    const dir = mkdtempSync(join(tmpdir(), "aleph-cli-"));
+    const file = join(dir, "m.json");
+    writeFileSync(file, JSON.stringify(manifest));
+    const { io, out, err } = capture();
+    expect(await main(["test", file], io)).toBe(1);
+    expect(out.join("\n")).toMatch(/status: expected 418/);
+    expect(err.join("\n")).toMatch(/1 failed/);
+  });
+});
+
+describe("aleph client", () => {
+  it("generates a typed client from the inferred and declared response types", async () => {
+    const { io, out } = capture();
+    expect(await main(["client", join(cases, "commerce", "manifest.json")], io)).toBe(0);
+    const source = out.join("\n");
+    expect(source).toMatch(/export function createClient/);
+    // Declared `returns` and declared error details are typed.
+    expect(source).toMatch(
+      /postOrders: \{\n\s+input: \{ items: \{ qty: number; sku: string \}\[\]/,
+    );
+    expect(source).toMatch(
+      /error: "unknownProducts"; message: string; details: \{ missing: number \}/,
+    );
+    // Inferred types carry nullability and decimals.
+    expect(source).toMatch(/getDeals: \{[\s\S]*cheapestBook: Decimal \| null/);
+    expect(source).toMatch(/@deprecated Use GET \/deals/);
+  });
+});
+
+describe("aleph check --against", () => {
+  it("classifies changes and refuses breaking ones", async () => {
+    const deployed = join(cases, "commerce", "manifest.json");
+    const next = JSON.parse(readFileSync(deployed, "utf8")) as {
+      entities: Record<string, { fields: Record<string, unknown> }>;
+    };
+    delete next.entities["Product"]?.fields["tags"];
+    const dir = mkdtempSync(join(tmpdir(), "aleph-cli-"));
+    const file = join(dir, "next.json");
+    writeFileSync(file, JSON.stringify(next));
+    const { io, err } = capture();
+    expect(await main(["check", file, "--against", deployed], io)).toBe(1);
+    expect(err.join("\n")).toMatch(/✖ entities\.Product\.fields\.tags: field tags was removed/);
+    expect(err.join("\n")).toMatch(/not deployable/);
+
+    const same = capture();
+    expect(await main(["check", deployed, "--against", deployed], same.io)).toBe(0);
+    expect(same.out.join("\n")).toMatch(/no changes[\s\S]*✔ deployable/);
+  });
+});
+
+describe("aleph dev, language v0.3", () => {
+  async function serve(options: Parameters<typeof startDevServer>[1] = {}) {
+    const manifest = readFileSync(join(cases, "commerce", "manifest.json"), "utf8");
+    const lines: string[] = [];
+    const server = await startDevServer(manifest, {
+      port: 0,
+      log: (l) => lines.push(l),
+      ...options,
+    });
+    const address = server.address();
+    if (address === null || typeof address === "string") throw new Error("no port");
+    return { base: `http://127.0.0.1:${address.port}`, server, lines };
+  }
+  const close = (server: Server) => new Promise((resolve) => server.close(resolve));
+
+  it("passes headers, raw bodies, statuses, cookies, CORS, and logs through", async () => {
+    const { base, server, lines } = await serve({
+      secrets: { PAYMENTS_SECRET: "whsec_live" },
+      seed: {
+        Product: [{ sku: "BK-1", name: "Rust", price: "20", category: "books" }],
+        users: { c1: { email: "c1@example.com", name: "Cee" } },
+      },
+    });
+    try {
+      const c1 = {
+        "x-aleph-user": "c1",
+        "x-aleph-profile": JSON.stringify({ email: "c1@example.com", name: "Cee" }),
+        "content-type": "application/json",
+      };
+      const order = await fetch(`${base}/orders`, {
+        method: "POST",
+        headers: c1,
+        body: JSON.stringify({
+          items: [{ sku: "BK-1", qty: 2 }],
+          shipTo: { city: "Rome", zip: "1" },
+        }),
+      });
+      expect(order.status).toBe(201);
+      const { orderId } = (await order.json()) as { orderId: string };
+      expect(order.headers.get("location")).toBe(`/orders/${orderId}`);
+      expect(lines.join("\n")).toMatch(/log total: "40.00"/);
+
+      const me = await fetch(`${base}/me`, { headers: c1 });
+      expect(me.headers.get("set-cookie")).toMatch(/^seen=1; Path=\/; Max-Age=3600; HttpOnly/);
+      expect(await me.json()).toMatchObject({ directoryName: "Cee", greeting: "Hi, Cee" });
+
+      const deleted = await fetch(`${base}/orders/${orderId}`, { method: "DELETE", headers: c1 });
+      expect(deleted.status).toBe(204);
+      expect(await deleted.text()).toBe("");
+
+      const preflight = await fetch(`${base}/orders`, {
+        method: "OPTIONS",
+        headers: { origin: "https://shop.example.com" },
+      });
+      expect(preflight.status).toBe(204);
+      expect(preflight.headers.get("access-control-allow-origin")).toBe("https://shop.example.com");
+
+      const raw = JSON.stringify({ customerId: "c1", eventId: "e1", orderId });
+      const { createHmac } = await import("node:crypto");
+      const signature = createHmac("sha256", "whsec_live").update(raw).digest("hex");
+      const hook = await fetch(`${base}/webhooks/payments`, {
+        method: "POST",
+        headers: { "x-signature": signature, "content-type": "application/json" },
+        body: raw,
+      });
+      expect(hook.status).toBe(200);
+      const forged = await fetch(`${base}/webhooks/payments`, {
+        method: "POST",
+        headers: { "x-signature": "00", "content-type": "application/json" },
+        body: raw,
+      });
+      expect(forged.status).toBe(401);
+
+      const redirect = await fetch(`${base}/go/BK-1`, { redirect: "manual" });
+      expect(redirect.status).toBe(301);
+      expect(redirect.headers.get("location")).toBe("/products/BK-1");
+      const legacy = await fetch(`${base}/legacy/products`);
+      expect(legacy.headers.get("deprecation")).toBe("true");
+    } finally {
+      await close(server);
+    }
+  });
+
+  it("keeps data in a file across restarts", async () => {
+    const dataFile = join(mkdtempSync(join(tmpdir(), "aleph-dev-")), "data.json");
+    const first = await serve({ dataFile });
+    await fetch(`${first.base}/products/BK-9`, {
+      method: "PUT",
+      headers: { "x-aleph-user": "admin", "content-type": "application/json" },
+      body: JSON.stringify({ name: "Kept", price: "1", category: "tools" }),
+    });
+    await close(first.server);
+    const second = await serve({ dataFile });
+    try {
+      const deals = await fetch(`${second.base}/legacy/products`);
+      expect(await deals.json()).toEqual({ products: ["BK-9"] });
+      expect(second.lines.join("\n")).toMatch(/restored data/);
+    } finally {
+      await close(second.server);
     }
   });
 });

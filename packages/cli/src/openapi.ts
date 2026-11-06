@@ -1,5 +1,5 @@
 /** OpenAPI and MCP descriptions generated from a manifest. */
-import type { Field, FieldType, Manifest, Route } from "@aleph/manifest";
+import type { CheckReport, Field, FieldType, Manifest, Route, TypeSchema } from "@aleph/manifest";
 
 type JsonSchema = Record<string, unknown>;
 
@@ -24,8 +24,66 @@ export function fieldSchema(type: FieldType): JsonSchema {
       return { type: "integer", description: "milliseconds since the Unix epoch" };
     case "array":
       return { type: "array", items: fieldSchema(type.items), maxItems: type.max };
+    case "object":
+      return objectSchema(type.fields);
+    case "decimal":
+      return {
+        type: "string",
+        pattern: "^-?\\d+(\\.\\d+)?$",
+        description: `decimal with ${type.scale} digits after the point`,
+        "x-aleph-decimal": {
+          scale: type.scale,
+          ...(type.min ? { min: type.min } : {}),
+          ...(type.max ? { max: type.max } : {}),
+        },
+      };
+    case "timeZone":
+      return { type: "string", description: "IANA time zone, like Europe/Berlin" };
   }
 }
+
+/** JSON Schema for a response value. */
+export function responseSchema(schema: TypeSchema): JsonSchema {
+  switch (schema.kind) {
+    case "any":
+      return {};
+    case "null":
+      return { type: "null" };
+    case "bool":
+      return { type: "boolean" };
+    case "int":
+      return { type: "integer" };
+    case "decimal":
+      return { type: "string", pattern: "^-?\\d+(\\.\\d+)?$", description: "decimal" };
+    case "string":
+      return {
+        type: "string",
+        ...(schema.maxLength === undefined ? {} : { maxLength: schema.maxLength }),
+      };
+    case "enum":
+      return { type: "string", enum: schema.values };
+    case "array":
+      return { type: "array", items: responseSchema(schema.items), maxItems: schema.maxItems };
+    case "object":
+      return {
+        type: "object",
+        properties: Object.fromEntries(
+          Object.entries(schema.fields).map(([n, f]) => [n, responseSchema(f)]),
+        ),
+        required: Object.keys(schema.fields),
+      };
+    case "nullable":
+      return { anyOf: [responseSchema(schema.of), { type: "null" }] };
+    case "oneOf":
+      return { oneOf: schema.variants.map(responseSchema) };
+  }
+}
+
+const ERROR_BODY: JsonSchema = {
+  type: "object",
+  properties: { error: { type: "string" }, message: { type: "string" }, details: {} },
+  required: ["error", "message"],
+};
 
 function objectSchema(fields: Record<string, Field>): JsonSchema {
   const required = Object.entries(fields)
@@ -41,7 +99,7 @@ function objectSchema(fields: Record<string, Field>): JsonSchema {
   };
 }
 
-function operation(route: Route): JsonSchema {
+function operation(route: Route, report: CheckReport | undefined): JsonSchema {
   const parameters = [
     ...Object.entries(route.input.params).map(([name, f]) => ({
       name,
@@ -56,15 +114,47 @@ function operation(route: Route): JsonSchema {
       schema: fieldSchema(f.type),
     })),
   ];
-  const responses: Record<string, JsonSchema> = { "200": { description: "OK" } };
-  if (route.auth.kind !== "public") {
-    responses["401"] = { description: "Not signed in" };
+  const first = route.plan.body[0];
+  const status = first?.kind === "setStatus" ? first.status : 200;
+  const output = report?.routes[route.id]?.output;
+  const errorBody = { content: { "application/json": { schema: ERROR_BODY } } };
+  const responses: Record<string, JsonSchema> = {
+    [String(status)]:
+      status === 204
+        ? { description: "No content" }
+        : {
+            description: "OK",
+            ...(output
+              ? { content: { "application/json": { schema: responseSchema(output) } } }
+              : {}),
+          },
+  };
+  if (route.auth.kind !== "public" || route.webhook) {
+    responses["401"] = {
+      description: route.webhook ? "Invalid signature" : "Not signed in",
+      ...errorBody,
+    };
   }
-  if (route.auth.kind === "member") responses["403"] = { description: "Not allowed" };
-  responses["400"] = { description: "Invalid input" };
-  if (route.rateLimit) responses["429"] = { description: "Rate limited" };
+  if (route.auth.kind === "member") responses["403"] = { description: "Not allowed", ...errorBody };
+  responses["400"] = { description: "Invalid input", ...errorBody };
+  if (route.rateLimit) responses["429"] = { description: "Rate limited", ...errorBody };
   for (const [name, error] of Object.entries(route.errors)) {
-    responses[String(error.status)] = { description: `${name}: ${error.message}` };
+    const details = error.details ? { details: objectSchema(error.details) } : {};
+    responses[String(error.status)] = {
+      description: `${name}: ${error.message}`,
+      content: {
+        "application/json": {
+          schema: {
+            ...ERROR_BODY,
+            properties: {
+              ...(ERROR_BODY["properties"] as object),
+              error: { const: name },
+              ...details,
+            },
+          },
+        },
+      },
+    };
   }
   return {
     operationId: route.id,
@@ -76,6 +166,18 @@ function operation(route: Route): JsonSchema {
             required: true,
             content: { "application/json": { schema: objectSchema(route.input.body) } },
           },
+        }
+      : {}),
+    ...(route.deprecated ? { deprecated: true, "x-aleph-deprecated": route.deprecated } : {}),
+    ...(route.version ? { "x-aleph-version": route.version } : {}),
+    ...(route.webhook ? { "x-aleph-webhook": route.webhook } : {}),
+    ...(route.examples?.length
+      ? {
+          "x-aleph-examples": route.examples.map((e) => ({
+            name: e.name,
+            request: e.request,
+            expect: e.expect,
+          })),
         }
       : {}),
     ...(route.idempotency
@@ -90,12 +192,12 @@ function operation(route: Route): JsonSchema {
   };
 }
 
-/** An OpenAPI 3.1 document for the manifest's routes. */
-export function openapi(manifest: Manifest): JsonSchema {
+/** An OpenAPI 3.1 document for the manifest's routes, with response schemas from `report`. */
+export function openapi(manifest: Manifest, report?: CheckReport): JsonSchema {
   const paths: Record<string, Record<string, JsonSchema>> = {};
   for (const route of manifest.routes) {
     const path = route.path.replace(/:(\w+)/g, "{$1}");
-    paths[path] = { ...paths[path], [route.method.toLowerCase()]: operation(route) };
+    paths[path] = { ...paths[path], [route.method.toLowerCase()]: operation(route, report) };
   }
   return {
     openapi: "3.1.0",

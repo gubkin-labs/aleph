@@ -17,8 +17,11 @@ use crate::manifest::{
 
 mod handlers;
 mod plan;
+mod schema;
 mod size;
 mod types;
+
+pub use schema::TypeSchema;
 
 pub(crate) use plan::DEFAULT_CASE;
 pub(crate) use types::Ty;
@@ -51,13 +54,18 @@ pub struct EntityReport {
     pub max_row_bytes: u64,
 }
 
-/// Static facts about a route.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Static facts about a route (or a handler).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct RouteReport {
     /// Worst-case cost of one execution. The runtime never exceeds it.
     pub bounds: Cost,
+    /// The type of a successful response body: the declared `returns`, or what the checker
+    /// inferred from the plan. Routes only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub output: Option<TypeSchema>,
 }
 
 /// A manifest that passed validation, together with its analysis.
@@ -142,6 +150,10 @@ pub(crate) struct EntityInfo {
     pub(crate) counter_count: u64,
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one pass over every section of the manifest"
+)]
 fn check_manifest(m: &Manifest, limits: &Limits, diags: &mut Vec<Diagnostic>) -> CheckReport {
     if m.format_version != FORMAT_VERSION {
         diags.push(Diagnostic::new(
@@ -162,7 +174,12 @@ fn check_manifest(m: &Manifest, limits: &Limits, diags: &mut Vec<Diagnostic>) ->
         check_name(name, &path, diags);
         let row_bytes = check_entity(entity, &path, limits, diags);
         check_row_rules(m, name, entity, &path, diags);
-        let counter_count = m.counters.values().filter(|c| &c.of == name).count() as u64;
+        let counter_count = m
+            .counters
+            .values()
+            .filter(|c| &c.of == name)
+            .map(counter_weight)
+            .sum::<u64>();
         infos.insert(
             name.clone(),
             EntityInfo {
@@ -187,13 +204,53 @@ fn check_manifest(m: &Manifest, limits: &Limits, diags: &mut Vec<Diagnostic>) ->
     }
 
     check_auth_config(&m.auth, diags);
+    for (name, field) in &m.auth.profile {
+        let field_path = format!("auth.profile.{name}");
+        check_name(name, &field_path, diags);
+        check_field(field, &field_path, diags);
+    }
+    if let Some(cors) = &m.cors {
+        check_cors(cors, diags);
+    }
     check_route_table(&m.routes, diags);
     for (i, route) in m.routes.iter().enumerate() {
         let path = format!("routes[{i}]");
         check_route_auth(&m.auth, route, &path, diags);
-        let mut bounds = plan::check_route(m, &infos, route, &path, diags);
+        let checked = plan::check_route(m, &infos, route, &path, diags);
+        let mut bounds = checked.cost;
+        let output = match &route.returns {
+            Some(declared) => {
+                check_field_type(declared, &format!("{path}.returns"), diags);
+                for (ty, at) in &checked.outputs {
+                    if let Err(message) = schema::fits(ty, declared, false, m) {
+                        diags.push(Diagnostic::new(Code::TypeMismatch, at, message));
+                    }
+                }
+                TypeSchema::of_field_type(declared)
+            }
+            None => TypeSchema::union(
+                checked
+                    .outputs
+                    .iter()
+                    .map(|(ty, _)| TypeSchema::of_ty(ty, m))
+                    .collect(),
+            ),
+        };
+        if let Some(hook) = &route.webhook {
+            check_webhook(route, hook, &format!("{path}.webhook"), diags);
+        }
+        for (name, error) in &route.errors {
+            for (field_name, field) in &error.details {
+                let field_path = format!("{path}.errors.{name}.details.{field_name}");
+                check_name(field_name, &field_path, diags);
+                check_field(field, &field_path, diags);
+            }
+        }
+        let deduped = route.webhook.as_ref().is_some_and(|w| w.dedupe.is_some());
         if let Some(idempotency) = route.idempotency {
             check_idempotency(idempotency, &format!("{path}.idempotency"), diags);
+        }
+        if route.idempotency.is_some() || deduped {
             // Reading the stored response, and storing it (it must fit in one row).
             bounds += Cost {
                 reads: 1,
@@ -216,9 +273,13 @@ fn check_manifest(m: &Manifest, limits: &Limits, diags: &mut Vec<Diagnostic>) ->
                 ));
             }
         }
-        report
-            .routes
-            .insert(route.id.clone(), RouteReport { bounds });
+        report.routes.insert(
+            route.id.clone(),
+            RouteReport {
+                bounds,
+                output: Some(output),
+            },
+        );
     }
     handlers::check_all(m, &infos, &mut report.handlers, diags);
     report
@@ -278,6 +339,118 @@ fn check_row_rules(
     }
 }
 
+/// Headers a plan may not set: the platform owns framing, content type, and CORS.
+const RESERVED_HEADERS: [&str; 8] = [
+    "content-length",
+    "content-type",
+    "transfer-encoding",
+    "connection",
+    "host",
+    "deprecation",
+    "access-control-allow-origin",
+    "access-control-allow-credentials",
+];
+
+/// Checks a response header name: a lowercase HTTP token the platform doesn't own.
+pub(crate) fn check_header_name(name: &str) -> Result<(), String> {
+    let token = !name.is_empty()
+        && name.len() <= 64
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+    if !token {
+        return Err(format!(
+            "{name:?} isn't a valid header name: use lowercase letters, digits, and dashes"
+        ));
+    }
+    if RESERVED_HEADERS.contains(&name) {
+        return Err(format!(
+            "{name:?} is set by the platform and can't be set by a plan"
+        ));
+    }
+    Ok(())
+}
+
+fn check_webhook(
+    route: &Route,
+    hook: &crate::manifest::Webhook,
+    path: &str,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let mut problem = |at: String, message: &str| {
+        diags.push(Diagnostic::new(Code::InvalidRoute, at, message));
+    };
+    if route.auth != Auth::Public {
+        problem(
+            path.to_owned(),
+            "webhooks are called by other services, so their auth must be public (the signature is the authentication)",
+        );
+    }
+    if route.method != crate::manifest::Method::Post {
+        problem(path.to_owned(), "webhooks receive POST requests");
+    }
+    let lowercase = |h: &str| !h.is_empty() && h.bytes().all(|b| !b.is_ascii_uppercase());
+    if let crate::manifest::Verify::HmacSha256 {
+        header,
+        timestamp_header,
+        ..
+    } = &hook.verify
+        && (!lowercase(header) || timestamp_header.as_deref().is_some_and(|h| !lowercase(h)))
+    {
+        problem(format!("{path}.verify"), "header names must be lowercase");
+    }
+    if let Some(dedupe) = &hook.dedupe {
+        if dedupe.header.is_none() == dedupe.body_field.is_none() {
+            problem(
+                format!("{path}.dedupe"),
+                "name exactly one place for the event id: a header or a body field",
+            );
+        }
+        if dedupe.ttl_ms == 0 || dedupe.ttl_ms > Idempotency::MAX_TTL_MS {
+            problem(
+                format!("{path}.dedupe.ttlMs"),
+                "the dedupe window must be 1 ms to 7 days",
+            );
+        }
+        if route.idempotency.is_some() {
+            problem(
+                format!("{path}.dedupe"),
+                "a webhook is deduplicated by event id; it can't also take idempotency keys",
+            );
+        }
+    }
+}
+
+fn check_cors(cors: &crate::manifest::Cors, diags: &mut Vec<Diagnostic>) {
+    if cors.origins.is_empty() {
+        diags.push(Diagnostic::new(
+            Code::InvalidDeclaration,
+            "cors.origins",
+            "list at least one origin, or \"*\"",
+        ));
+    }
+    for (i, origin) in cors.origins.iter().enumerate() {
+        let ok = origin == "*"
+            || (origin.starts_with("http://") || origin.starts_with("https://"))
+                && !origin.ends_with('/')
+                && !origin.contains(char::is_whitespace);
+        if !ok {
+            diags.push(Diagnostic::new(
+                Code::InvalidDeclaration,
+                format!("cors.origins[{i}]"),
+                format!("{origin:?} isn't an origin like https://app.example.com (no trailing slash) or *"),
+            ));
+        }
+    }
+    if cors.credentials && cors.origins.iter().any(|o| o == "*") {
+        diags.push(Diagnostic::new(
+            Code::InvalidDeclaration,
+            "cors",
+            "browsers don't allow credentials with the * origin; list the origins instead",
+        ));
+    }
+}
+
 pub(crate) fn check_name(name: &str, path: &str, diags: &mut Vec<Diagnostic>) {
     let mut chars = name.chars();
     let valid = name.len() <= 64
@@ -295,6 +468,7 @@ pub(crate) fn check_name(name: &str, path: &str, diags: &mut Vec<Diagnostic>) {
 }
 
 /// Validates an entity and returns its worst-case row size.
+#[allow(clippy::too_many_lines, reason = "one check per entity rule")]
 fn check_entity(entity: &Entity, path: &str, limits: &Limits, diags: &mut Vec<Diagnostic>) -> u64 {
     for (name, field) in &entity.fields {
         let field_path = format!("{path}.fields.{name}");
@@ -329,7 +503,7 @@ fn check_entity(entity: &Entity, path: &str, limits: &Limits, diags: &mut Vec<Di
             Some(field) if !is_keyable(&field.ty) => diags.push(Diagnostic::new(
                 Code::InvalidKey,
                 &key_path,
-                format!("key field {name:?} must be a string, int, bool, enum, id, or timestamp"),
+                format!("key field {name:?} must be a string, int, decimal, bool, enum, id, time zone, or timestamp"),
             )),
             Some(_) => {}
         }
@@ -354,13 +528,40 @@ fn check_entity(entity: &Entity, path: &str, limits: &Limits, diags: &mut Vec<Di
                 Some(field) if !is_keyable(&field.ty) => diags.push(Diagnostic::new(
                     Code::InvalidIndex,
                     &index_path,
-                    format!("field {name:?} can't be indexed: arrays aren't orderable"),
+                    format!("field {name:?} can't be indexed: arrays and objects aren't orderable (index a computed part of the object instead)"),
                 )),
                 Some(_) => {}
             }
         }
     }
 
+    if entity.versioned {
+        match entity.fields.get("version") {
+            Some(Field {
+                ty: FieldType::Int { .. },
+                optional: false,
+                ..
+            }) => {}
+            _ => diags.push(Diagnostic::new(
+                Code::InvalidDeclaration,
+                format!("{path}.versioned"),
+                "a versioned entity needs a required int field named \"version\"",
+            )),
+        }
+    }
+    if let Some(ttl) = &entity.ttl {
+        let is_timestamp = entity
+            .fields
+            .get(&ttl.field)
+            .is_some_and(|f| f.ty == FieldType::Timestamp);
+        if !is_timestamp || ttl.ms == 0 {
+            diags.push(Diagnostic::new(
+                Code::InvalidDeclaration,
+                format!("{path}.ttl"),
+                "ttl needs a timestamp field and a lifetime above 0 ms",
+            ));
+        }
+    }
     let row_bytes = size::row_bytes(entity);
     if row_bytes > limits.max_row_bytes {
         diags.push(Diagnostic::new(
@@ -377,7 +578,7 @@ fn check_entity(entity: &Entity, path: &str, limits: &Limits, diags: &mut Vec<Di
 }
 
 pub(crate) fn is_keyable(ty: &FieldType) -> bool {
-    !matches!(ty, FieldType::Array { .. })
+    !matches!(ty, FieldType::Array { .. } | FieldType::Object { .. })
 }
 
 pub(crate) fn check_field(field: &Field, path: &str, diags: &mut Vec<Diagnostic>) {
@@ -400,6 +601,13 @@ pub(crate) fn check_field(field: &Field, path: &str, diags: &mut Vec<Diagnostic>
 }
 
 fn check_field_type(ty: &FieldType, path: &str, diags: &mut Vec<Diagnostic>) {
+    check_field_type_at(ty, path, 0, diags);
+}
+
+/// The deepest objects may nest.
+const MAX_OBJECT_DEPTH: usize = 4;
+
+fn check_field_type_at(ty: &FieldType, path: &str, depth: usize, diags: &mut Vec<Diagnostic>) {
     let problem = match ty {
         FieldType::String { min, max } if min > max => {
             Some("string min is greater than max".to_owned())
@@ -416,11 +624,49 @@ fn check_field_type(ty: &FieldType, path: &str, diags: &mut Vec<Diagnostic>) {
         {
             Some("enum values must be unique".to_owned())
         }
+        FieldType::Decimal { scale, min, max } => {
+            let parse = |b: &Option<String>| b.as_deref().map(crate::decimal::Decimal::parse);
+            if *scale > crate::decimal::MAX_SCALE {
+                Some(format!(
+                    "decimal scale must be 0-{}",
+                    crate::decimal::MAX_SCALE
+                ))
+            } else if matches!(parse(min), Some(None)) || matches!(parse(max), Some(None)) {
+                Some("decimal min and max must be decimal strings like \"0.00\"".to_owned())
+            } else if let (Some(Some(lo)), Some(Some(hi))) = (parse(min), parse(max))
+                && lo > hi
+            {
+                Some("decimal min is greater than max".to_owned())
+            } else {
+                None
+            }
+        }
         FieldType::Array { items, .. } => {
             if matches!(**items, FieldType::Array { .. }) {
                 Some("nested arrays aren't supported".to_owned())
             } else {
-                check_field_type(items, &format!("{path}.items"), diags);
+                check_field_type_at(items, &format!("{path}.items"), depth, diags);
+                None
+            }
+        }
+        FieldType::Object { fields } => {
+            if depth >= MAX_OBJECT_DEPTH {
+                Some(format!("objects can nest at most {MAX_OBJECT_DEPTH} deep"))
+            } else if fields.is_empty() {
+                Some("an object needs at least one field".to_owned())
+            } else {
+                for (name, field) in fields {
+                    let field_path = format!("{path}.fields.{name}");
+                    check_name(name, &field_path, diags);
+                    if field.default.is_some() {
+                        diags.push(Diagnostic::new(
+                            Code::InvalidDefault,
+                            format!("{field_path}.default"),
+                            "fields inside objects can't have defaults; make them optional instead",
+                        ));
+                    }
+                    check_field_type_at(&field.ty, &field_path, depth + 1, diags);
+                }
                 None
             }
         }
@@ -443,6 +689,15 @@ fn literal_fits(value: &Literal, ty: &FieldType, optional: bool) -> bool {
             len >= *min as usize && len <= *max as usize
         }
         (Literal::String(s), FieldType::Enum { values }) => values.contains(s),
+        (Literal::String(s), FieldType::TimeZone) => crate::runtime::time_zone_exists(s),
+        (Literal::String(s), FieldType::Decimal { scale, .. }) => {
+            crate::decimal::Decimal::parse(s).is_some_and(|d| d.exactly_at(*scale).is_some())
+        }
+        (Literal::Int(i), FieldType::Decimal { scale, .. }) => {
+            crate::decimal::Decimal::from_int(*i)
+                .exactly_at(*scale)
+                .is_some()
+        }
         _ => false,
     }
 }
@@ -452,15 +707,33 @@ fn check_counter(m: &Manifest, counter: &Counter, path: &str, diags: &mut Vec<Di
         diags.push(unknown_entity(&format!("{path}.of"), &counter.of, m));
         return;
     };
-    for name in &counter.group_by {
-        match entity.fields.get(name) {
-            None => diags.push(unknown_field(&format!("{path}.groupBy"), name, entity)),
-            Some(field) if !is_keyable(&field.ty) => diags.push(Diagnostic::new(
-                Code::InvalidCounterKey,
-                format!("{path}.groupBy"),
-                format!("can't group by array field {name:?}"),
-            )),
-            Some(_) => {}
+    for part in &counter.group_by {
+        match part {
+            IndexPart::Field(name) => match entity.fields.get(name) {
+                None => diags.push(unknown_field(&format!("{path}.groupBy"), name, entity)),
+                Some(field) if !is_keyable(&field.ty) => diags.push(Diagnostic::new(
+                    Code::InvalidCounterKey,
+                    format!("{path}.groupBy"),
+                    format!("can't group by array or object field {name:?}"),
+                )),
+                Some(_) => {}
+            },
+            IndexPart::Computed(part) => {
+                let part_path = format!("{path}.groupBy.{}", part.name);
+                check_name(&part.name, &part_path, diags);
+                let predicate = RowPredicate {
+                    var: part.var,
+                    expr: part.expr.clone(),
+                };
+                plan::check_row_predicate(
+                    m,
+                    &counter.of,
+                    &predicate,
+                    &part_path,
+                    plan::RowExprKind::Scalar,
+                    diags,
+                );
+            }
         }
     }
     if let Some(filter) = &counter.filter {
@@ -482,6 +755,45 @@ fn check_counter(m: &Manifest, counter: &Counter, path: &str, diags: &mut Vec<Di
             plan::RowExprKind::Int,
             diags,
         );
+    }
+    let mut problem = |at: String, message: String| {
+        diags.push(Diagnostic::new(Code::InvalidCounterKey, at, message));
+    };
+    if let Some(agg) = &counter.agg {
+        match entity.fields.get(&agg.field) {
+            None => problem(
+                format!("{path}.agg.field"),
+                format!("{} has no field {:?}", counter.of, agg.field),
+            ),
+            Some(f) if !is_keyable(&f.ty) => problem(
+                format!("{path}.agg.field"),
+                format!(
+                    "{:?} can't be aggregated: arrays and objects aren't orderable",
+                    agg.field
+                ),
+            ),
+            Some(_) => {}
+        }
+        if counter.sum.is_some() || counter.shards.is_some() {
+            problem(
+                format!("{path}.agg"),
+                "an aggregate counter can't also have sum or shards".into(),
+            );
+        }
+    }
+    if let Some(shards) = counter.shards
+        && !(2..=64).contains(&shards)
+    {
+        problem(format!("{path}.shards"), "shards must be 2-64".into());
+    }
+}
+
+/// How many counter writes one row change can cost per side (old and new), for this counter.
+pub(crate) fn counter_weight(counter: &Counter) -> u64 {
+    match counter.agg.as_ref().map(|a| a.kind) {
+        // A distinct counter updates the value's refcount and the total.
+        Some(crate::manifest::AggKind::Distinct) => 2,
+        _ => 1,
     }
 }
 
@@ -576,6 +888,7 @@ fn check_idempotency(idempotency: Idempotency, path: &str, diags: &mut Vec<Diagn
     }
 }
 
+#[allow(clippy::too_many_lines, reason = "one check per route rule")]
 fn check_route_table(routes: &[Route], diags: &mut Vec<Diagnostic>) {
     let mut tools = HashSet::new();
     let mut ids = HashSet::new();
@@ -590,6 +903,13 @@ fn check_route_table(routes: &[Route], diags: &mut Vec<Diagnostic>) {
             ));
         }
         check_name(&route.id, &format!("{path}.id"), diags);
+        if route.method == crate::manifest::Method::Options {
+            diags.push(Diagnostic::new(
+                Code::InvalidRoute,
+                format!("{path}.method"),
+                "OPTIONS is answered by the platform for CORS; routes can't use it",
+            ));
+        }
 
         let segments: Vec<&str> = route.path.split('/').skip(1).collect();
         if !route.path.starts_with('/')

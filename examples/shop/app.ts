@@ -1,11 +1,12 @@
 /**
  * A shop: orders are charged by a queue job that calls a payment integration (journaled, so a
  * retry never charges twice), with retries, a dead-letter handler, an event that sends a receipt
- * email, a running revenue sum, and an hourly cron that expires stale pending orders.
+ * email to the customer's address from the user directory, a running revenue sum, and an hourly
+ * cron that expires stale pending orders.
  */
-import { type App, app, err, t } from "@aleph/sdk";
+import { app, err, t } from "@aleph/sdk";
 
-const a: App<never, never> = app("shop");
+const a = app("shop", { profile: { email: t.string().max(200) } });
 
 const Order = a.entity("Order", {
   key: ["customerId", "orderId"],
@@ -62,6 +63,21 @@ a.route("POST /orders")
   .rateLimit({ per: "user", max: 10, window: "1m" })
   .idempotent({ ttl: "1h", required: true })
   .body({ totalCents: t.int().min(1).max(10_000_000) })
+  .status(201)
+  .example({
+    name: "places a pending order, charged in the background",
+    as: { userId: "ada" },
+    users: { ada: { email: "ada@example.com" } },
+    request: { body: { totalCents: 2500 }, headers: { "idempotency-key": "k1" } },
+    mocks: [{ integration: "payments", operation: "charge", response: { chargeId: "ch_1" } }],
+    process: true,
+    expect: {
+      status: 201,
+      body: { status: "pending", totalCents: 2500 },
+      runs: ["chargeOrder", "receipt"],
+      deliveries: [{ target: "email", data: { to: "ada@example.com" } }],
+    },
+  })
   .handle(($, { body }) => {
     const order = Order.insert({ customerId: $.caller, totalCents: body.totalCents });
     Charge.enqueue({ customerId: $.caller, orderId: order.orderId }); // released after commit
@@ -96,8 +112,10 @@ a.onDeadLetter("chargeFailed", Charge, (_, { payload }) => {
 });
 
 a.onEvent("receipt", OrderPaid, ($, { payload }) => {
+  const customer = a.users.get(payload.customerId);
   email.send("send", {
-    to: $.fmt`${payload.customerId}@example.com`,
+    // The customer's address from the user directory (a fallback for dev users without one).
+    to: customer.email.ifNull($.fmt`${payload.customerId}@example.com`),
     subject: "Thanks for your order",
   });
 });

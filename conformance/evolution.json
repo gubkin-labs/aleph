@@ -1,0 +1,93 @@
+{
+  "base": "cases/commerce/manifest.json",
+  "cases": [
+    {
+      "name": "the same manifest has no changes",
+      "edits": [],
+      "deployable": true,
+      "expect": {}
+    },
+    {
+      "name": "an optional field is safe",
+      "edits": [
+        {
+          "set": ["entities", "Product", "fields", "subtitle"],
+          "value": { "type": { "kind": "string", "min": 0, "max": 80 }, "optional": true }
+        }
+      ],
+      "deployable": true,
+      "expect": { "entities.Product.fields.subtitle": "safe" }
+    },
+    {
+      "name": "a required field without a default breaks existing rows",
+      "edits": [
+        {
+          "set": ["entities", "Product", "fields", "brand"],
+          "value": { "type": { "kind": "string", "min": 0, "max": 40 } }
+        }
+      ],
+      "deployable": false,
+      "expect": { "entities.Product.fields.brand": "breaking" }
+    },
+    {
+      "name": "widening a string is safe, narrowing breaks",
+      "edits": [
+        { "set": ["entities", "Product", "fields", "name", "type", "max"], "value": 200 },
+        { "set": ["entities", "Cart", "fields", "customerId", "type", "max"], "value": 10 }
+      ],
+      "deployable": false,
+      "expect": {
+        "entities.Product.fields.name": "safe",
+        "entities.Cart.fields.customerId": "breaking"
+      }
+    },
+    {
+      "name": "a new index needs a backfill",
+      "edits": [
+        { "set": ["entities", "Product", "indexes", "byName"], "value": { "fields": ["name"] } }
+      ],
+      "deployable": true,
+      "expect": { "entities.Product.indexes.byName": "needsBackfill" },
+      "migration": [{ "task": "buildIndex", "entity": "Product", "index": "byName" }]
+    },
+    {
+      "name": "removing a field breaks",
+      "edits": [{ "delete": ["entities", "Product", "fields", "tags"] }],
+      "deployable": false,
+      "expect": { "entities.Product.fields.tags": "breaking" }
+    },
+    {
+      "name": "removing a field the deployed manifest deprecated is allowed",
+      "base_edits": [
+        {
+          "set": ["entities", "Product", "fields", "tags", "deprecated"],
+          "value": "use categories"
+        }
+      ],
+      "edits": [{ "delete": ["entities", "Product", "fields", "tags"] }],
+      "deployable": true,
+      "expect": { "entities.Product.fields.tags": "breaking" }
+    },
+    {
+      "name": "removing an enum value breaks",
+      "edits": [
+        {
+          "set": ["entities", "Product", "fields", "category", "type", "values"],
+          "value": ["books", "games"]
+        }
+      ],
+      "deployable": false,
+      "expect": { "entities.Product.fields.category": "breaking" }
+    },
+    {
+      "name": "changing a counter recomputes it",
+      "edits": [{ "set": ["counters", "cheapest", "agg", "kind"], "value": "max" }],
+      "deployable": true,
+      "expect": { "counters.cheapest": "needsBackfill" },
+      "migration": [
+        { "task": "dropCounter", "counter": "cheapest" },
+        { "task": "buildCounter", "counter": "cheapest" }
+      ]
+    }
+  ]
+}

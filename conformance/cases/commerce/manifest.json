@@ -1,0 +1,3478 @@
+{
+  "app": {
+    "name": "commerce"
+  },
+  "auth": {
+    "apiKeyScopes": [],
+    "profile": {
+      "email": {
+        "type": {
+          "kind": "string",
+          "max": 200,
+          "min": 0
+        }
+      },
+      "name": {
+        "type": {
+          "kind": "string",
+          "max": 100,
+          "min": 0
+        }
+      }
+    },
+    "roles": []
+  },
+  "cors": {
+    "credentials": true,
+    "maxAgeS": 3600,
+    "origins": [
+      "https://shop.example.com"
+    ]
+  },
+  "counters": {
+    "cheapest": {
+      "agg": {
+        "field": "price",
+        "kind": "min"
+      },
+      "groupBy": [
+        "category"
+      ],
+      "of": "Product"
+    },
+    "customers": {
+      "agg": {
+        "field": "customerId",
+        "kind": "distinct"
+      },
+      "groupBy": [],
+      "of": "Order"
+    },
+    "latestOrder": {
+      "agg": {
+        "field": "placedAt",
+        "kind": "max"
+      },
+      "groupBy": [],
+      "of": "Order"
+    },
+    "ordersPerDay": {
+      "groupBy": [
+        {
+          "expr": {
+            "kind": "startOf",
+            "of": {
+              "kind": "field",
+              "name": "placedAt",
+              "of": {
+                "id": 0,
+                "kind": "var"
+              }
+            },
+            "unit": "day"
+          },
+          "name": "day",
+          "var": 0
+        }
+      ],
+      "of": "Order",
+      "shards": 4
+    }
+  },
+  "entities": {
+    "Cart": {
+      "fields": {
+        "customerId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 1
+          }
+        },
+        "skus": {
+          "type": {
+            "items": {
+              "kind": "string",
+              "max": 32,
+              "min": 1
+            },
+            "kind": "array",
+            "max": 10
+          }
+        },
+        "updatedAt": {
+          "default": {
+            "kind": "now"
+          },
+          "type": {
+            "kind": "timestamp"
+          }
+        }
+      },
+      "indexes": {},
+      "key": [
+        "customerId"
+      ],
+      "ttl": {
+        "field": "updatedAt",
+        "ms": 86400000
+      }
+    },
+    "Note": {
+      "fields": {
+        "customerId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 1
+          }
+        },
+        "noteId": {
+          "default": {
+            "kind": "newId"
+          },
+          "type": {
+            "kind": "id"
+          }
+        },
+        "orderId": {
+          "type": {
+            "kind": "id"
+          }
+        },
+        "text": {
+          "type": {
+            "kind": "string",
+            "max": 200,
+            "min": 0
+          }
+        }
+      },
+      "indexes": {},
+      "key": [
+        "customerId",
+        "orderId",
+        "noteId"
+      ]
+    },
+    "Order": {
+      "fields": {
+        "customerId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 1
+          }
+        },
+        "items": {
+          "type": {
+            "items": {
+              "fields": {
+                "qty": {
+                  "type": {
+                    "kind": "int",
+                    "max": 99,
+                    "min": 1
+                  }
+                },
+                "sku": {
+                  "type": {
+                    "kind": "string",
+                    "max": 32,
+                    "min": 1
+                  }
+                },
+                "unitPrice": {
+                  "type": {
+                    "kind": "decimal",
+                    "scale": 2
+                  }
+                }
+              },
+              "kind": "object"
+            },
+            "kind": "array",
+            "max": 10
+          }
+        },
+        "orderId": {
+          "default": {
+            "kind": "newId"
+          },
+          "type": {
+            "kind": "id"
+          }
+        },
+        "placedAt": {
+          "default": {
+            "kind": "now"
+          },
+          "type": {
+            "kind": "timestamp"
+          }
+        },
+        "shipTo": {
+          "type": {
+            "fields": {
+              "city": {
+                "type": {
+                  "kind": "string",
+                  "max": 60,
+                  "min": 1
+                }
+              },
+              "note": {
+                "optional": true,
+                "type": {
+                  "kind": "string",
+                  "max": 100,
+                  "min": 0
+                }
+              },
+              "zip": {
+                "type": {
+                  "kind": "string",
+                  "max": 10,
+                  "min": 1
+                }
+              }
+            },
+            "kind": "object"
+          }
+        },
+        "status": {
+          "default": {
+            "kind": "literal",
+            "value": "placed"
+          },
+          "type": {
+            "kind": "enum",
+            "values": [
+              "placed",
+              "paid",
+              "cancelled"
+            ]
+          }
+        },
+        "total": {
+          "type": {
+            "kind": "decimal",
+            "scale": 2
+          }
+        },
+        "tz": {
+          "default": {
+            "kind": "literal",
+            "value": "UTC"
+          },
+          "type": {
+            "kind": "timeZone"
+          }
+        }
+      },
+      "indexes": {
+        "byStatus": {
+          "fields": [
+            "status",
+            "placedAt"
+          ]
+        }
+      },
+      "key": [
+        "customerId",
+        "orderId"
+      ]
+    },
+    "Product": {
+      "fields": {
+        "category": {
+          "type": {
+            "kind": "enum",
+            "values": [
+              "books",
+              "games",
+              "tools"
+            ]
+          }
+        },
+        "name": {
+          "type": {
+            "kind": "string",
+            "max": 80,
+            "min": 1
+          }
+        },
+        "price": {
+          "type": {
+            "kind": "decimal",
+            "min": "0.00",
+            "scale": 2
+          }
+        },
+        "sku": {
+          "type": {
+            "kind": "string",
+            "max": 32,
+            "min": 1
+          }
+        },
+        "tags": {
+          "optional": true,
+          "type": {
+            "items": {
+              "kind": "string",
+              "max": 20,
+              "min": 0
+            },
+            "kind": "array",
+            "max": 5
+          }
+        },
+        "version": {
+          "default": {
+            "kind": "literal",
+            "value": 1
+          },
+          "type": {
+            "kind": "int",
+            "min": 1
+          }
+        }
+      },
+      "indexes": {
+        "byCategory": {
+          "fields": [
+            "category",
+            "price"
+          ]
+        }
+      },
+      "key": [
+        "sku"
+      ],
+      "versioned": true
+    }
+  },
+  "formatVersion": "0.2",
+  "handlers": [
+    {
+      "errors": {},
+      "id": "cascade_Note_batch",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Note",
+              "limit": {
+                "kind": "lit",
+                "value": 50
+              },
+              "op": "query",
+              "prefix": [
+                {
+                  "kind": "input",
+                  "name": "customerId",
+                  "source": "payload"
+                },
+                {
+                  "kind": "input",
+                  "name": "orderId",
+                  "source": "payload"
+                }
+              ]
+            },
+            "var": 0
+          },
+          {
+            "body": [
+              {
+                "kind": "let",
+                "op": {
+                  "entity": "Note",
+                  "key": {
+                    "customerId": {
+                      "kind": "field",
+                      "name": "customerId",
+                      "of": {
+                        "id": 1,
+                        "kind": "var"
+                      }
+                    },
+                    "noteId": {
+                      "kind": "field",
+                      "name": "noteId",
+                      "of": {
+                        "id": 1,
+                        "kind": "var"
+                      }
+                    },
+                    "orderId": {
+                      "kind": "field",
+                      "name": "orderId",
+                      "of": {
+                        "id": 1,
+                        "kind": "var"
+                      }
+                    }
+                  },
+                  "op": "delete"
+                },
+                "var": 2
+              }
+            ],
+            "item": 1,
+            "kind": "forEach",
+            "list": {
+              "id": 0,
+              "kind": "var"
+            }
+          },
+          {
+            "cond": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "length",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "op": "eq",
+              "rhs": {
+                "kind": "lit",
+                "value": 50
+              }
+            },
+            "else": [],
+            "kind": "if",
+            "then": [
+              {
+                "kind": "let",
+                "op": {
+                  "op": "enqueue",
+                  "payload": {
+                    "customerId": {
+                      "kind": "input",
+                      "name": "customerId",
+                      "source": "payload"
+                    },
+                    "orderId": {
+                      "kind": "input",
+                      "name": "orderId",
+                      "source": "payload"
+                    }
+                  },
+                  "queue": "cascade_Note"
+                },
+                "var": 3
+              }
+            ]
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      },
+      "trigger": {
+        "kind": "queue",
+        "queue": "cascade_Note"
+      }
+    },
+    {
+      "errors": {},
+      "id": "cascade_Note",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "op": "enqueue",
+              "payload": {
+                "customerId": {
+                  "kind": "field",
+                  "name": "customerId",
+                  "of": {
+                    "kind": "input",
+                    "name": "before",
+                    "source": "payload"
+                  }
+                },
+                "orderId": {
+                  "kind": "field",
+                  "name": "orderId",
+                  "of": {
+                    "kind": "input",
+                    "name": "before",
+                    "source": "payload"
+                  }
+                }
+              },
+              "queue": "cascade_Note"
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      },
+      "trigger": {
+        "change": "deleted",
+        "entity": "Order",
+        "kind": "entity"
+      }
+    },
+    {
+      "errors": {},
+      "id": "remind",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Order",
+              "key": {
+                "customerId": {
+                  "kind": "input",
+                  "name": "customerId",
+                  "source": "payload"
+                },
+                "orderId": {
+                  "kind": "input",
+                  "name": "orderId",
+                  "source": "payload"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "kind": "let",
+            "op": {
+              "op": "getUser",
+              "userId": {
+                "kind": "input",
+                "name": "customerId",
+                "source": "payload"
+              }
+            },
+            "var": 1
+          },
+          {
+            "cond": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "binary",
+                "lhs": {
+                  "kind": "field",
+                  "name": "status",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                },
+                "op": "eq",
+                "rhs": {
+                  "kind": "lit",
+                  "value": "placed"
+                }
+              },
+              "op": "and",
+              "rhs": {
+                "arg": {
+                  "kind": "isNull",
+                  "of": {
+                    "kind": "field",
+                    "name": "email",
+                    "of": {
+                      "id": 1,
+                      "kind": "var"
+                    }
+                  }
+                },
+                "kind": "not"
+              }
+            },
+            "else": [],
+            "kind": "if",
+            "then": [
+              {
+                "kind": "let",
+                "op": {
+                  "input": {
+                    "subject": {
+                      "kind": "lit",
+                      "value": "Your order is waiting for payment"
+                    },
+                    "to": {
+                      "cond": {
+                        "kind": "isNull",
+                        "of": {
+                          "kind": "field",
+                          "name": "email",
+                          "of": {
+                            "id": 1,
+                            "kind": "var"
+                          }
+                        }
+                      },
+                      "else": {
+                        "kind": "field",
+                        "name": "email",
+                        "of": {
+                          "id": 1,
+                          "kind": "var"
+                        }
+                      },
+                      "kind": "select",
+                      "then": {
+                        "kind": "lit",
+                        "value": ""
+                      }
+                    }
+                  },
+                  "integration": "mail",
+                  "op": "send",
+                  "operation": "send"
+                },
+                "var": 2
+              }
+            ]
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      },
+      "trigger": {
+        "kind": "queue",
+        "queue": "reminder"
+      }
+    },
+    {
+      "errors": {},
+      "id": "weeklyDigest",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "counter": "latestOrder",
+              "key": [],
+              "op": "counterGet"
+            },
+            "var": 0
+          },
+          {
+            "kind": "log",
+            "label": "digest",
+            "value": {
+              "id": 0,
+              "kind": "var"
+            }
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      },
+      "trigger": {
+        "everyMs": 0,
+        "kind": "cron",
+        "offsetMs": 0,
+        "schedule": {
+          "cron": "0 9 * * mon",
+          "tz": "Europe/Berlin"
+        }
+      }
+    }
+  ],
+  "integrations": {
+    "mail": {
+      "config": {},
+      "operations": {
+        "send": {
+          "input": {
+            "subject": {
+              "type": {
+                "kind": "string",
+                "max": 200,
+                "min": 0
+              }
+            },
+            "to": {
+              "type": {
+                "kind": "string",
+                "max": 200,
+                "min": 0
+              }
+            }
+          },
+          "mode": "effect"
+        }
+      },
+      "provider": "email"
+    }
+  },
+  "queues": {
+    "cascade_Note": {
+      "backoffMs": 1000,
+      "maxBackoffMs": 60000,
+      "payload": {
+        "customerId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 1
+          }
+        },
+        "orderId": {
+          "type": {
+            "kind": "id"
+          }
+        }
+      },
+      "retries": 3
+    },
+    "reminder": {
+      "backoffMs": 1000,
+      "maxBackoffMs": 60000,
+      "payload": {
+        "customerId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 1
+          }
+        },
+        "orderId": {
+          "type": {
+            "kind": "id"
+          }
+        }
+      },
+      "retries": 3
+    }
+  },
+  "routes": [
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "description": "Create or replace a product",
+      "errors": {},
+      "examples": [
+        {
+          "caller": {
+            "userId": "admin"
+          },
+          "expect": {
+            "body": {
+              "price": "39.90",
+              "sku": "BK-1",
+              "version": 1
+            }
+          },
+          "name": "creates a product at version 1",
+          "request": {
+            "body": {
+              "category": "books",
+              "name": "Rust",
+              "price": "39.9"
+            },
+            "params": {
+              "sku": "BK-1"
+            }
+          }
+        }
+      ],
+      "id": "put_products_sku",
+      "input": {
+        "body": {
+          "category": {
+            "type": {
+              "kind": "enum",
+              "values": [
+                "books",
+                "games",
+                "tools"
+              ]
+            }
+          },
+          "name": {
+            "type": {
+              "kind": "string",
+              "max": 80,
+              "min": 1
+            }
+          },
+          "price": {
+            "type": {
+              "kind": "decimal",
+              "min": "0.00",
+              "scale": 2
+            }
+          }
+        },
+        "params": {
+          "sku": {
+            "type": {
+              "kind": "string",
+              "max": 32,
+              "min": 1
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "PUT",
+      "path": "/products/:sku",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Product",
+              "op": "upsert",
+              "values": {
+                "category": {
+                  "kind": "input",
+                  "name": "category",
+                  "source": "body"
+                },
+                "name": {
+                  "kind": "input",
+                  "name": "name",
+                  "source": "body"
+                },
+                "price": {
+                  "kind": "input",
+                  "name": "price",
+                  "source": "body"
+                },
+                "sku": {
+                  "kind": "input",
+                  "name": "sku",
+                  "source": "params"
+                }
+              }
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "id": 0,
+          "kind": "var"
+        }
+      },
+      "returns": {
+        "fields": {
+          "category": {
+            "type": {
+              "kind": "enum",
+              "values": [
+                "books",
+                "games",
+                "tools"
+              ]
+            }
+          },
+          "name": {
+            "type": {
+              "kind": "string",
+              "max": 80,
+              "min": 0
+            }
+          },
+          "price": {
+            "type": {
+              "kind": "decimal",
+              "scale": 2
+            }
+          },
+          "sku": {
+            "type": {
+              "kind": "string",
+              "max": 32,
+              "min": 1
+            }
+          },
+          "version": {
+            "type": {
+              "kind": "int"
+            }
+          }
+        },
+        "kind": "object"
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {
+        "missing": {
+          "message": "No such product",
+          "status": 404
+        }
+      },
+      "examples": [
+        {
+          "caller": {
+            "userId": "admin"
+          },
+          "expect": {
+            "body": {
+              "error": "version_conflict"
+            },
+            "status": 409
+          },
+          "given": {
+            "Product": [
+              {
+                "category": "books",
+                "name": "Rust",
+                "price": "39.90",
+                "sku": "BK-1"
+              }
+            ]
+          },
+          "name": "a stale version is rejected",
+          "request": {
+            "body": {
+              "price": "35.00",
+              "version": 7
+            },
+            "params": {
+              "sku": "BK-1"
+            }
+          }
+        },
+        {
+          "caller": {
+            "userId": "admin"
+          },
+          "expect": {
+            "body": {
+              "price": "35.00",
+              "version": 2
+            }
+          },
+          "given": {
+            "Product": [
+              {
+                "category": "books",
+                "name": "Rust",
+                "price": "39.90",
+                "sku": "BK-1"
+              }
+            ]
+          },
+          "name": "the current version updates and bumps it",
+          "request": {
+            "body": {
+              "price": "35.00",
+              "version": 1
+            },
+            "params": {
+              "sku": "BK-1"
+            }
+          }
+        }
+      ],
+      "id": "patch_products_sku_price",
+      "input": {
+        "body": {
+          "price": {
+            "type": {
+              "kind": "decimal",
+              "min": "0.00",
+              "scale": 2
+            }
+          },
+          "version": {
+            "type": {
+              "kind": "int",
+              "min": 1
+            }
+          }
+        },
+        "params": {
+          "sku": {
+            "type": {
+              "kind": "string",
+              "max": 32,
+              "min": 1
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "PATCH",
+      "path": "/products/:sku/price",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Product",
+              "key": {
+                "sku": {
+                  "kind": "input",
+                  "name": "sku",
+                  "source": "params"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "missing",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Product",
+              "ifVersion": {
+                "kind": "input",
+                "name": "version",
+                "source": "body"
+              },
+              "key": {
+                "sku": {
+                  "kind": "field",
+                  "name": "sku",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              },
+              "op": "update",
+              "set": {
+                "price": {
+                  "kind": "input",
+                  "name": "price",
+                  "source": "body"
+                }
+              }
+            },
+            "var": 1
+          }
+        ],
+        "output": {
+          "id": 1,
+          "kind": "var"
+        }
+      },
+      "returns": {
+        "fields": {
+          "category": {
+            "type": {
+              "kind": "enum",
+              "values": [
+                "books",
+                "games",
+                "tools"
+              ]
+            }
+          },
+          "name": {
+            "type": {
+              "kind": "string",
+              "max": 80,
+              "min": 0
+            }
+          },
+          "price": {
+            "type": {
+              "kind": "decimal",
+              "scale": 2
+            }
+          },
+          "sku": {
+            "type": {
+              "kind": "string",
+              "max": 32,
+              "min": 1
+            }
+          },
+          "version": {
+            "type": {
+              "kind": "int"
+            }
+          }
+        },
+        "kind": "object"
+      }
+    },
+    {
+      "auth": {
+        "kind": "public"
+      },
+      "description": "The cheapest books and games, merged in price order",
+      "errors": {},
+      "examples": [
+        {
+          "expect": {
+            "body": {
+              "cheapestBook": "12.00",
+              "cheapestTool": "1.00",
+              "deals": [
+                {
+                  "sku": "G1"
+                },
+                {
+                  "sku": "B1"
+                },
+                {
+                  "sku": "B2"
+                }
+              ]
+            }
+          },
+          "given": {
+            "Product": [
+              {
+                "category": "books",
+                "name": "Book",
+                "price": "12.00",
+                "sku": "B1"
+              },
+              {
+                "category": "games",
+                "name": "Game",
+                "price": "9.50",
+                "sku": "G1"
+              },
+              {
+                "category": "tools",
+                "name": "Tool",
+                "price": "1.00",
+                "sku": "T1"
+              },
+              {
+                "category": "books",
+                "name": "Pricey",
+                "price": "80.00",
+                "sku": "B2"
+              }
+            ]
+          },
+          "name": "merges two categories by price",
+          "request": {}
+        }
+      ],
+      "id": "get_deals",
+      "input": {
+        "body": {},
+        "params": {},
+        "query": {}
+      },
+      "method": "GET",
+      "path": "/deals",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "anyOf": [
+                {
+                  "kind": "lit",
+                  "value": "books"
+                },
+                {
+                  "kind": "lit",
+                  "value": "games"
+                }
+              ],
+              "entity": "Product",
+              "index": "byCategory",
+              "limit": {
+                "kind": "lit",
+                "value": 5
+              },
+              "op": "query",
+              "prefix": []
+            },
+            "var": 0
+          },
+          {
+            "kind": "let",
+            "op": {
+              "body": [],
+              "item": 1,
+              "list": {
+                "id": 0,
+                "kind": "var"
+              },
+              "op": "map",
+              "yield": {
+                "fields": {
+                  "price": {
+                    "kind": "field",
+                    "name": "price",
+                    "of": {
+                      "id": 1,
+                      "kind": "var"
+                    }
+                  },
+                  "sku": {
+                    "kind": "field",
+                    "name": "sku",
+                    "of": {
+                      "id": 1,
+                      "kind": "var"
+                    }
+                  }
+                },
+                "kind": "object"
+              }
+            },
+            "var": 2
+          },
+          {
+            "kind": "let",
+            "op": {
+              "counter": "cheapest",
+              "key": [
+                {
+                  "kind": "lit",
+                  "value": "books"
+                }
+              ],
+              "op": "counterGet"
+            },
+            "var": 3
+          },
+          {
+            "kind": "let",
+            "op": {
+              "counter": "cheapest",
+              "key": [
+                {
+                  "kind": "lit",
+                  "value": "tools"
+                }
+              ],
+              "op": "counterGet"
+            },
+            "var": 4
+          }
+        ],
+        "output": {
+          "fields": {
+            "cheapestBook": {
+              "id": 3,
+              "kind": "var"
+            },
+            "cheapestTool": {
+              "id": 4,
+              "kind": "var"
+            },
+            "deals": {
+              "id": 2,
+              "kind": "var"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "public"
+      },
+      "errors": {},
+      "id": "get_go_sku",
+      "input": {
+        "body": {},
+        "params": {
+          "sku": {
+            "type": {
+              "kind": "string",
+              "max": 32,
+              "min": 1
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "GET",
+      "path": "/go/:sku",
+      "plan": {
+        "body": [
+          {
+            "kind": "setStatus",
+            "status": 301
+          },
+          {
+            "kind": "setHeader",
+            "name": "location",
+            "value": {
+              "kind": "concat",
+              "parts": [
+                {
+                  "kind": "lit",
+                  "value": "/products/"
+                },
+                {
+                  "kind": "input",
+                  "name": "sku",
+                  "source": "params"
+                }
+              ]
+            }
+          },
+          {
+            "kind": "return",
+            "value": {
+              "kind": "lit",
+              "value": null
+            }
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {
+        "empty": {
+          "message": "An order needs at least one item",
+          "status": 400
+        },
+        "unknownProducts": {
+          "details": {
+            "missing": {
+              "type": {
+                "kind": "int"
+              }
+            }
+          },
+          "message": "Some products don't exist",
+          "status": 422
+        }
+      },
+      "examples": [
+        {
+          "caller": {
+            "profile": {
+              "email": "ada@example.com",
+              "name": "Ada"
+            },
+            "userId": "c1"
+          },
+          "expect": {
+            "body": {
+              "items": 5,
+              "lines": [
+                {
+                  "lineTotal": "59.97"
+                },
+                {
+                  "lineTotal": "0.20"
+                }
+              ],
+              "total": "60.17"
+            },
+            "deliveries": [
+              {
+                "data": {
+                  "subject": "Order total 60.17",
+                  "to": "ada@example.com"
+                },
+                "target": "mail"
+              }
+            ],
+            "status": 201
+          },
+          "given": {
+            "Product": [
+              {
+                "category": "books",
+                "name": "Rust",
+                "price": "19.99",
+                "sku": "BK-1"
+              },
+              {
+                "category": "games",
+                "name": "Chess",
+                "price": "0.10",
+                "sku": "GM-1"
+              }
+            ]
+          },
+          "name": "prices the items, totals exactly, and emails the customer",
+          "process": true,
+          "request": {
+            "body": {
+              "items": [
+                {
+                  "qty": 3,
+                  "sku": "BK-1"
+                },
+                {
+                  "qty": 2,
+                  "sku": "GM-1"
+                }
+              ],
+              "shipTo": {
+                "city": "Paris",
+                "zip": "75001"
+              }
+            }
+          }
+        },
+        {
+          "caller": {
+            "userId": "c1"
+          },
+          "expect": {
+            "body": {
+              "details": {
+                "missing": 2
+              },
+              "error": "unknownProducts"
+            },
+            "status": 422
+          },
+          "given": {
+            "Product": [
+              {
+                "category": "books",
+                "name": "Rust",
+                "price": "19.99",
+                "sku": "BK-1"
+              }
+            ]
+          },
+          "name": "unknown products fail with details",
+          "request": {
+            "body": {
+              "items": [
+                {
+                  "qty": 1,
+                  "sku": "BK-1"
+                },
+                {
+                  "qty": 1,
+                  "sku": "NOPE"
+                },
+                {
+                  "qty": 2,
+                  "sku": "GONE"
+                }
+              ],
+              "shipTo": {
+                "city": "Paris",
+                "zip": "75001"
+              }
+            }
+          }
+        },
+        {
+          "caller": {
+            "userId": "c1"
+          },
+          "expect": {
+            "body": {
+              "details": [
+                {
+                  "field": "body.items.0.qty"
+                }
+              ]
+            },
+            "status": 400
+          },
+          "name": "nested input problems name the exact field",
+          "request": {
+            "body": {
+              "items": [
+                {
+                  "qty": 0,
+                  "sku": "BK-1"
+                }
+              ],
+              "shipTo": {
+                "city": "Paris",
+                "zip": "75001"
+              }
+            }
+          }
+        }
+      ],
+      "id": "post_orders",
+      "input": {
+        "body": {
+          "items": {
+            "type": {
+              "items": {
+                "fields": {
+                  "qty": {
+                    "type": {
+                      "kind": "int",
+                      "max": 99,
+                      "min": 1
+                    }
+                  },
+                  "sku": {
+                    "type": {
+                      "kind": "string",
+                      "max": 32,
+                      "min": 1
+                    }
+                  }
+                },
+                "kind": "object"
+              },
+              "kind": "array",
+              "max": 10
+            }
+          },
+          "shipTo": {
+            "type": {
+              "fields": {
+                "city": {
+                  "type": {
+                    "kind": "string",
+                    "max": 60,
+                    "min": 1
+                  }
+                },
+                "note": {
+                  "optional": true,
+                  "type": {
+                    "kind": "string",
+                    "max": 100,
+                    "min": 0
+                  }
+                },
+                "zip": {
+                  "type": {
+                    "kind": "string",
+                    "max": 10,
+                    "min": 1
+                  }
+                }
+              },
+              "kind": "object"
+            }
+          },
+          "tz": {
+            "default": {
+              "kind": "literal",
+              "value": "UTC"
+            },
+            "type": {
+              "kind": "timeZone"
+            }
+          }
+        },
+        "params": {},
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/orders",
+      "plan": {
+        "body": [
+          {
+            "kind": "setStatus",
+            "status": 201
+          },
+          {
+            "cond": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "length",
+                "of": {
+                  "kind": "input",
+                  "name": "items",
+                  "source": "body"
+                }
+              },
+              "op": "gt",
+              "rhs": {
+                "kind": "lit",
+                "value": 0
+              }
+            },
+            "error": "empty",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "body": [
+                {
+                  "kind": "let",
+                  "op": {
+                    "entity": "Product",
+                    "key": {
+                      "sku": {
+                        "kind": "field",
+                        "name": "sku",
+                        "of": {
+                          "id": 0,
+                          "kind": "var"
+                        }
+                      }
+                    },
+                    "op": "get"
+                  },
+                  "var": 1
+                }
+              ],
+              "item": 0,
+              "list": {
+                "kind": "input",
+                "name": "items",
+                "source": "body"
+              },
+              "op": "map",
+              "yield": {
+                "fields": {
+                  "found": {
+                    "arg": {
+                      "kind": "isNull",
+                      "of": {
+                        "id": 1,
+                        "kind": "var"
+                      }
+                    },
+                    "kind": "not"
+                  },
+                  "lineTotal": {
+                    "kind": "binary",
+                    "lhs": {
+                      "cond": {
+                        "kind": "isNull",
+                        "of": {
+                          "kind": "field",
+                          "name": "price",
+                          "of": {
+                            "id": 1,
+                            "kind": "var"
+                          }
+                        }
+                      },
+                      "else": {
+                        "kind": "field",
+                        "name": "price",
+                        "of": {
+                          "id": 1,
+                          "kind": "var"
+                        }
+                      },
+                      "kind": "select",
+                      "then": {
+                        "kind": "decimal",
+                        "value": "0.00"
+                      }
+                    },
+                    "op": "mul",
+                    "rhs": {
+                      "kind": "field",
+                      "name": "qty",
+                      "of": {
+                        "id": 0,
+                        "kind": "var"
+                      }
+                    }
+                  },
+                  "qty": {
+                    "kind": "field",
+                    "name": "qty",
+                    "of": {
+                      "id": 0,
+                      "kind": "var"
+                    }
+                  },
+                  "sku": {
+                    "kind": "field",
+                    "name": "sku",
+                    "of": {
+                      "id": 0,
+                      "kind": "var"
+                    }
+                  },
+                  "unitPrice": {
+                    "cond": {
+                      "kind": "isNull",
+                      "of": {
+                        "kind": "field",
+                        "name": "price",
+                        "of": {
+                          "id": 1,
+                          "kind": "var"
+                        }
+                      }
+                    },
+                    "else": {
+                      "kind": "field",
+                      "name": "price",
+                      "of": {
+                        "id": 1,
+                        "kind": "var"
+                      }
+                    },
+                    "kind": "select",
+                    "then": {
+                      "kind": "decimal",
+                      "value": "0.00"
+                    }
+                  }
+                },
+                "kind": "object"
+              }
+            },
+            "var": 2
+          },
+          {
+            "cond": {
+              "item": 3,
+              "kind": "agg",
+              "list": {
+                "id": 2,
+                "kind": "var"
+              },
+              "op": "every",
+              "value": {
+                "kind": "field",
+                "name": "found",
+                "of": {
+                  "id": 3,
+                  "kind": "var"
+                }
+              }
+            },
+            "details": {
+              "missing": {
+                "item": 4,
+                "kind": "agg",
+                "list": {
+                  "id": 2,
+                  "kind": "var"
+                },
+                "op": "count",
+                "value": {
+                  "arg": {
+                    "kind": "field",
+                    "name": "found",
+                    "of": {
+                      "id": 4,
+                      "kind": "var"
+                    }
+                  },
+                  "kind": "not"
+                }
+              }
+            },
+            "error": "unknownProducts",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "body": [],
+              "item": 5,
+              "list": {
+                "id": 2,
+                "kind": "var"
+              },
+              "op": "map",
+              "yield": {
+                "fields": {
+                  "lineTotal": {
+                    "kind": "round",
+                    "of": {
+                      "kind": "field",
+                      "name": "lineTotal",
+                      "of": {
+                        "id": 5,
+                        "kind": "var"
+                      }
+                    },
+                    "scale": 2
+                  },
+                  "qty": {
+                    "kind": "field",
+                    "name": "qty",
+                    "of": {
+                      "id": 5,
+                      "kind": "var"
+                    }
+                  },
+                  "sku": {
+                    "kind": "field",
+                    "name": "sku",
+                    "of": {
+                      "id": 5,
+                      "kind": "var"
+                    }
+                  },
+                  "unitPrice": {
+                    "kind": "field",
+                    "name": "unitPrice",
+                    "of": {
+                      "id": 5,
+                      "kind": "var"
+                    }
+                  }
+                },
+                "kind": "object"
+              }
+            },
+            "var": 6
+          },
+          {
+            "kind": "let",
+            "op": {
+              "body": [],
+              "item": 8,
+              "list": {
+                "id": 6,
+                "kind": "var"
+              },
+              "op": "map",
+              "yield": {
+                "fields": {
+                  "qty": {
+                    "kind": "field",
+                    "name": "qty",
+                    "of": {
+                      "id": 8,
+                      "kind": "var"
+                    }
+                  },
+                  "sku": {
+                    "kind": "field",
+                    "name": "sku",
+                    "of": {
+                      "id": 8,
+                      "kind": "var"
+                    }
+                  },
+                  "unitPrice": {
+                    "kind": "field",
+                    "name": "unitPrice",
+                    "of": {
+                      "id": 8,
+                      "kind": "var"
+                    }
+                  }
+                },
+                "kind": "object"
+              }
+            },
+            "var": 9
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Order",
+              "op": "insert",
+              "values": {
+                "customerId": {
+                  "kind": "caller"
+                },
+                "items": {
+                  "id": 9,
+                  "kind": "var"
+                },
+                "shipTo": {
+                  "kind": "input",
+                  "name": "shipTo",
+                  "source": "body"
+                },
+                "total": {
+                  "kind": "round",
+                  "of": {
+                    "item": 7,
+                    "kind": "agg",
+                    "list": {
+                      "id": 6,
+                      "kind": "var"
+                    },
+                    "op": "sum",
+                    "value": {
+                      "kind": "field",
+                      "name": "lineTotal",
+                      "of": {
+                        "id": 7,
+                        "kind": "var"
+                      }
+                    }
+                  },
+                  "scale": 2
+                },
+                "tz": {
+                  "kind": "input",
+                  "name": "tz",
+                  "source": "body"
+                }
+              }
+            },
+            "var": 10
+          },
+          {
+            "kind": "let",
+            "op": {
+              "delayMs": {
+                "kind": "lit",
+                "value": 3600000
+              },
+              "key": {
+                "kind": "field",
+                "name": "orderId",
+                "of": {
+                  "id": 10,
+                  "kind": "var"
+                }
+              },
+              "op": "enqueue",
+              "payload": {
+                "customerId": {
+                  "kind": "field",
+                  "name": "customerId",
+                  "of": {
+                    "id": 10,
+                    "kind": "var"
+                  }
+                },
+                "orderId": {
+                  "kind": "field",
+                  "name": "orderId",
+                  "of": {
+                    "id": 10,
+                    "kind": "var"
+                  }
+                }
+              },
+              "queue": "reminder"
+            },
+            "var": 11
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "field": "email",
+                  "kind": "callerProfile"
+                }
+              },
+              "kind": "not"
+            },
+            "else": [],
+            "kind": "if",
+            "then": [
+              {
+                "kind": "let",
+                "op": {
+                  "input": {
+                    "subject": {
+                      "kind": "concat",
+                      "parts": [
+                        {
+                          "kind": "lit",
+                          "value": "Order total "
+                        },
+                        {
+                          "kind": "round",
+                          "of": {
+                            "item": 7,
+                            "kind": "agg",
+                            "list": {
+                              "id": 6,
+                              "kind": "var"
+                            },
+                            "op": "sum",
+                            "value": {
+                              "kind": "field",
+                              "name": "lineTotal",
+                              "of": {
+                                "id": 7,
+                                "kind": "var"
+                              }
+                            }
+                          },
+                          "scale": 2
+                        }
+                      ]
+                    },
+                    "to": {
+                      "cond": {
+                        "kind": "isNull",
+                        "of": {
+                          "field": "email",
+                          "kind": "callerProfile"
+                        }
+                      },
+                      "else": {
+                        "field": "email",
+                        "kind": "callerProfile"
+                      },
+                      "kind": "select",
+                      "then": {
+                        "kind": "lit",
+                        "value": ""
+                      }
+                    }
+                  },
+                  "integration": "mail",
+                  "op": "send",
+                  "operation": "send"
+                },
+                "var": 12
+              }
+            ]
+          },
+          {
+            "kind": "setHeader",
+            "name": "location",
+            "value": {
+              "kind": "concat",
+              "parts": [
+                {
+                  "kind": "lit",
+                  "value": "/orders/"
+                },
+                {
+                  "kind": "field",
+                  "name": "orderId",
+                  "of": {
+                    "id": 10,
+                    "kind": "var"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kind": "log",
+            "label": "total",
+            "value": {
+              "kind": "round",
+              "of": {
+                "item": 7,
+                "kind": "agg",
+                "list": {
+                  "id": 6,
+                  "kind": "var"
+                },
+                "op": "sum",
+                "value": {
+                  "kind": "field",
+                  "name": "lineTotal",
+                  "of": {
+                    "id": 7,
+                    "kind": "var"
+                  }
+                }
+              },
+              "scale": 2
+            }
+          }
+        ],
+        "output": {
+          "fields": {
+            "items": {
+              "item": 13,
+              "kind": "agg",
+              "list": {
+                "id": 6,
+                "kind": "var"
+              },
+              "op": "sum",
+              "value": {
+                "kind": "field",
+                "name": "qty",
+                "of": {
+                  "id": 13,
+                  "kind": "var"
+                }
+              }
+            },
+            "lines": {
+              "id": 6,
+              "kind": "var"
+            },
+            "orderId": {
+              "kind": "field",
+              "name": "orderId",
+              "of": {
+                "id": 10,
+                "kind": "var"
+              }
+            },
+            "total": {
+              "kind": "round",
+              "of": {
+                "item": 7,
+                "kind": "agg",
+                "list": {
+                  "id": 6,
+                  "kind": "var"
+                },
+                "op": "sum",
+                "value": {
+                  "kind": "field",
+                  "name": "lineTotal",
+                  "of": {
+                    "id": 7,
+                    "kind": "var"
+                  }
+                }
+              },
+              "scale": 2
+            }
+          },
+          "kind": "object"
+        }
+      },
+      "returns": {
+        "fields": {
+          "items": {
+            "type": {
+              "kind": "int"
+            }
+          },
+          "lines": {
+            "type": {
+              "items": {
+                "fields": {
+                  "lineTotal": {
+                    "type": {
+                      "kind": "decimal",
+                      "scale": 2
+                    }
+                  },
+                  "qty": {
+                    "type": {
+                      "kind": "int"
+                    }
+                  },
+                  "sku": {
+                    "type": {
+                      "kind": "string",
+                      "max": 32,
+                      "min": 1
+                    }
+                  },
+                  "unitPrice": {
+                    "type": {
+                      "kind": "decimal",
+                      "scale": 2
+                    }
+                  }
+                },
+                "kind": "object"
+              },
+              "kind": "array",
+              "max": 10
+            }
+          },
+          "orderId": {
+            "type": {
+              "kind": "id"
+            }
+          },
+          "total": {
+            "type": {
+              "kind": "decimal",
+              "scale": 2
+            }
+          }
+        },
+        "kind": "object"
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {
+        "missing": {
+          "message": "No such order",
+          "status": 404
+        }
+      },
+      "id": "post_orders_orderId_pay",
+      "input": {
+        "body": {},
+        "params": {
+          "orderId": {
+            "type": {
+              "kind": "id"
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/orders/:orderId/pay",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Order",
+              "key": {
+                "customerId": {
+                  "kind": "caller"
+                },
+                "orderId": {
+                  "kind": "input",
+                  "name": "orderId",
+                  "source": "params"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "missing",
+            "kind": "ensure"
+          },
+          {
+            "cond": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "field",
+                "name": "status",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "op": "eq",
+              "rhs": {
+                "kind": "lit",
+                "value": "paid"
+              }
+            },
+            "else": [],
+            "kind": "if",
+            "then": [
+              {
+                "kind": "return",
+                "value": {
+                  "fields": {
+                    "changed": {
+                      "kind": "lit",
+                      "value": false
+                    },
+                    "status": {
+                      "kind": "lit",
+                      "value": "paid"
+                    }
+                  },
+                  "kind": "object"
+                }
+              }
+            ]
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Order",
+              "key": {
+                "customerId": {
+                  "kind": "field",
+                  "name": "customerId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                },
+                "orderId": {
+                  "kind": "field",
+                  "name": "orderId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              },
+              "op": "update",
+              "set": {
+                "status": {
+                  "kind": "lit",
+                  "value": "paid"
+                }
+              }
+            },
+            "var": 1
+          },
+          {
+            "kind": "let",
+            "op": {
+              "key": {
+                "kind": "field",
+                "name": "orderId",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "op": "cancel",
+              "queue": "reminder"
+            },
+            "var": 2
+          }
+        ],
+        "output": {
+          "fields": {
+            "changed": {
+              "kind": "lit",
+              "value": true
+            },
+            "status": {
+              "kind": "lit",
+              "value": "paid"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {
+        "missing": {
+          "message": "No such order",
+          "status": 404
+        }
+      },
+      "examples": [
+        {
+          "caller": {
+            "userId": "c1"
+          },
+          "expect": {
+            "body": {
+              "date": "2023-11-15 Wed",
+              "dueBy": "2023-11-22",
+              "lines": [
+                "BK-1     x2"
+              ],
+              "ship": "TOKYO 100",
+              "total": "2,469.00",
+              "weekday": 3
+            }
+          },
+          "given": {
+            "Order": [
+              {
+                "customerId": "c1",
+                "items": [
+                  {
+                    "qty": 2,
+                    "sku": "BK-1",
+                    "unitPrice": "1234.50"
+                  }
+                ],
+                "orderId": "01J00000000000000000000001",
+                "placedAt": 1700000000000,
+                "shipTo": {
+                  "city": "Tokyo",
+                  "zip": "100"
+                },
+                "total": "2469.00",
+                "tz": "Asia/Tokyo"
+              }
+            ]
+          },
+          "name": "formats a receipt in the order's time zone",
+          "request": {
+            "params": {
+              "orderId": "01J00000000000000000000001"
+            }
+          }
+        }
+      ],
+      "id": "get_orders_orderId_receipt",
+      "input": {
+        "body": {},
+        "params": {
+          "orderId": {
+            "type": {
+              "kind": "id"
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "GET",
+      "path": "/orders/:orderId/receipt",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Order",
+              "key": {
+                "customerId": {
+                  "kind": "caller"
+                },
+                "orderId": {
+                  "kind": "input",
+                  "name": "orderId",
+                  "source": "params"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "missing",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "body": [],
+              "item": 1,
+              "list": {
+                "kind": "field",
+                "name": "items",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "op": "map",
+              "yield": {
+                "kind": "concat",
+                "parts": [
+                  {
+                    "end": true,
+                    "fill": " ",
+                    "kind": "pad",
+                    "length": 8,
+                    "of": {
+                      "kind": "field",
+                      "name": "sku",
+                      "of": {
+                        "id": 1,
+                        "kind": "var"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "lit",
+                    "value": " x"
+                  },
+                  {
+                    "kind": "field",
+                    "name": "qty",
+                    "of": {
+                      "id": 1,
+                      "kind": "var"
+                    }
+                  }
+                ]
+              }
+            },
+            "var": 2
+          }
+        ],
+        "output": {
+          "fields": {
+            "date": {
+              "kind": "formatTime",
+              "of": {
+                "kind": "field",
+                "name": "placedAt",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "pattern": "%Y-%m-%d %a",
+              "tz": {
+                "kind": "field",
+                "name": "tz",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              }
+            },
+            "dueBy": {
+              "kind": "formatTime",
+              "of": {
+                "amount": {
+                  "kind": "lit",
+                  "value": 1
+                },
+                "kind": "addTime",
+                "of": {
+                  "kind": "field",
+                  "name": "placedAt",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                },
+                "tz": {
+                  "kind": "field",
+                  "name": "tz",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                },
+                "unit": "week"
+              },
+              "pattern": "%Y-%m-%d",
+              "tz": {
+                "kind": "field",
+                "name": "tz",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              }
+            },
+            "lines": {
+              "id": 2,
+              "kind": "var"
+            },
+            "ship": {
+              "kind": "concat",
+              "parts": [
+                {
+                  "kind": "str",
+                  "of": {
+                    "kind": "field",
+                    "name": "city",
+                    "of": {
+                      "kind": "field",
+                      "name": "shipTo",
+                      "of": {
+                        "id": 0,
+                        "kind": "var"
+                      }
+                    }
+                  },
+                  "op": "upper"
+                },
+                {
+                  "kind": "lit",
+                  "value": " "
+                },
+                {
+                  "kind": "field",
+                  "name": "zip",
+                  "of": {
+                    "kind": "field",
+                    "name": "shipTo",
+                    "of": {
+                      "id": 0,
+                      "kind": "var"
+                    }
+                  }
+                }
+              ]
+            },
+            "total": {
+              "decimals": 2,
+              "grouping": true,
+              "kind": "formatNumber",
+              "of": {
+                "kind": "field",
+                "name": "total",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              }
+            },
+            "weekday": {
+              "kind": "timePart",
+              "of": {
+                "kind": "field",
+                "name": "placedAt",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "part": "weekday",
+              "tz": {
+                "kind": "field",
+                "name": "tz",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              }
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "public"
+      },
+      "errors": {},
+      "id": "get_stats",
+      "input": {
+        "body": {},
+        "params": {},
+        "query": {}
+      },
+      "method": "GET",
+      "path": "/stats",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "counter": "customers",
+              "key": [],
+              "op": "counterGet"
+            },
+            "var": 0
+          },
+          {
+            "kind": "let",
+            "op": {
+              "counter": "latestOrder",
+              "key": [],
+              "op": "counterGet"
+            },
+            "var": 1
+          },
+          {
+            "kind": "let",
+            "op": {
+              "counter": "ordersPerDay",
+              "key": [
+                {
+                  "kind": "startOf",
+                  "of": {
+                    "kind": "now"
+                  },
+                  "unit": "day"
+                }
+              ],
+              "op": "counterGet"
+            },
+            "var": 2
+          }
+        ],
+        "output": {
+          "fields": {
+            "customers": {
+              "id": 0,
+              "kind": "var"
+            },
+            "latest": {
+              "id": 1,
+              "kind": "var"
+            },
+            "today": {
+              "id": 2,
+              "kind": "var"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {},
+      "id": "post_orders_orderId_notes",
+      "input": {
+        "body": {
+          "text": {
+            "type": {
+              "kind": "string",
+              "max": 200,
+              "min": 1
+            }
+          }
+        },
+        "params": {
+          "orderId": {
+            "type": {
+              "kind": "id"
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/orders/:orderId/notes",
+      "plan": {
+        "body": [
+          {
+            "kind": "setStatus",
+            "status": 201
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Note",
+              "op": "insert",
+              "values": {
+                "customerId": {
+                  "kind": "caller"
+                },
+                "orderId": {
+                  "kind": "input",
+                  "name": "orderId",
+                  "source": "params"
+                },
+                "text": {
+                  "kind": "input",
+                  "name": "text",
+                  "source": "body"
+                }
+              }
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "id": 0,
+          "kind": "var"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {
+        "missing": {
+          "message": "No such order",
+          "status": 404
+        }
+      },
+      "id": "get_orders_orderId_notes",
+      "input": {
+        "body": {},
+        "params": {
+          "orderId": {
+            "type": {
+              "kind": "id"
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "GET",
+      "path": "/orders/:orderId/notes",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Order",
+              "key": {
+                "customerId": {
+                  "kind": "caller"
+                },
+                "orderId": {
+                  "kind": "input",
+                  "name": "orderId",
+                  "source": "params"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "missing",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Note",
+              "limit": {
+                "kind": "lit",
+                "value": 20
+              },
+              "op": "query",
+              "prefix": [
+                {
+                  "kind": "field",
+                  "name": "customerId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                },
+                {
+                  "kind": "field",
+                  "name": "orderId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              ]
+            },
+            "var": 1
+          },
+          {
+            "kind": "let",
+            "op": {
+              "body": [],
+              "item": 2,
+              "list": {
+                "id": 1,
+                "kind": "var"
+              },
+              "op": "map",
+              "yield": {
+                "kind": "field",
+                "name": "text",
+                "of": {
+                  "id": 2,
+                  "kind": "var"
+                }
+              }
+            },
+            "var": 3
+          }
+        ],
+        "output": {
+          "fields": {
+            "notes": {
+              "id": 3,
+              "kind": "var"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {},
+      "id": "delete_orders_orderId",
+      "input": {
+        "body": {},
+        "params": {
+          "orderId": {
+            "type": {
+              "kind": "id"
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "DELETE",
+      "path": "/orders/:orderId",
+      "plan": {
+        "body": [
+          {
+            "kind": "setStatus",
+            "status": 204
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Order",
+              "key": {
+                "customerId": {
+                  "kind": "caller"
+                },
+                "orderId": {
+                  "kind": "input",
+                  "name": "orderId",
+                  "source": "params"
+                }
+              },
+              "op": "delete"
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "public"
+      },
+      "errors": {},
+      "examples": [
+        {
+          "expect": {
+            "body": {
+              "paid": true
+            }
+          },
+          "given": {
+            "Order": [
+              {
+                "customerId": "c1",
+                "items": [],
+                "orderId": "01J00000000000000000000001",
+                "shipTo": {
+                  "city": "Oslo",
+                  "zip": "0150"
+                },
+                "total": "0.00"
+              }
+            ]
+          },
+          "name": "a signed delivery marks the order paid",
+          "request": {
+            "body": {
+              "customerId": "c1",
+              "eventId": "evt_1",
+              "orderId": "01J00000000000000000000001"
+            },
+            "headers": {
+              "x-signature": "eefc5edda89b6b864c99347c5a885d437939d3fa4e45c72912aa3196a2350a3e"
+            }
+          },
+          "secrets": {
+            "PAYMENTS_SECRET": "whsec_test"
+          }
+        },
+        {
+          "expect": {
+            "body": {
+              "error": "invalid_signature"
+            },
+            "status": 401
+          },
+          "name": "a forged delivery is rejected",
+          "request": {
+            "body": {
+              "customerId": "c1",
+              "eventId": "evt_1",
+              "orderId": "01J00000000000000000000001"
+            },
+            "headers": {
+              "x-signature": "00"
+            }
+          },
+          "secrets": {
+            "PAYMENTS_SECRET": "whsec_test"
+          }
+        }
+      ],
+      "id": "post_webhooks_payments",
+      "input": {
+        "body": {
+          "customerId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 1
+            }
+          },
+          "eventId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 0
+            }
+          },
+          "orderId": {
+            "type": {
+              "kind": "id"
+            }
+          }
+        },
+        "params": {},
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/webhooks/payments",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Order",
+              "key": {
+                "customerId": {
+                  "kind": "input",
+                  "name": "customerId",
+                  "source": "body"
+                },
+                "orderId": {
+                  "kind": "input",
+                  "name": "orderId",
+                  "source": "body"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "else": [],
+            "kind": "if",
+            "then": [
+              {
+                "kind": "let",
+                "op": {
+                  "entity": "Order",
+                  "key": {
+                    "customerId": {
+                      "kind": "field",
+                      "name": "customerId",
+                      "of": {
+                        "id": 0,
+                        "kind": "var"
+                      }
+                    },
+                    "orderId": {
+                      "kind": "field",
+                      "name": "orderId",
+                      "of": {
+                        "id": 0,
+                        "kind": "var"
+                      }
+                    }
+                  },
+                  "op": "update",
+                  "set": {
+                    "status": {
+                      "kind": "lit",
+                      "value": "paid"
+                    }
+                  }
+                },
+                "var": 1
+              },
+              {
+                "kind": "let",
+                "op": {
+                  "key": {
+                    "kind": "input",
+                    "name": "orderId",
+                    "source": "body"
+                  },
+                  "op": "cancel",
+                  "queue": "reminder"
+                },
+                "var": 2
+              }
+            ]
+          }
+        ],
+        "output": {
+          "fields": {
+            "paid": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            }
+          },
+          "kind": "object"
+        }
+      },
+      "webhook": {
+        "dedupe": {
+          "bodyField": "eventId",
+          "ttlMs": 86400000
+        },
+        "verify": {
+          "encoding": "hex",
+          "header": "x-signature",
+          "kind": "hmacSha256",
+          "secret": "PAYMENTS_SECRET"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {},
+      "examples": [
+        {
+          "caller": {
+            "profile": {
+              "email": "ada@example.com",
+              "name": "Ada"
+            },
+            "userId": "c1"
+          },
+          "expect": {
+            "body": {
+              "directoryName": "Ada L.",
+              "email": "ada@example.com",
+              "greeting": "Hi, Ada",
+              "id": "c1"
+            }
+          },
+          "name": "reads the caller's profile and the directory",
+          "request": {},
+          "users": {
+            "c1": {
+              "email": "ada@directory.example",
+              "name": "Ada L."
+            }
+          }
+        }
+      ],
+      "id": "get_me",
+      "input": {
+        "body": {},
+        "params": {},
+        "query": {}
+      },
+      "method": "GET",
+      "path": "/me",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "op": "getUser",
+              "userId": {
+                "kind": "caller"
+              }
+            },
+            "var": 0
+          },
+          {
+            "kind": "setHeader",
+            "name": "set-cookie",
+            "value": {
+              "kind": "concat",
+              "parts": [
+                {
+                  "kind": "lit",
+                  "value": "seen="
+                },
+                {
+                  "kind": "lit",
+                  "value": "1"
+                },
+                {
+                  "kind": "lit",
+                  "value": "; Path=/; Max-Age=3600; HttpOnly; Secure; SameSite=Lax"
+                }
+              ]
+            }
+          }
+        ],
+        "output": {
+          "fields": {
+            "directoryName": {
+              "kind": "field",
+              "name": "name",
+              "of": {
+                "id": 0,
+                "kind": "var"
+              }
+            },
+            "email": {
+              "field": "email",
+              "kind": "callerProfile"
+            },
+            "greeting": {
+              "kind": "concat",
+              "parts": [
+                {
+                  "kind": "lit",
+                  "value": "Hi, "
+                },
+                {
+                  "field": "name",
+                  "kind": "callerProfile"
+                }
+              ]
+            },
+            "id": {
+              "kind": "caller"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {},
+      "id": "put_cart",
+      "input": {
+        "body": {
+          "skus": {
+            "type": {
+              "items": {
+                "kind": "string",
+                "max": 32,
+                "min": 1
+              },
+              "kind": "array",
+              "max": 10
+            }
+          }
+        },
+        "params": {},
+        "query": {}
+      },
+      "method": "PUT",
+      "path": "/cart",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Cart",
+              "op": "upsert",
+              "values": {
+                "customerId": {
+                  "kind": "caller"
+                },
+                "skus": {
+                  "kind": "distinct",
+                  "of": {
+                    "kind": "input",
+                    "name": "skus",
+                    "source": "body"
+                  }
+                },
+                "updatedAt": {
+                  "kind": "now"
+                }
+              }
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "id": 0,
+          "kind": "var"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {},
+      "id": "get_cart",
+      "input": {
+        "body": {},
+        "params": {},
+        "query": {}
+      },
+      "method": "GET",
+      "path": "/cart",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Cart",
+              "key": {
+                "customerId": {
+                  "kind": "caller"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "fields": {
+            "exists": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "first": {
+              "kind": "first",
+              "of": {
+                "by": {
+                  "id": 1,
+                  "kind": "var"
+                },
+                "item": 1,
+                "kind": "sort",
+                "list": {
+                  "kind": "field",
+                  "name": "skus",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              }
+            },
+            "skus": {
+              "kind": "field",
+              "name": "skus",
+              "of": {
+                "id": 0,
+                "kind": "var"
+              }
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "public"
+      },
+      "deprecated": "Use GET /deals",
+      "errors": {},
+      "id": "get_legacy_products",
+      "input": {
+        "body": {},
+        "params": {},
+        "query": {}
+      },
+      "method": "GET",
+      "path": "/legacy/products",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Product",
+              "limit": {
+                "kind": "lit",
+                "value": 10
+              },
+              "op": "query",
+              "prefix": []
+            },
+            "var": 0
+          },
+          {
+            "kind": "let",
+            "op": {
+              "body": [],
+              "item": 1,
+              "list": {
+                "id": 0,
+                "kind": "var"
+              },
+              "op": "map",
+              "yield": {
+                "kind": "field",
+                "name": "sku",
+                "of": {
+                  "id": 1,
+                  "kind": "var"
+                }
+              }
+            },
+            "var": 2
+          }
+        ],
+        "output": {
+          "fields": {
+            "products": {
+              "id": 2,
+              "kind": "var"
+            }
+          },
+          "kind": "object"
+        }
+      },
+      "version": "2024-01-01"
+    }
+  ]
+}

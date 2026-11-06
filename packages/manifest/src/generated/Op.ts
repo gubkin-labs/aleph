@@ -52,7 +52,11 @@ key: { [key in string]: Expr },
 /**
  * New field values. Key fields can't be changed.
  */
-set: { [key in string]: Expr }, } | { "op": "delete", 
+set: { [key in string]: Expr }, 
+/**
+ * For versioned entities: fail with 409 unless the row has this version.
+ */
+ifVersion?: Expr, } | { "op": "delete", 
 /**
  * The entity.
  */
@@ -73,6 +77,11 @@ index?: string,
  * Values for a prefix of the key (or index) fields.
  */
 prefix: Array<Expr>, 
+/**
+ * Values for the field after the prefix: rows matching any of them are merged in key
+ * order (at most 10 values). Can't be combined with `after` or `page`.
+ */
+anyOf?: Array<Expr>, 
 /**
  * Maximum number of rows. Must have a statically known upper bound.
  */
@@ -153,7 +162,24 @@ payload: { [key in string]: Expr },
 /**
  * Delay in milliseconds.
  */
-delayMs?: Expr, } | { "op": "publish", 
+delayMs?: Expr, 
+/**
+ * A key for the job (a string). A pending job with the same key is replaced, and
+ * `cancel` with the key removes it.
+ */
+key?: Expr, } | { "op": "cancel", 
+/**
+ * The queue.
+ */
+queue: string, 
+/**
+ * The job's key.
+ */
+key: Expr, } | { "op": "getUser", 
+/**
+ * The user id.
+ */
+userId: Expr, } | { "op": "publish", 
 /**
  * The channel.
  */

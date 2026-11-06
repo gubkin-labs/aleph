@@ -3,9 +3,10 @@
  * time, so plans use these instead.
  */
 
-import type { Stmt } from "@aleph/manifest";
+import type { Expr as Node, Stmt } from "@aleph/manifest";
 import { type ErrorRef, forEach, type List } from "./data.js";
 import { Expr, type ExprLike, expr } from "./expr.js";
+import type { Decimal } from "./fields.js";
 import { toNode } from "./node.js";
 import { AlephBuildError, recorder } from "./recorder.js";
 
@@ -56,6 +57,25 @@ class IfBuilder {
   }
 }
 
+function details(values: Record<string, unknown> | undefined): { details?: Record<string, Node> } {
+  if (!values || Object.keys(values).length === 0) return {};
+  return { details: Object.fromEntries(Object.entries(values).map(([k, v]) => [k, toNode(v)])) };
+}
+
+/** Options for {@link $.cookie}. */
+export interface CookieOptions {
+  /** Lifetime in seconds (omit for a session cookie, 0 to delete). */
+  maxAge?: number;
+  path?: string;
+  domain?: string;
+  /** Defaults to true. */
+  httpOnly?: boolean;
+  /** Defaults to true. */
+  secure?: boolean;
+  /** Defaults to `"Lax"`. */
+  sameSite?: "Strict" | "Lax" | "None";
+}
+
 function fold(op: "and" | "or", conds: ExprLike<boolean>[]): Expr<boolean> {
   const [first, ...rest] = conds;
   if (first === undefined) return expr(op === "and");
@@ -64,14 +84,78 @@ function fold(op: "and" | "or", conds: ExprLike<boolean>[]): Expr<boolean> {
 
 /** Control flow and helpers for handlers. */
 export const $ = {
-  /** Fails the request with `error` unless `cond` is true. The transaction rolls back. */
-  ensure(cond: ExprLike<boolean>, error: ErrorRef): void {
-    recorder().push({ kind: "ensure", cond: toNode(cond), error: error.name });
+  /**
+   * Fails the request with `error` unless `cond` is true, returning the error's declared
+   * `details` (if any). The transaction rolls back.
+   */
+  ensure(cond: ExprLike<boolean>, error: ErrorRef, values?: Record<string, unknown>): void {
+    recorder().push({ kind: "ensure", cond: toNode(cond), error: error.name, ...details(values) });
   },
 
-  /** Fails the request with `error`. The transaction rolls back. */
-  fail(error: ErrorRef): void {
-    recorder().push({ kind: "fail", error: error.name });
+  /** Fails the request with `error` (and its declared `details`). The transaction rolls back. */
+  fail(error: ErrorRef, values?: Record<string, unknown>): void {
+    recorder().push({ kind: "fail", error: error.name, ...details(values) });
+  },
+
+  /**
+   * Responds with `value` now, skipping the rest of the plan (the transaction commits). Use it
+   * for early exits; routes with several `return`s get a union response type.
+   */
+  return(value: unknown): void {
+    recorder().push({ kind: "return", value: toNode(value) });
+  },
+
+  /** Sets a response header (lowercase name). */
+  header(name: string, value: ExprLike<string>): void {
+    recorder().push({ kind: "setHeader", name: name.toLowerCase(), value: toNode(value) });
+  },
+
+  /** Sets the success status (200-399), for example 201 on a branch that created something. */
+  status(status: number): void {
+    recorder().push({ kind: "setStatus", status });
+  },
+
+  /** Redirects to `location` now (302 by default; 301, 303, 307, and 308 also work). */
+  redirect(location: ExprLike<string>, status: 301 | 302 | 303 | 307 | 308 = 302): void {
+    const rec = recorder();
+    rec.push({ kind: "setStatus", status });
+    rec.push({ kind: "setHeader", name: "location", value: toNode(location) });
+    rec.push({ kind: "return", value: toNode(null) });
+  },
+
+  /** Sets a cookie on the response. */
+  cookie(name: string, value: ExprLike<string>, options: CookieOptions = {}): void {
+    if (!/^[A-Za-z0-9_-]+$/.test(name)) {
+      throw new AlephBuildError(
+        `cookie name ${JSON.stringify(name)} must be letters, digits, _ or -`,
+      );
+    }
+    const attributes = [
+      options.path === undefined ? "Path=/" : `Path=${options.path}`,
+      options.domain === undefined ? "" : `Domain=${options.domain}`,
+      options.maxAge === undefined ? "" : `Max-Age=${options.maxAge}`,
+      options.httpOnly === false ? "" : "HttpOnly",
+      options.secure === false ? "" : "Secure",
+      `SameSite=${options.sameSite ?? "Lax"}`,
+    ].filter(Boolean);
+    const header = new Expr<string>({
+      kind: "concat",
+      parts: [toNode(`${name}=`), toNode(value), toNode(`; ${attributes.join("; ")}`)],
+    });
+    recorder().push({ kind: "setHeader", name: "set-cookie", value: toNode(header) });
+  },
+
+  /** Logs a value for debugging (shown by `aleph dev`; never changes what the plan does). */
+  log(label: string, value: unknown): void {
+    recorder().push({ kind: "log", label, value: toNode(value) });
+  },
+
+  /** A decimal constant: `price.times($.decimal("1.08"))`. */
+  decimal(value: Decimal | string): Expr<Decimal> {
+    if (!/^[-+]?\d+(\.\d+)?$/.test(value)) {
+      throw new AlephBuildError(`${JSON.stringify(value)} isn't a decimal like "12.50"`);
+    }
+    return new Expr({ kind: "decimal", value });
   },
 
   /** Runs `fn` only when `cond` is true. */

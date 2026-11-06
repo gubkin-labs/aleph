@@ -68,13 +68,44 @@ a.route("POST /orgs/:orgId/members")
     role: t.enum("owner", "admin", "member").default("member"),
   })
   .errors({
-    seatLimit: err.forbidden("The free plan has 3 seats"),
+    seatLimit: err.forbidden("The plan's seats are all taken", {
+      seats: t.int(),
+      plan: t.string().max(10),
+    }),
     noOrg: err.notFound("Create the org first"),
+  })
+  .status(201)
+  .example({
+    name: "a full free plan says how many seats it has",
+    as: { userId: "u1", orgs: { acme: "owner" } },
+    given: {
+      Org: [{ orgId: "acme", name: "Acme" }],
+      Member: [
+        { orgId: "acme", email: "a@acme.test", role: "owner" },
+        { orgId: "acme", email: "b@acme.test" },
+        { orgId: "acme", email: "c@acme.test" },
+      ],
+    },
+    request: { params: { orgId: "acme" }, body: { email: "d@acme.test" } },
+    expect: { status: 403, body: { error: "seatLimit", details: { seats: 3, plan: "free" } } },
+  })
+  .example({
+    name: "emails are unique ignoring case",
+    as: { userId: "u1", orgs: { acme: "owner" } },
+    given: {
+      Org: [{ orgId: "acme", name: "Acme" }],
+      Member: [{ orgId: "acme", email: "Ada@acme.test" }],
+    },
+    request: { params: { orgId: "acme" }, body: { email: "ada@ACME.test" } },
+    expect: { status: 409, body: { error: "unique_violation" } },
   })
   .handle(($, { params, body, errors }) => {
     const org = Org.getOrFail({ orgId: params.orgId }, errors.noOrg);
     const maxSeats = $.match(org.plan, { free: 3, pro: 500 });
-    $.ensure(seats.get({ orgId: params.orgId }).lt(maxSeats), errors.seatLimit);
+    $.ensure(seats.get({ orgId: params.orgId }).lt(maxSeats), errors.seatLimit, {
+      seats: maxSeats,
+      plan: org.plan,
+    });
     // A duplicate email fails with 409 unique_violation from the index.
     return Member.insert({ orgId: params.orgId, email: body.email.trim(), role: body.role });
   });
@@ -97,6 +128,22 @@ a.route("DELETE /orgs/:orgId/members/:memberId")
   .params({ orgId, memberId: t.id() })
   .member("orgId", { roles: ["owner"] })
   .errors({ notFound: err.notFound(), lastOwner: err.conflict("Can't remove the last owner") })
+  .example({
+    name: "the last owner stays",
+    as: { userId: "u1", orgs: { acme: "owner" } },
+    given: {
+      Member: [
+        {
+          orgId: "acme",
+          memberId: "01J00000000000000000000001",
+          email: "a@acme.test",
+          role: "owner",
+        },
+      ],
+    },
+    request: { params: { orgId: "acme", memberId: "01J00000000000000000000001" } },
+    expect: { status: 409, body: { error: "lastOwner" } },
+  })
   .handle(($, { params, errors }) => {
     const member = Member.getOrFail(params, errors.notFound);
     $.ensure(

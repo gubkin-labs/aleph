@@ -18,11 +18,13 @@ mod expr;
 mod plan;
 
 pub use effects::{
-    Change, ChannelDecl, CronScan, EventDecl, Handler, Integration, IntegrationOp, OpMode,
-    QueueDecl, Trigger,
+    Change, ChannelDecl, CronScan, CronSchedule, EventDecl, Handler, Integration, IntegrationOp,
+    OpMode, QueueDecl, Trigger,
 };
 
-pub use expr::{BinaryOp, Expr, InputSource, Literal, StrOp, StrTest};
+pub use expr::{
+    AggOp, BinaryOp, Expr, InputSource, Literal, Rounding, StrOp, StrTest, TimePart, TimeUnit,
+};
 pub use plan::{Op, Order, Plan, QueryRange, Stmt, VarId};
 
 /// The manifest format version this crate reads and writes.
@@ -90,6 +92,10 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(feature = "codegen", ts(as = "Option<Vec<Handler>>", optional))]
     pub handlers: Vec<Handler>,
+    /// Cross-origin access for browsers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub cors: Option<Cors>,
 }
 
 /// Application metadata.
@@ -103,7 +109,7 @@ pub struct App {
 
 /// The roles and API key scopes an app declares. Routes may only require declared ones, so a typo
 /// is a validation error instead of a route nobody can call.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AuthConfig {
@@ -113,6 +119,14 @@ pub struct AuthConfig {
     /// API key scopes, for example `["projects:read"]`.
     #[serde(default)]
     pub api_key_scopes: Vec<String>,
+    /// User profile fields the app reads (`email`, `name`, custom claims), resolved by the
+    /// platform for the caller and readable for any user of the tenant.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, Field>>", optional)
+    )]
+    pub profile: BTreeMap<String, Field>,
 }
 
 /// A stored entity: a schema plus an ordered primary key.
@@ -136,6 +150,19 @@ pub struct Entity {
         ts(as = "Option<BTreeMap<String, RowPredicate>>", optional)
     )]
     pub invariants: BTreeMap<String, RowPredicate>,
+    /// Keeps an int `version` field: 1 on insert, incremented on every update. Updates can
+    /// require an expected version (optimistic concurrency for clients).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "codegen", ts(as = "Option<bool>", optional))]
+    pub versioned: bool,
+    /// Rows expire: they're invisible once `field + ms` has passed, and swept in the background.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub ttl: Option<Ttl>,
+    /// Marks the entity deprecated, with a note. A later revision may then remove it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub deprecated: Option<String>,
     /// `false` for append-only entities: rows can be inserted but never updated or deleted.
     #[serde(default = "yes", skip_serializing_if = "is_true")]
     #[cfg_attr(feature = "codegen", ts(as = "Option<bool>", optional))]
@@ -152,6 +179,18 @@ fn yes() -> bool {
 )]
 fn is_true(value: &bool) -> bool {
     *value
+}
+
+/// When an entity's rows expire.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Ttl {
+    /// A timestamp field the lifetime counts from, such as `createdAt`.
+    pub field: String,
+    /// How long rows live after it, in milliseconds.
+    #[cfg_attr(feature = "codegen", ts(type = "number"))]
+    pub ms: u64,
 }
 
 /// A secondary index.
@@ -212,6 +251,10 @@ pub struct Field {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "codegen", ts(optional))]
     pub default: Option<DefaultValue>,
+    /// Marks the field deprecated, with a note. A later revision may then remove it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub deprecated: Option<String>,
 }
 
 /// Field types. Every type has a statically known maximum size.
@@ -257,6 +300,28 @@ pub enum FieldType {
         /// Maximum number of items.
         max: u32,
     },
+    /// An object with declared fields (nested at most 4 deep). Fields may be optional but can't
+    /// have defaults.
+    Object {
+        /// Fields, by name.
+        fields: BTreeMap<String, Field>,
+    },
+    /// An exact decimal with `scale` digits after the point. Sent and returned as a string
+    /// (`"12.50"`) so no precision is lost; JSON numbers are accepted on input.
+    Decimal {
+        /// Digits after the point (0-18).
+        scale: u8,
+        /// Inclusive minimum, as a decimal string.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        min: Option<String>,
+        /// Inclusive maximum, as a decimal string.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        max: Option<String>,
+    },
+    /// An IANA time zone name, such as `"Europe/Berlin"`.
+    TimeZone,
 }
 
 /// How a missing field gets its value.
@@ -283,8 +348,9 @@ pub enum DefaultValue {
 pub struct Counter {
     /// The counted entity.
     pub of: String,
-    /// Fields the count is grouped by.
-    pub group_by: Vec<String>,
+    /// What the count is grouped by: fields, or values computed from the row (like the day of a
+    /// timestamp, for time-bucketed counts).
+    pub group_by: Vec<IndexPart>,
     /// Only rows matching this predicate are counted.
     #[serde(default, rename = "where", skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "codegen", ts(optional))]
@@ -293,6 +359,40 @@ pub struct Counter {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "codegen", ts(optional))]
     pub sum: Option<RowPredicate>,
+    /// Track the smallest or largest value of a field, or how many distinct values it has,
+    /// instead of counting rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub agg: Option<CounterAgg>,
+    /// Spread a hot count over this many shards (2-64), so concurrent writers rarely conflict.
+    /// Reads sum the shards.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub shards: Option<u8>,
+}
+
+/// A derived aggregate a counter maintains instead of a count.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CounterAgg {
+    /// What to track.
+    pub kind: AggKind,
+    /// The field (a string, int, decimal, bool, enum, id, or timestamp).
+    pub field: String,
+}
+
+/// What an aggregate counter tracks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub enum AggKind {
+    /// The smallest value (`null` for an empty group).
+    Min,
+    /// The largest value: with a timestamp field, the latest.
+    Max,
+    /// How many distinct values there are.
+    Distinct,
 }
 
 /// An expression over one row, bound to `var`: a boolean predicate (`where`, invariants) or an
@@ -342,8 +442,253 @@ pub struct Route {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "codegen", ts(optional))]
     pub idempotency: Option<Idempotency>,
+    /// Makes the route an inbound webhook: the signature is verified before the plan runs, and
+    /// repeated deliveries of one event run once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub webhook: Option<Webhook>,
+    /// The declared response type. The checker verifies the plan's responses match it, and
+    /// generated clients use it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub returns: Option<FieldType>,
+    /// Marks the route deprecated, with a note for clients. Responses carry `Deprecation: true`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub deprecated: Option<String>,
+    /// An API version label for docs, such as `"2024-06-01"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub version: Option<String>,
+    /// Worked examples: given some data, this request gets this response. Documentation and
+    /// tests (`aleph test`); never part of what runs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "codegen", ts(as = "Option<Vec<RouteExample>>", optional))]
+    pub examples: Vec<RouteExample>,
     /// The route's logic.
     pub plan: Plan,
+}
+
+/// A worked example of a route.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RouteExample {
+    /// What the example shows.
+    pub name: String,
+    /// Rows that exist before the request, by entity.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(feature = "codegen", ts(optional, type = "Record<string, unknown[]>"))]
+    pub given: BTreeMap<String, Vec<serde_json::Value>>,
+    /// User profiles in the directory, by user id.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(feature = "codegen", ts(optional, type = "Record<string, unknown>"))]
+    pub users: BTreeMap<String, serde_json::Value>,
+    /// Test secret values (webhook signing keys), by name. Never real secrets: examples ship in
+    /// the manifest.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, String>>", optional)
+    )]
+    pub secrets: BTreeMap<String, String>,
+    /// Who calls (a `Caller`: `userId`, `orgs`, `apiKey`, `profile`), or anonymous.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional, type = "unknown"))]
+    pub caller: Option<serde_json::Value>,
+    /// The request.
+    #[serde(default)]
+    pub request: ExampleRequest,
+    /// Integration responses (`{ integration, operation, response | error }`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "codegen", ts(optional, type = "unknown[]"))]
+    pub mocks: Vec<serde_json::Value>,
+    /// Run the async work the request caused (handlers, deliveries) before checking.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "codegen", ts(as = "Option<bool>", optional))]
+    pub process: bool,
+    /// What should happen.
+    #[serde(default)]
+    pub expect: ExampleExpect,
+}
+
+/// An example's request: the route's method and path are implied.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExampleRequest {
+    /// Path parameters.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, String>>", optional)
+    )]
+    pub params: BTreeMap<String, String>,
+    /// Query string parameters.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, String>>", optional)
+    )]
+    pub query: BTreeMap<String, String>,
+    /// The JSON body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional, type = "unknown"))]
+    pub body: Option<serde_json::Value>,
+    /// Headers (lowercase names).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, String>>", optional)
+    )]
+    pub headers: BTreeMap<String, String>,
+}
+
+/// What an example expects. Bodies and deliveries match as subsets: listed keys must be equal,
+/// others are ignored; arrays match item by item.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExampleExpect {
+    /// The status (default 200).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub status: Option<u16>,
+    /// A subset of the response body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional, type = "unknown"))]
+    pub body: Option<serde_json::Value>,
+    /// With `process`: the deliveries made, in any order (each a subset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional, type = "unknown[]"))]
+    pub deliveries: Option<Vec<serde_json::Value>>,
+    /// With `process`: the handlers that ran, in any order.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub runs: Option<Vec<String>>,
+}
+
+/// An inbound webhook: how to verify deliveries, and how to recognize repeats.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Webhook {
+    /// How the sender signs deliveries.
+    pub verify: Verify,
+    /// Runs each event once: later deliveries with the same event id get the first response.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub dedupe: Option<Dedupe>,
+}
+
+/// A webhook signature scheme. `secret` names a secret the platform holds; the manifest never
+/// contains secret values.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum Verify {
+    /// HMAC-SHA256 of the raw body (or of `timestamp.body`) in a header.
+    HmacSha256 {
+        /// The secret's name.
+        secret: String,
+        /// The signature header, lowercase.
+        header: String,
+        /// How the signature is encoded.
+        #[serde(default)]
+        encoding: SignatureEncoding,
+        /// Text before the signature in the header, such as `sha256=`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        prefix: Option<String>,
+        /// A header with the delivery time in seconds. When set, the signed text is
+        /// `timestamp.body` and stale deliveries are rejected.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        timestamp_header: Option<String>,
+        /// How old a delivery may be, in seconds (default 300).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        tolerance_s: Option<u32>,
+    },
+    /// Stripe's `Stripe-Signature` scheme.
+    Stripe {
+        /// The secret's name.
+        secret: String,
+        /// How old a delivery may be, in seconds (default 300).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        tolerance_s: Option<u32>,
+    },
+    /// GitHub's `X-Hub-Signature-256` scheme.
+    Github {
+        /// The secret's name.
+        secret: String,
+    },
+}
+
+impl Verify {
+    /// The name of the secret the scheme uses.
+    pub fn secret(&self) -> &str {
+        match self {
+            Self::HmacSha256 { secret, .. }
+            | Self::Stripe { secret, .. }
+            | Self::Github { secret } => secret,
+        }
+    }
+}
+
+/// How a signature is encoded.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+#[allow(missing_docs)]
+pub enum SignatureEncoding {
+    #[default]
+    Hex,
+    Base64,
+}
+
+/// Where a webhook delivery's event id is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Dedupe {
+    /// A header holding the event id, lowercase.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub header: Option<String>,
+    /// A top-level body field holding the event id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub body_field: Option<String>,
+    /// How long event ids are remembered, in milliseconds (at most 7 days).
+    pub ttl_ms: u32,
+}
+
+/// Cross-origin access for browsers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Cors {
+    /// Allowed origins, like `https://app.example.com`, or `*` for any.
+    pub origins: Vec<String>,
+    /// Whether browsers may send cookies and auth headers.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "codegen", ts(as = "Option<bool>", optional))]
+    pub credentials: bool,
+    /// Extra request headers allowed (`content-type`, `authorization`, and `idempotency-key` always are).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "codegen", ts(as = "Option<Vec<String>>", optional))]
+    pub headers: Vec<String>,
+    /// How long browsers may cache a preflight answer, in seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub max_age_s: Option<u32>,
 }
 
 /// An MCP tool backed by a route.
@@ -413,6 +758,8 @@ pub enum Method {
     Put,
     Patch,
     Delete,
+    /// CORS preflight requests only; routes can't use it.
+    Options,
 }
 
 impl Method {
@@ -424,6 +771,7 @@ impl Method {
             Self::Put => "PUT",
             Self::Patch => "PATCH",
             Self::Delete => "DELETE",
+            Self::Options => "OPTIONS",
         }
     }
 }
@@ -473,7 +821,7 @@ pub struct Input {
 }
 
 /// A declared business error.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ErrorDecl {
@@ -481,4 +829,12 @@ pub struct ErrorDecl {
     pub status: u16,
     /// Human-readable message returned to the client.
     pub message: String,
+    /// Data the error carries, returned as `details`. Every `fail` and `ensure` of this error
+    /// provides the required fields.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, Field>>", optional)
+    )]
+    pub details: BTreeMap<String, Field>,
 }

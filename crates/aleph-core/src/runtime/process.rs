@@ -76,13 +76,32 @@ pub(crate) fn write_outbox(
     effects: Vec<Pending>,
 ) -> Result<(), ExecError> {
     for pending in effects {
+        let job = match &pending.item {
+            OutboxItem::Run { job: Some(job), .. } | OutboxItem::Cancel { job } => Some(job),
+            _ => None,
+        };
+        // A keyed job replaces (or a cancel removes) the pending job with the same key.
+        if let Some(job) = job {
+            let pointer = keys.job(&job.queue, &job.key);
+            if let Some(entry) = tx.get(&pointer)? {
+                let entry = Key::from_bytes(entry);
+                if keys.all().contains(&entry) {
+                    tx.delete(entry);
+                }
+            }
+            tx.delete(pointer);
+        }
+        if matches!(pending.item, OutboxItem::Cancel { .. }) {
+            continue;
+        }
         let id = env.new_id(now);
         let bytes =
             serde_json::to_vec(&pending.item).map_err(|e| ExecError::Runtime(e.to_string()))?;
-        tx.put(
-            keys.outbox(now.saturating_add(pending.delay_ms), &id),
-            bytes,
-        );
+        let entry = keys.outbox(now.saturating_add(pending.delay_ms), &id);
+        if let Some(job) = job {
+            tx.put(keys.job(&job.queue, &job.key), entry.as_bytes().to_vec());
+        }
+        tx.put(entry, bytes);
     }
     Ok(())
 }
@@ -153,15 +172,11 @@ impl Engine {
                 every_ms,
                 offset_ms,
                 scan,
+                schedule,
             } = &handler.trigger
             else {
                 continue;
             };
-            let (every, offset) = (i64::from(*every_ms), i64::from(*offset_ms));
-            if now < offset {
-                continue;
-            }
-            let tick = (now - offset) / every * every + offset;
             let mut tx = self.store.begin();
             let state = keys.schedule(&handler.id);
             let last = tx
@@ -170,9 +185,49 @@ impl Engine {
                 .flatten()
                 .and_then(|b| String::from_utf8(b).ok())
                 .and_then(|s| s.parse::<i64>().ok());
-            if last.is_some_and(|last| last >= tick) {
-                continue;
-            }
+            let tick = match schedule {
+                Some(schedule) => {
+                    let (Ok(cron), Some(tz)) = (
+                        super::cron::Cron::parse(&schedule.cron),
+                        super::time::zone(schedule.tz.as_deref().unwrap_or("UTC")),
+                    ) else {
+                        continue;
+                    };
+                    // The first time a schedule is seen, it starts from now (no back-fill).
+                    let Some(last) = last else {
+                        tx.put(state, now.to_string().into_bytes());
+                        let _ = tx.commit();
+                        continue;
+                    };
+                    // The latest scheduled time that's due; missed earlier ones are skipped.
+                    let mut due = None;
+                    let mut at = last;
+                    for _ in 0..10_000 {
+                        match cron.next_after(at, &tz) {
+                            Some(next) if next <= now => {
+                                due = Some(next);
+                                at = next;
+                            }
+                            _ => break,
+                        }
+                    }
+                    let Some(tick) = due else {
+                        continue;
+                    };
+                    tick
+                }
+                None => {
+                    let (every, offset) = (i64::from(*every_ms), i64::from(*offset_ms));
+                    if now < offset || every == 0 {
+                        continue;
+                    }
+                    let tick = (now - offset) / every * every + offset;
+                    if last.is_some_and(|last| last >= tick) {
+                        continue;
+                    }
+                    tick
+                }
+            };
             tx.put(state, tick.to_string().into_bytes());
             let item = match scan {
                 Some(_) => OutboxItem::Scan {
@@ -185,6 +240,7 @@ impl Engine {
                     handler: handler.id.clone(),
                     payload: BTreeMap::from([("firedAt".to_owned(), Value::Int(tick))]),
                     attempt: 0,
+                    job: None,
                 },
             };
             let pending = vec![Pending { delay_ms: 0, item }];
@@ -238,10 +294,12 @@ impl Engine {
                     }
                 }
             }
+            OutboxItem::Cancel { .. } => self.remove(key),
             OutboxItem::Run {
                 handler: id,
                 payload,
                 attempt,
+                job,
             } => {
                 let Some(handler) = self.handler(&id) else {
                     self.remove(key);
@@ -257,6 +315,7 @@ impl Engine {
                                 handler: id,
                                 payload,
                                 attempt: attempt + 1,
+                                job,
                             };
                             self.reschedule(keys, key, now + backoff_ms(attempt, base, max), &next);
                             report.retried += 1;
@@ -278,6 +337,7 @@ impl Engine {
                                     handler: dead_letter.id.clone(),
                                     payload,
                                     attempt: 0,
+                                    job: None,
                                 };
                                 self.reschedule(keys, key, now, &next);
                                 report.dead_lettered += 1;
@@ -384,6 +444,7 @@ impl Engine {
                 let mut exec = Exec {
                     manifest: self.manifest.manifest(),
                     plan: &handler.plan,
+                    errors: &handler.errors,
                     tenant: keys.tenant(),
                     integrations: self.integrations.as_ref(),
                     journal: &mut journal,
@@ -397,6 +458,7 @@ impl Engine {
                     inputs: &inputs,
                     vars: HashMap::new(),
                     metered: true,
+                    meta: super::exec::ResponseMeta::default(),
                 };
                 match exec.run() {
                     Ok(_) => std::mem::take(&mut exec.effects),
@@ -434,7 +496,12 @@ impl Engine {
         };
         let mut tx = self.store.begin();
         tx.delete(key.clone());
-        tx.put(keys.outbox(at, &self.env.new_id(at)), bytes);
+        let entry = keys.outbox(at, &self.env.new_id(at));
+        // A retried keyed job stays cancellable: its pointer follows it.
+        if let OutboxItem::Run { job: Some(job), .. } = item {
+            tx.put(keys.job(&job.queue, &job.key), entry.as_bytes().to_vec());
+        }
+        tx.put(entry, bytes);
         let _ = tx.commit();
     }
 }

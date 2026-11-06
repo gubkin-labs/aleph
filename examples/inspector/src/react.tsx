@@ -8,7 +8,7 @@
  *   bounds, the async activity (handler runs, retries, deliveries, integration calls), and the
  *   app's cost report.
  */
-import type { CheckReport, Cost, Delivery, RecordedCall } from "@aleph/manifest";
+import type { CheckReport, Cost } from "@aleph/manifest";
 import {
   createContext,
   type ReactNode,
@@ -200,23 +200,8 @@ export async function mock(
 
 // ─── Inspector ──────────────────────────────────────────────────────────────────────────────────
 
-type Activity = { seq: number; at: number } & (
-  | {
-      kind: "request";
-      method: string;
-      path: string;
-      status: number;
-      route?: string;
-      usage: Cost;
-      replayed: boolean;
-      ms: number;
-    }
-  | { kind: "run"; handler: string; usage: Cost }
-  | { kind: "retry"; count: number }
-  | { kind: "failure"; message: string }
-  | { kind: "delivery"; delivery: Delivery }
-  | { kind: "call"; call: RecordedCall }
-);
+// The dev server's activity feed (requests, runs, deliveries, logs, reloads).
+type Activity = import("@aleph/cli").Activity;
 
 type ReportResult = { ok: true; report: CheckReport } | { ok: false };
 
@@ -227,6 +212,7 @@ const RESOURCES: [keyof Cost, string][] = [
   ["bytesRead", "bytes"],
   ["effects", "effects"],
   ["calls", "calls"],
+  ["memory", "memory"],
 ];
 
 function useActivity(): Activity[] {
@@ -295,10 +281,25 @@ function ActivityRow({ item, report }: { item: Activity; report?: CheckReport | 
           {item.method} {item.path}
           <span className="al-dim"> {item.route ?? "no route"}</span>
           {item.replayed ? <span className="al-tag">replayed</span> : null}
+          {item.attempts > 1 ? (
+            <span className="al-tag al-warn">hot: {item.attempts - 1} conflict retries</span>
+          ) : null}
           <UsageBars
             usage={item.usage}
             bounds={item.route ? report?.routes[item.route]?.bounds : undefined}
           />
+          {item.logs.map((entry, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: logs are append-only per request.
+            <div key={i} className="al-indent al-dim">
+              log <b>{entry.label}</b> <code>{JSON.stringify(entry.value)}</code>
+            </div>
+          ))}
+        </li>
+      );
+    case "reload":
+      return (
+        <li className={item.ok ? "al-ok" : "al-err"}>
+          ↻ {item.ok ? item.message : `reload failed: ${item.message}`}
         </li>
       );
     case "run":

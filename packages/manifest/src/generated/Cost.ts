@@ -26,4 +26,8 @@ effects: number,
 /**
  * Integration calls.
  */
-calls: number, };
+calls: number, 
+/**
+ * Bytes of values bound while running (see [`Limits::memory`]).
+ */
+memory: number, };

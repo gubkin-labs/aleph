@@ -1,0 +1,355 @@
+{
+  "expect": [
+    "invalid_counter_key",
+    "invalid_declaration",
+    "invalid_error_status",
+    "invalid_expression",
+    "invalid_field_type",
+    "invalid_handler",
+    "invalid_prefix",
+    "invalid_route",
+    "type_mismatch",
+    "unknown_field",
+    "write_in_pure_block"
+  ],
+  "manifest": {
+    "formatVersion": "0.2",
+    "app": {
+      "name": "bad"
+    },
+    "auth": {
+      "roles": [],
+      "apiKeyScopes": []
+    },
+    "entities": {
+      "Item": {
+        "key": ["id"],
+        "fields": {
+          "id": {
+            "type": {
+              "kind": "string",
+              "min": 0,
+              "max": 10
+            }
+          },
+          "tags": {
+            "type": {
+              "kind": "array",
+              "items": {
+                "kind": "string",
+                "min": 0,
+                "max": 5
+              },
+              "max": 3
+            }
+          },
+          "at": {
+            "type": {
+              "kind": "int"
+            }
+          },
+          "price": {
+            "type": {
+              "kind": "decimal",
+              "scale": 19
+            }
+          }
+        },
+        "indexes": {},
+        "versioned": true,
+        "ttl": {
+          "field": "at",
+          "ms": 1000
+        }
+      }
+    },
+    "counters": {
+      "bad": {
+        "of": "Item",
+        "groupBy": [],
+        "agg": {
+          "kind": "min",
+          "field": "tags"
+        },
+        "shards": 1
+      }
+    },
+    "routes": [
+      {
+        "id": "pure_return",
+        "method": "GET",
+        "path": "/a",
+        "auth": {
+          "kind": "signedIn"
+        },
+        "input": {
+          "params": {},
+          "query": {},
+          "body": {}
+        },
+        "errors": {},
+        "plan": {
+          "body": [
+            {
+              "kind": "let",
+              "var": 0,
+              "op": {
+                "op": "map",
+                "list": {
+                  "kind": "list",
+                  "items": [
+                    {
+                      "kind": "lit",
+                      "value": 1
+                    }
+                  ]
+                },
+                "item": 1,
+                "body": [
+                  {
+                    "kind": "return",
+                    "value": {
+                      "kind": "lit",
+                      "value": 1
+                    }
+                  }
+                ],
+                "yield": {
+                  "kind": "lit",
+                  "value": 1
+                }
+              }
+            }
+          ],
+          "output": {
+            "kind": "lit",
+            "value": null
+          }
+        }
+      },
+      {
+        "id": "bad_header",
+        "method": "GET",
+        "path": "/b",
+        "auth": {
+          "kind": "signedIn"
+        },
+        "input": {
+          "params": {},
+          "query": {},
+          "body": {}
+        },
+        "errors": {},
+        "plan": {
+          "body": [
+            {
+              "kind": "setHeader",
+              "name": "content-type",
+              "value": {
+                "kind": "lit",
+                "value": "x"
+              }
+            },
+            {
+              "kind": "setStatus",
+              "status": 404
+            }
+          ],
+          "output": {
+            "kind": "lit",
+            "value": null
+          }
+        }
+      },
+      {
+        "id": "bad_regex",
+        "method": "GET",
+        "path": "/c",
+        "auth": {
+          "kind": "signedIn"
+        },
+        "input": {
+          "params": {},
+          "query": {},
+          "body": {}
+        },
+        "errors": {},
+        "plan": {
+          "body": [],
+          "output": {
+            "kind": "matches",
+            "of": {
+              "kind": "lit",
+              "value": "x"
+            },
+            "pattern": "("
+          }
+        }
+      },
+      {
+        "id": "bad_tz",
+        "method": "GET",
+        "path": "/d",
+        "auth": {
+          "kind": "signedIn"
+        },
+        "input": {
+          "params": {},
+          "query": {},
+          "body": {}
+        },
+        "errors": {},
+        "plan": {
+          "body": [],
+          "output": {
+            "kind": "startOf",
+            "of": {
+              "kind": "lit",
+              "value": 0
+            },
+            "unit": "day",
+            "tz": {
+              "kind": "lit",
+              "value": "Mars/Base"
+            }
+          }
+        }
+      },
+      {
+        "id": "bad_profile",
+        "method": "GET",
+        "path": "/e",
+        "auth": {
+          "kind": "signedIn"
+        },
+        "input": {
+          "params": {},
+          "query": {},
+          "body": {}
+        },
+        "errors": {},
+        "plan": {
+          "body": [],
+          "output": {
+            "kind": "callerProfile",
+            "field": "email"
+          }
+        }
+      },
+      {
+        "id": "bad_returns",
+        "method": "GET",
+        "path": "/f",
+        "auth": {
+          "kind": "signedIn"
+        },
+        "input": {
+          "params": {},
+          "query": {},
+          "body": {}
+        },
+        "errors": {},
+        "plan": {
+          "body": [],
+          "output": {
+            "kind": "lit",
+            "value": "hello"
+          }
+        },
+        "returns": {
+          "kind": "int"
+        }
+      },
+      {
+        "id": "bad_any",
+        "method": "GET",
+        "path": "/g",
+        "auth": {
+          "kind": "signedIn"
+        },
+        "input": {
+          "params": {},
+          "query": {},
+          "body": {}
+        },
+        "errors": {},
+        "plan": {
+          "body": [
+            {
+              "kind": "let",
+              "var": 0,
+              "op": {
+                "op": "query",
+                "entity": "Item",
+                "limit": {
+                  "kind": "lit",
+                  "value": 5
+                },
+                "anyOf": [
+                  {
+                    "kind": "lit",
+                    "value": "a"
+                  }
+                ],
+                "page": true
+              }
+            }
+          ],
+          "output": {
+            "kind": "lit",
+            "value": null
+          }
+        }
+      },
+      {
+        "id": "hook",
+        "method": "GET",
+        "path": "/h",
+        "auth": {
+          "kind": "signedIn"
+        },
+        "input": {
+          "params": {},
+          "query": {},
+          "body": {}
+        },
+        "errors": {},
+        "plan": {
+          "body": [],
+          "output": {
+            "kind": "lit",
+            "value": null
+          }
+        },
+        "webhook": {
+          "verify": {
+            "kind": "github",
+            "secret": "S"
+          }
+        }
+      }
+    ],
+    "handlers": [
+      {
+        "id": "tick",
+        "trigger": {
+          "kind": "cron",
+          "everyMs": 0,
+          "offsetMs": 0,
+          "schedule": {
+            "cron": "0 25 * * *",
+            "tz": "UTC"
+          }
+        },
+        "errors": {},
+        "plan": {
+          "body": [],
+          "output": {
+            "kind": "lit",
+            "value": null
+          }
+        }
+      }
+    ]
+  }
+}

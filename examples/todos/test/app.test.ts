@@ -17,7 +17,7 @@ describe("todos", () => {
         { method: "POST", path: "/todos", caller: ada, body: { title } },
         1_000 + i,
       );
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(201);
     });
     const page = engine.handle({
       method: "GET",

@@ -18,10 +18,22 @@
  *   .handle(($, { body }) => Todo.insert({ ownerId: $.caller, title: body.title }));
  * ```
  */
-export { App, type AppOptions, app, type BuildOptions } from "./app.js";
 export {
+  App,
+  type AppOptions,
+  app,
+  type BuildOptions,
+  type UserValue,
+  verify,
+  type WebhookOptions,
+} from "./app.js";
+export {
+  type Accessor,
+  type ComputedGroup,
   Counter,
+  type CounterAggDef,
   type CounterDef,
+  type CounterValue,
   Entity,
   type EntityDef,
   ErrorRef,
@@ -30,14 +42,18 @@ export {
   type InsertValues,
   type KeyValues,
   List,
+  type ObjectAccessor,
   Page,
+  type ParentDef,
   type QueryOptions,
   type RangeBounds,
   type Row,
   type RowMethods,
+  type UpdateOptions,
+  type ValueLike,
   type ValuesLike,
 } from "./data.js";
-export { $, type MatchCases } from "./dsl.js";
+export { $, type CookieOptions, type MatchCases } from "./dsl.js";
 export {
   type ChangePayload,
   Channel,
@@ -53,14 +69,17 @@ export {
   type ScanOptions,
 } from "./effects.js";
 export { err } from "./errors.js";
-export { Expr, type ExprLike } from "./expr.js";
+export { Expr, type ExprLike, type Numeric, type TimeZoneLike } from "./expr.js";
 export {
   type AnyField,
+  type Decimal,
+  DecimalField,
   FieldBuilder,
   type Fields,
   type FieldValue,
   IdField,
   IntField,
+  type ObjectValue,
   type RequiredFields,
   StringField,
   StringNeedsMax,
@@ -71,6 +90,7 @@ export {
 export { stableStringify } from "./json.js";
 export { AlephBuildError } from "./recorder.js";
 export type {
+  ExampleDef,
   Handler,
   HandlerContext,
   InputValue,
@@ -78,3 +98,4 @@ export type {
   PathParams,
   RouteBuilder,
 } from "./route.js";
+export type { Duration } from "./units.js";

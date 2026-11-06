@@ -1,0 +1,569 @@
+{
+  "entities": {
+    "Cart": {
+      "maxRowBytes": 2395
+    },
+    "Note": {
+      "maxRowBytes": 1689
+    },
+    "Order": {
+      "maxRowBytes": 4704
+    },
+    "Product": {
+      "maxRowBytes": 1454
+    }
+  },
+  "routes": {
+    "delete_orders_orderId": {
+      "bounds": {
+        "reads": 1,
+        "writes": 6,
+        "ops": 6,
+        "bytesRead": 4704,
+        "effects": 1,
+        "calls": 0,
+        "memory": 8
+      },
+      "output": {
+        "kind": "null"
+      }
+    },
+    "get_cart": {
+      "bounds": {
+        "reads": 1,
+        "writes": 0,
+        "ops": 73,
+        "bytesRead": 2395,
+        "effects": 0,
+        "calls": 0,
+        "memory": 3871
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "exists": {
+            "kind": "bool"
+          },
+          "first": {
+            "kind": "nullable",
+            "of": {
+              "kind": "string",
+              "maxLength": 32
+            }
+          },
+          "skus": {
+            "kind": "nullable",
+            "of": {
+              "kind": "array",
+              "items": {
+                "kind": "string",
+                "maxLength": 32
+              },
+              "maxItems": 10
+            }
+          }
+        }
+      }
+    },
+    "get_deals": {
+      "bounds": {
+        "reads": 12,
+        "writes": 0,
+        "ops": 58,
+        "bytesRead": 14668,
+        "effects": 0,
+        "calls": 0,
+        "memory": 16812
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "cheapestBook": {
+            "kind": "nullable",
+            "of": {
+              "kind": "decimal",
+              "scale": 2
+            }
+          },
+          "cheapestTool": {
+            "kind": "nullable",
+            "of": {
+              "kind": "decimal",
+              "scale": 2
+            }
+          },
+          "deals": {
+            "kind": "array",
+            "items": {
+              "kind": "object",
+              "fields": {
+                "price": {
+                  "kind": "decimal",
+                  "scale": 2
+                },
+                "sku": {
+                  "kind": "string",
+                  "maxLength": 32
+                }
+              }
+            },
+            "maxItems": 5
+          }
+        }
+      }
+    },
+    "get_go_sku": {
+      "bounds": {
+        "reads": 0,
+        "writes": 0,
+        "ops": 8,
+        "bytesRead": 0,
+        "effects": 0,
+        "calls": 0,
+        "memory": 4
+      },
+      "output": {
+        "kind": "null"
+      }
+    },
+    "get_legacy_products": {
+      "bounds": {
+        "reads": 10,
+        "writes": 0,
+        "ops": 38,
+        "bytesRead": 14540,
+        "effects": 0,
+        "calls": 0,
+        "memory": 31730
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "products": {
+            "kind": "array",
+            "items": {
+              "kind": "string",
+              "maxLength": 32
+            },
+            "maxItems": 10
+          }
+        }
+      }
+    },
+    "get_me": {
+      "bounds": {
+        "reads": 1,
+        "writes": 0,
+        "ops": 16,
+        "bytesRead": 1823,
+        "effects": 0,
+        "calls": 0,
+        "memory": 4953
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "directoryName": {
+            "kind": "nullable",
+            "of": {
+              "kind": "string",
+              "maxLength": 100
+            }
+          },
+          "email": {
+            "kind": "nullable",
+            "of": {
+              "kind": "string",
+              "maxLength": 200
+            }
+          },
+          "greeting": {
+            "kind": "string",
+            "maxLength": 104
+          },
+          "id": {
+            "kind": "string",
+            "maxLength": 256
+          }
+        }
+      }
+    },
+    "get_orders_orderId_notes": {
+      "bounds": {
+        "reads": 21,
+        "writes": 0,
+        "ops": 80,
+        "bytesRead": 38484,
+        "effects": 0,
+        "calls": 0,
+        "memory": 104421
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "notes": {
+            "kind": "array",
+            "items": {
+              "kind": "string",
+              "maxLength": 200
+            },
+            "maxItems": 20
+          }
+        }
+      }
+    },
+    "get_orders_orderId_receipt": {
+      "bounds": {
+        "reads": 1,
+        "writes": 0,
+        "ops": 125,
+        "bytesRead": 4704,
+        "effects": 0,
+        "calls": 0,
+        "memory": 14918
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "date": {
+            "kind": "string",
+            "maxLength": 352
+          },
+          "dueBy": {
+            "kind": "string",
+            "maxLength": 256
+          },
+          "lines": {
+            "kind": "array",
+            "items": {
+              "kind": "string",
+              "maxLength": 54
+            },
+            "maxItems": 10
+          },
+          "ship": {
+            "kind": "string",
+            "maxLength": 191
+          },
+          "total": {
+            "kind": "string",
+            "maxLength": 60
+          },
+          "weekday": {
+            "kind": "int"
+          }
+        }
+      }
+    },
+    "get_stats": {
+      "bounds": {
+        "reads": 6,
+        "writes": 0,
+        "ops": 12,
+        "bytesRead": 208,
+        "effects": 0,
+        "calls": 0,
+        "memory": 154
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "customers": {
+            "kind": "int"
+          },
+          "latest": {
+            "kind": "nullable",
+            "of": {
+              "kind": "int"
+            }
+          },
+          "today": {
+            "kind": "int"
+          }
+        }
+      }
+    },
+    "patch_products_sku_price": {
+      "bounds": {
+        "reads": 2,
+        "writes": 5,
+        "ops": 14,
+        "bytesRead": 2908,
+        "effects": 0,
+        "calls": 0,
+        "memory": 4362
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "category": {
+            "kind": "enum",
+            "values": [
+              "books",
+              "games",
+              "tools"
+            ]
+          },
+          "name": {
+            "kind": "string",
+            "maxLength": 80
+          },
+          "price": {
+            "kind": "decimal",
+            "scale": 2
+          },
+          "sku": {
+            "kind": "string",
+            "maxLength": 32
+          },
+          "version": {
+            "kind": "int"
+          }
+        }
+      }
+    },
+    "post_orders": {
+      "bounds": {
+        "reads": 11,
+        "writes": 6,
+        "ops": 761,
+        "bytesRead": 19244,
+        "effects": 2,
+        "calls": 0,
+        "memory": 38568
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "items": {
+            "kind": "int"
+          },
+          "lines": {
+            "kind": "array",
+            "items": {
+              "kind": "object",
+              "fields": {
+                "lineTotal": {
+                  "kind": "decimal",
+                  "scale": 2
+                },
+                "qty": {
+                  "kind": "int"
+                },
+                "sku": {
+                  "kind": "string",
+                  "maxLength": 32
+                },
+                "unitPrice": {
+                  "kind": "decimal",
+                  "scale": 2
+                }
+              }
+            },
+            "maxItems": 10
+          },
+          "orderId": {
+            "kind": "string",
+            "maxLength": 26
+          },
+          "total": {
+            "kind": "decimal",
+            "scale": 2
+          }
+        }
+      }
+    },
+    "post_orders_orderId_notes": {
+      "bounds": {
+        "reads": 1,
+        "writes": 1,
+        "ops": 7,
+        "bytesRead": 1689,
+        "effects": 0,
+        "calls": 0,
+        "memory": 3378
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "customerId": {
+            "kind": "string",
+            "maxLength": 64
+          },
+          "noteId": {
+            "kind": "string",
+            "maxLength": 26
+          },
+          "orderId": {
+            "kind": "string",
+            "maxLength": 26
+          },
+          "text": {
+            "kind": "string",
+            "maxLength": 200
+          }
+        }
+      }
+    },
+    "post_orders_orderId_pay": {
+      "bounds": {
+        "reads": 2,
+        "writes": 11,
+        "ops": 31,
+        "bytesRead": 9408,
+        "effects": 1,
+        "calls": 0,
+        "memory": 9446
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "changed": {
+            "kind": "bool"
+          },
+          "status": {
+            "kind": "enum",
+            "values": [
+              "paid"
+            ]
+          }
+        }
+      }
+    },
+    "post_webhooks_payments": {
+      "bounds": {
+        "reads": 3,
+        "writes": 12,
+        "ops": 22,
+        "bytesRead": 74944,
+        "effects": 1,
+        "calls": 0,
+        "memory": 9427
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "paid": {
+            "kind": "bool"
+          }
+        }
+      }
+    },
+    "put_cart": {
+      "bounds": {
+        "reads": 1,
+        "writes": 2,
+        "ops": 17,
+        "bytesRead": 2395,
+        "effects": 0,
+        "calls": 0,
+        "memory": 4790
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "customerId": {
+            "kind": "string",
+            "maxLength": 64
+          },
+          "skus": {
+            "kind": "array",
+            "items": {
+              "kind": "string",
+              "maxLength": 32
+            },
+            "maxItems": 10
+          },
+          "updatedAt": {
+            "kind": "int"
+          }
+        }
+      }
+    },
+    "put_products_sku": {
+      "bounds": {
+        "reads": 1,
+        "writes": 5,
+        "ops": 7,
+        "bytesRead": 1454,
+        "effects": 0,
+        "calls": 0,
+        "memory": 2908
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "category": {
+            "kind": "enum",
+            "values": [
+              "books",
+              "games",
+              "tools"
+            ]
+          },
+          "name": {
+            "kind": "string",
+            "maxLength": 80
+          },
+          "price": {
+            "kind": "decimal",
+            "scale": 2
+          },
+          "sku": {
+            "kind": "string",
+            "maxLength": 32
+          },
+          "version": {
+            "kind": "int"
+          }
+        }
+      }
+    }
+  },
+  "handlers": {
+    "cascade_Note": {
+      "bounds": {
+        "reads": 0,
+        "writes": 0,
+        "ops": 7,
+        "bytesRead": 0,
+        "effects": 1,
+        "calls": 0,
+        "memory": 8
+      }
+    },
+    "cascade_Note_batch": {
+      "bounds": {
+        "reads": 100,
+        "writes": 50,
+        "ops": 467,
+        "bytesRead": 168900,
+        "effects": 1,
+        "calls": 0,
+        "memory": 169160
+      }
+    },
+    "remind": {
+      "bounds": {
+        "reads": 2,
+        "writes": 0,
+        "ops": 27,
+        "bytesRead": 6527,
+        "effects": 1,
+        "calls": 0,
+        "memory": 6971
+      }
+    },
+    "weeklyDigest": {
+      "bounds": {
+        "reads": 1,
+        "writes": 0,
+        "ops": 5,
+        "bytesRead": 64,
+        "effects": 0,
+        "calls": 0,
+        "memory": 24
+      }
+    }
+  }
+}

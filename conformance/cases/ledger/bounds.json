@@ -15,7 +15,31 @@
         "ops": 31,
         "bytesRead": 2030,
         "effects": 0,
-        "calls": 0
+        "calls": 0,
+        "memory": 2533
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "accountId": {
+            "kind": "string",
+            "maxLength": 26
+          },
+          "balance": {
+            "kind": "int"
+          },
+          "currency": {
+            "kind": "enum",
+            "values": [
+              "USD",
+              "EUR"
+            ]
+          },
+          "ownerId": {
+            "kind": "string",
+            "maxLength": 64
+          }
+        }
       }
     },
     "entries": {
@@ -25,7 +49,46 @@
         "ops": 18,
         "bytesRead": 102903,
         "effects": 0,
-        "calls": 0
+        "calls": 0,
+        "memory": 205520
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "entries": {
+            "kind": "array",
+            "items": {
+              "kind": "object",
+              "fields": {
+                "accountId": {
+                  "kind": "string",
+                  "maxLength": 26
+                },
+                "amount": {
+                  "kind": "int"
+                },
+                "at": {
+                  "kind": "int"
+                },
+                "balanceAfter": {
+                  "kind": "int"
+                },
+                "entryId": {
+                  "kind": "string",
+                  "maxLength": 26
+                },
+                "memo": {
+                  "kind": "nullable",
+                  "of": {
+                    "kind": "string",
+                    "maxLength": 140
+                  }
+                }
+              }
+            },
+            "maxItems": 100
+          }
+        }
       }
     },
     "entriesBetween": {
@@ -35,7 +98,46 @@
         "ops": 20,
         "bytesRead": 102903,
         "effects": 0,
-        "calls": 0
+        "calls": 0,
+        "memory": 205520
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "entries": {
+            "kind": "array",
+            "items": {
+              "kind": "object",
+              "fields": {
+                "accountId": {
+                  "kind": "string",
+                  "maxLength": 26
+                },
+                "amount": {
+                  "kind": "int"
+                },
+                "at": {
+                  "kind": "int"
+                },
+                "balanceAfter": {
+                  "kind": "int"
+                },
+                "entryId": {
+                  "kind": "string",
+                  "maxLength": 26
+                },
+                "memo": {
+                  "kind": "nullable",
+                  "of": {
+                    "kind": "string",
+                    "maxLength": 140
+                  }
+                }
+              }
+            },
+            "maxItems": 100
+          }
+        }
       }
     },
     "myAccounts": {
@@ -45,7 +147,40 @@
         "ops": 6,
         "bytesRead": 5030,
         "effects": 0,
-        "calls": 0
+        "calls": 0,
+        "memory": 10098
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "accounts": {
+            "kind": "array",
+            "items": {
+              "kind": "object",
+              "fields": {
+                "accountId": {
+                  "kind": "string",
+                  "maxLength": 26
+                },
+                "balance": {
+                  "kind": "int"
+                },
+                "currency": {
+                  "kind": "enum",
+                  "values": [
+                    "USD",
+                    "EUR"
+                  ]
+                },
+                "ownerId": {
+                  "kind": "string",
+                  "maxLength": 64
+                }
+              }
+            },
+            "maxItems": 10
+          }
+        }
       }
     },
     "openAccount": {
@@ -55,7 +190,31 @@
         "ops": 5,
         "bytesRead": 503,
         "effects": 0,
-        "calls": 0
+        "calls": 0,
+        "memory": 1006
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "accountId": {
+            "kind": "string",
+            "maxLength": 26
+          },
+          "balance": {
+            "kind": "int"
+          },
+          "currency": {
+            "kind": "enum",
+            "values": [
+              "USD",
+              "EUR"
+            ]
+          },
+          "ownerId": {
+            "kind": "string",
+            "maxLength": 64
+          }
+        }
       }
     },
     "transfer": {
@@ -65,7 +224,19 @@
         "ops": 78,
         "bytesRead": 69596,
         "effects": 0,
-        "calls": 0
+        "calls": 0,
+        "memory": 4116
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "from": {
+            "kind": "int"
+          },
+          "to": {
+            "kind": "int"
+          }
+        }
       }
     }
   }

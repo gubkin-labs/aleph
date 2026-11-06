@@ -57,6 +57,7 @@ pub enum DiagnosticCode {
     InvalidDeclaration,
     InvalidRoute,
     InvalidRange,
+    InvalidExpression,
     OverBudget,
 }
 

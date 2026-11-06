@@ -15,7 +15,46 @@
         "ops": 19,
         "bytesRead": 4976,
         "effects": 0,
-        "calls": 0
+        "calls": 0,
+        "memory": 7464
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "docId": {
+            "kind": "string",
+            "maxLength": 26
+          },
+          "orgId": {
+            "kind": "string",
+            "maxLength": 64
+          },
+          "pages": {
+            "kind": "int"
+          },
+          "status": {
+            "kind": "enum",
+            "values": [
+              "queued",
+              "done",
+              "failed"
+            ]
+          },
+          "summary": {
+            "kind": "nullable",
+            "of": {
+              "kind": "string",
+              "maxLength": 200
+            }
+          },
+          "title": {
+            "kind": "string",
+            "maxLength": 120
+          },
+          "updatedAt": {
+            "kind": "int"
+          }
+        }
       }
     },
     "getDoc": {
@@ -25,7 +64,54 @@
         "ops": 14,
         "bytesRead": 2508,
         "effects": 0,
-        "calls": 0
+        "calls": 0,
+        "memory": 5037
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "doc": {
+            "kind": "object",
+            "fields": {
+              "docId": {
+                "kind": "string",
+                "maxLength": 26
+              },
+              "orgId": {
+                "kind": "string",
+                "maxLength": 64
+              },
+              "pages": {
+                "kind": "int"
+              },
+              "status": {
+                "kind": "enum",
+                "values": [
+                  "queued",
+                  "done",
+                  "failed"
+                ]
+              },
+              "summary": {
+                "kind": "nullable",
+                "of": {
+                  "kind": "string",
+                  "maxLength": 200
+                }
+              },
+              "title": {
+                "kind": "string",
+                "maxLength": 120
+              },
+              "updatedAt": {
+                "kind": "int"
+              }
+            }
+          },
+          "orgPages": {
+            "kind": "int"
+          }
+        }
       }
     },
     "uploadDoc": {
@@ -35,7 +121,46 @@
         "ops": 6,
         "bytesRead": 2488,
         "effects": 1,
-        "calls": 0
+        "calls": 0,
+        "memory": 4976
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "docId": {
+            "kind": "string",
+            "maxLength": 26
+          },
+          "orgId": {
+            "kind": "string",
+            "maxLength": 64
+          },
+          "pages": {
+            "kind": "int"
+          },
+          "status": {
+            "kind": "enum",
+            "values": [
+              "queued",
+              "done",
+              "failed"
+            ]
+          },
+          "summary": {
+            "kind": "nullable",
+            "of": {
+              "kind": "string",
+              "maxLength": 200
+            }
+          },
+          "title": {
+            "kind": "string",
+            "maxLength": 120
+          },
+          "updatedAt": {
+            "kind": "int"
+          }
+        }
       }
     }
   },
@@ -47,7 +172,8 @@
         "ops": 7,
         "bytesRead": 0,
         "effects": 1,
-        "calls": 0
+        "calls": 0,
+        "memory": 8
       }
     },
     "notify": {
@@ -57,7 +183,8 @@
         "ops": 13,
         "bytesRead": 2249,
         "effects": 1,
-        "calls": 0
+        "calls": 0,
+        "memory": 2257
       }
     },
     "processDoc": {
@@ -67,7 +194,8 @@
         "ops": 46,
         "bytesRead": 7225,
         "effects": 2,
-        "calls": 1
+        "calls": 1,
+        "memory": 15281
       }
     },
     "processFailed": {
@@ -77,7 +205,8 @@
         "ops": 16,
         "bytesRead": 4737,
         "effects": 1,
-        "calls": 0
+        "calls": 0,
+        "memory": 4745
       }
     },
     "purgeFailed": {
@@ -87,7 +216,8 @@
         "ops": 353,
         "bytesRead": 248800,
         "effects": 1,
-        "calls": 0
+        "calls": 0,
+        "memory": 124604
       }
     }
   }

@@ -73,6 +73,13 @@ impl Meter {
         })
     }
 
+    pub(crate) fn memory(&mut self, bytes: u64) -> Result<(), OverBudget> {
+        self.charge(Cost {
+            memory: bytes,
+            ..Cost::ZERO
+        })
+    }
+
     pub(crate) fn write(&mut self, writes: u64) -> Result<(), OverBudget> {
         self.charge(Cost {
             writes,

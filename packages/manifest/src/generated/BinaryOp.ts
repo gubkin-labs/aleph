@@ -2,4 +2,4 @@
 /**
  * Binary operators.
  */
-export type BinaryOp = "eq" | "neq" | "lt" | "lte" | "gt" | "gte" | "and" | "or" | "add" | "sub" | "mul" | "div" | "min" | "max";
+export type BinaryOp = "eq" | "neq" | "lt" | "lte" | "gt" | "gte" | "and" | "or" | "add" | "sub" | "mul" | "div" | "min" | "max" | "mod" | "pow" | "divFloor" | "divCeil";

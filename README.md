@@ -15,7 +15,7 @@ This repository is the open-source half of Aleph:
 | [`packages/manifest`](packages/manifest) | `@aleph/manifest`: generated TypeScript types for the manifest format |
 | [`packages/core-wasm`](packages/core-wasm) | `@aleph/core`: validation, cost analysis, and a local dev engine (the Rust core, via WASM) |
 | [`packages/sdk`](packages/sdk) | `@aleph/sdk`: the TypeScript builder that produces manifests |
-| [`packages/cli`](packages/cli) | `@aleph/cli`: the `aleph` command (`build`, `check`, `dev`, `openapi`, `mcp`) |
+| [`packages/cli`](packages/cli) | `@aleph/cli`: the `aleph` command (`build`, `check`, `test`, `client`, `dev`, `openapi`, `mcp`) |
 | [`examples`](examples) | Example apps with a minimal React UI and an inspector panel (`pnpm --filter @aleph-examples/shop dev`) |
 | [`conformance`](conformance) | Golden apps, manifests, bounds, and request scenarios that the SDK, WASM, and native core must all agree on |
 | [`schema`](schema) | `manifest.schema.json`, for third-party SDKs and platforms |
@@ -110,9 +110,58 @@ transactional outbox in the same commit as the writes, so a rolled-back or retri
 releases them, and a committed one releases each exactly once. Handlers are checked against job
 limits; failed jobs retry with exponential backoff and then go to a dead-letter handler.
 
-See [`conformance/cases`](conformance/cases) for complete apps: a SaaS backend with plan limits and
-bulk operations, a ledger with transfers, and a document pipeline with queues, retries, a
-dead-letter handler, an OCR integration, a realtime channel, and a scanning cron.
+Objects, exact decimals, time zones, response types, worked examples, and webhooks:
+
+```ts
+const Order = a.entity("Order", {
+  key: ["customerId", "orderId"],
+  fields: {
+    customerId: t.string().max(64),
+    orderId: t.id().generated(),
+    items: t.array(t.object({ sku: t.string().max(32), qty: t.int().min(1), unitPrice: t.decimal(2) }), 10),
+    total: t.decimal(2),
+    tz: t.timeZone().default("UTC"),
+    placedAt: t.timestamp().defaultNow(),
+  },
+});
+
+a.route("POST /orders")
+  .body({ items: t.array(t.object({ sku: t.string().max(32), qty: t.int().min(1).max(99) }), 10) })
+  .status(201)
+  .errors({ unknownProducts: err.unprocessable("Some products don't exist", { missing: t.int() }) })
+  .example({
+    name: "totals exactly",
+    as: { userId: "c1" },
+    given: { Product: [{ sku: "BK-1", name: "Rust", price: "19.99", category: "books" }] },
+    request: { body: { items: [{ sku: "BK-1", qty: 3 }] } },
+    expect: { status: 201, body: { total: "59.97" } },
+  })
+  .handle(($, { body, errors }) => {
+    const lines = body.items.map((item) => {
+      const product = Product.get({ sku: item.sku });
+      return { sku: item.sku, qty: item.qty, found: product.exists(), price: product.price.ifNull($.decimal("0")) };
+    });
+    $.ensure(lines.every((l) => l.found), errors.unknownProducts, { missing: lines.count((l) => l.found.not()) });
+    const total = lines.sum((l) => l.price.times(l.qty)).round(2);
+    const order = Order.insert({ customerId: $.caller, items: lines.map(/* ... */), total });
+    $.header("location", $.fmt`/orders/${order.orderId}`);
+    return { orderId: order.orderId, total };
+  });
+
+a.webhook("POST /webhooks/payments", { verify: verify.stripe("STRIPE_WEBHOOK"), dedupe: { bodyField: "id" } })
+  .body({ id: t.string().max(64), orderId: t.id() })
+  .handle(/* ... */);
+```
+
+`aleph test` runs every `.example(...)`, and `aleph client app.ts -o client.ts` writes a typed
+fetch client from the inferred (or declared, `.returns(...)`) response types.
+
+See [`conformance/cases`](conformance/cases) for complete apps:
+- a SaaS backend with plan limits and bulk operations
+- a ledger with transfers
+- a document pipeline with queues, retries, a dead-letter handler, an OCR integration, a realtime
+  channel, and a scanning cron
+- a shop (`commerce`) that exercises nearly every v0.3 feature
 
 ## How it fits together
 
@@ -164,23 +213,45 @@ condition, so tests and typechecking don't need a build. Published packages use 
 
 ## Status
 
-Manifest format `0.2`. The core and SDK cover:
-- **Data:** entities; indexes that can be unique, partial (`where`), or computed (`lower(email)`);
-  queries by prefix with a range on the next field (`gte`/`lt`, ...); `findBy` on unique indexes;
-  invariants; append-only entities; counters and sums; serializable transactions; cursor
-  pagination; `upsert` and `insertIfAbsent`.
-- **Logic:** guards, branches, bounded loops, `map`/`filter`, string and number helpers.
-- **Routes:** auth (signed-in users, org roles, API key scopes), idempotency keys, rate limits,
-  descriptions, MCP tools.
+Manifest format `0.2` (language v0.3 features are additive). The core and SDK cover:
+- **Data:** entities with string, int, exact decimal, bool, enum, id, timestamp, time zone, list,
+  and nested object fields. Indexes can be unique, partial (`where`), or computed (`lower(email)`).
+  Queries take a prefix, a multi-value prefix (`anyOf`, like SQL's `IN`), or a range on the next
+  field. Also: invariants, append-only and versioned entities (with `ifVersion` updates), row TTL,
+  and parent relations with `childrenOf` and cascading deletes. Counters cover counts, sums,
+  min/max/latest, and distinct counts, can be grouped by computed parts (per day), and can be
+  sharded for hot keys. Plus serializable transactions, cursor pagination, `upsert`, and
+  `insertIfAbsent`.
+- **Logic:** guards, branches, early `return`, bounded loops, `map`/`filter`, and list helpers
+  (`sum`, `min`, `max`, `some`, `every`, `count`, `sortBy`, `slice`, `distinct`, `concat`,
+  `includes`). String helpers: `split`, `replace`, `slice`, `pad`, linear-time `matches`. Exact
+  decimal math with rounding modes, and integer `mod`, `pow`, `divFloor`, `divCeil`. Calendar math
+  in IANA time zones (`startOf`, `add`, `part`, `formatTime`), and `null` that propagates like SQL.
+- **Routes:** auth (signed-in users, org roles, API key scopes), caller profiles and a user
+  directory, idempotency keys, rate limits, status codes, headers, cookies, redirects, errors with
+  typed details, declared or inferred response types, CORS, deprecation, MCP tools, and inbound
+  webhooks (HMAC, Stripe, GitHub signatures, with event dedupe).
 - **Async:** events, entity-change triggers, queues with retries, backoff and dead letters, delayed
-  jobs, cron (optionally scanning an entity in batches), realtime channel publishes.
+  and keyed jobs (replace or cancel by key), interval and calendar schedules (`"mon 09:00"` in a
+  time zone), optionally scanning an entity in batches, and realtime channel publishes.
 - **Integrations:** journaled calls and after-commit sends, with mock providers for tests and `aleph dev`.
-- **Tooling:** the `aleph` CLI (`build`, `check` with route and handler cost tables, `dev` with
-  background processing, `openapi`, `mcp`), and source maps so diagnostics point at your code.
+- **Guarantees:** worst-case reads, writes, ops, bytes, effects, calls, and memory for every route
+  and handler, enforced by a runtime meter. A differential test over 100k+ generated plans checks
+  that actual usage never exceeds the bounds and that runs never leave their tenant.
+- **Tooling:** the `aleph` CLI:
+  - `build`
+  - `check`, with route and handler cost tables, and `--against` to classify schema changes and
+    print a migration plan
+  - `test`, which runs route examples
+  - `client`, which writes a typed fetch client
+  - `dev`, with background processing, `--watch`, `--seed`, persistent `--data`, `--secret`, and logs
+  - `openapi`, with response schemas, and `mcp`
+
+  Source maps make diagnostics point at your code.
 
 Platform-side capabilities aren't here yet: durable multi-step workflows, streaming LLM routes,
 blob storage, search and vector indexes, channel subscriptions, and real providers behind
-integrations. See the tickets in `aleph-infra/todo`.
+integrations. See the tickets in `aleph-infra/todo/platform`.
 
 ## License
 

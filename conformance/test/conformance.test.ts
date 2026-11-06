@@ -10,7 +10,7 @@
  */
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { DevEngine, validate } from "@aleph/core";
+import { compareManifests, DevEngine, runExamples, validate } from "@aleph/core";
 import type { CheckReport, Cost, Request, Response } from "@aleph/manifest";
 import type { App } from "@aleph/sdk";
 import { describe, expect, it } from "vitest";
@@ -56,6 +56,12 @@ describe.each(cases)("case %s", (name) => {
     golden(join(dir, "bounds.json"), `${JSON.stringify(result.report, null, 2)}\n`);
   });
 
+  it("passes every route example", () => {
+    const manifest = readFileSync(join(dir, "manifest.json"), "utf8");
+    const failures = runExamples(manifest).filter((r) => r.failures.length > 0);
+    expect(failures, JSON.stringify(failures, null, 2)).toEqual([]);
+  });
+
   it("runs every scenario step as expected, within bounds", () => {
     const manifest = readFileSync(join(dir, "manifest.json"), "utf8");
     const report = JSON.parse(readFileSync(join(dir, "bounds.json"), "utf8")) as CheckReport;
@@ -69,6 +75,18 @@ describe.each(cases)("case %s", (name) => {
       extra += step.advanceMs ?? 0;
       const now = scenario.startMs + i * scenario.stepMs + extra;
       const where = `step ${i} "${step.name}"`;
+      if (step.secret) {
+        engine.setSecret(step.secret.name, step.secret.value);
+        return;
+      }
+      if (step.user) {
+        engine.putUser(step.user.id, step.user.profile);
+        return;
+      }
+      if (step.seed) {
+        engine.seed(step.seed.entity, substitute(step.seed.rows, vars) as never, now);
+        return;
+      }
       if (step.mock) {
         const { integration, operation, response, error } = step.mock;
         engine.mock(integration, operation, error === undefined ? response : { error });
@@ -162,5 +180,52 @@ describe("invalid manifests", () => {
     expect(result.ok).toBe(false);
     if (!result.ok)
       expect([...new Set(result.diagnostics.map((d) => d.code))].sort()).toEqual([...codes].sort());
+  });
+});
+
+interface Edit {
+  set?: string[];
+  delete?: string[];
+  value?: unknown;
+}
+
+/** Applies `{ set: path, value }` and `{ delete: path }` edits to a JSON value (in place). */
+function applyEdits(target: unknown, edits: Edit[] = []): void {
+  for (const edit of edits) {
+    const path = edit.set ?? edit.delete ?? [];
+    let node = target as Record<string, unknown>;
+    for (const key of path.slice(0, -1)) node = node[key] as Record<string, unknown>;
+    const last = path.at(-1) as string;
+    if (edit.set) node[last] = structuredClone(edit.value);
+    else delete node[last];
+  }
+}
+
+describe("schema evolution", () => {
+  const spec = JSON.parse(
+    readFileSync(join(import.meta.dirname, "..", "evolution.json"), "utf8"),
+  ) as {
+    base: string;
+    cases: {
+      name: string;
+      base_edits?: Edit[];
+      edits: Edit[];
+      deployable: boolean;
+      expect: Record<string, string>;
+      migration?: unknown[];
+    }[];
+  };
+  const base = readFileSync(join(import.meta.dirname, "..", spec.base), "utf8");
+
+  it.each(spec.cases)("$name", (c) => {
+    const deployed = JSON.parse(base) as unknown;
+    applyEdits(deployed, c.base_edits);
+    const next = structuredClone(deployed);
+    applyEdits(next, c.edits);
+    const evolution = compareManifests(JSON.stringify(deployed), JSON.stringify(next));
+    expect(evolution.deployable, JSON.stringify(evolution, null, 2)).toBe(c.deployable);
+    const kinds = Object.fromEntries(evolution.changes.map((ch) => [ch.path, ch.kind]));
+    expect(kinds).toEqual(c.expect);
+    if (c.migration) expect(evolution.migration).toEqual(c.migration);
   });
 });

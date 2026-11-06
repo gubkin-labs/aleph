@@ -26,6 +26,9 @@ pub struct Limits {
     /// Maximum integration calls.
     #[cfg_attr(feature = "codegen", ts(type = "number"))]
     pub calls: u64,
+    /// Maximum bytes of values a plan binds (rows read, lists built, results), summed.
+    #[cfg_attr(feature = "codegen", ts(type = "number"))]
+    pub memory: u64,
     /// Maximum encoded size of a single row.
     #[cfg_attr(feature = "codegen", ts(type = "number"))]
     pub max_row_bytes: u64,
@@ -42,6 +45,7 @@ impl Limits {
         bytes_read: 2 * 1024 * 1024,
         effects: 50,
         calls: 3,
+        memory: 8 * 1024 * 1024,
         max_row_bytes: 64 * 1024,
         max_conflict_retries: 5,
     };
@@ -54,6 +58,7 @@ impl Limits {
         bytes_read: 8 * 1024 * 1024,
         effects: 200,
         calls: 5,
+        memory: 32 * 1024 * 1024,
         max_row_bytes: 64 * 1024,
         max_conflict_retries: 5,
     };
@@ -77,17 +82,19 @@ pub enum Resource {
     BytesRead,
     Effects,
     Calls,
+    Memory,
 }
 
 impl Resource {
     /// All resources, in reporting order.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Reads,
         Self::Writes,
         Self::Ops,
         Self::BytesRead,
         Self::Effects,
         Self::Calls,
+        Self::Memory,
     ];
 
     /// The resource's limit.
@@ -99,6 +106,7 @@ impl Resource {
             Self::BytesRead => limits.bytes_read,
             Self::Effects => limits.effects,
             Self::Calls => limits.calls,
+            Self::Memory => limits.memory,
         }
     }
 }
@@ -112,6 +120,7 @@ impl std::fmt::Display for Resource {
             Self::BytesRead => "bytes read",
             Self::Effects => "effects",
             Self::Calls => "integration calls",
+            Self::Memory => "bytes of memory",
         })
     }
 }
@@ -139,6 +148,9 @@ pub struct Cost {
     /// Integration calls.
     #[cfg_attr(feature = "codegen", ts(type = "number"))]
     pub calls: u64,
+    /// Bytes of values bound while running (see [`Limits::memory`]).
+    #[cfg_attr(feature = "codegen", ts(type = "number"))]
+    pub memory: u64,
 }
 
 impl Cost {
@@ -158,6 +170,7 @@ impl Cost {
         bytes_read: 0,
         effects: 0,
         calls: 0,
+        memory: 0,
     };
 
     /// The amount of one resource.
@@ -169,6 +182,7 @@ impl Cost {
             Resource::BytesRead => self.bytes_read,
             Resource::Effects => self.effects,
             Resource::Calls => self.calls,
+            Resource::Memory => self.memory,
         }
     }
 
@@ -182,6 +196,7 @@ impl Cost {
             bytes_read: self.bytes_read.saturating_add(other.bytes_read),
             effects: self.effects.saturating_add(other.effects),
             calls: self.calls.saturating_add(other.calls),
+            memory: self.memory.saturating_add(other.memory),
         }
     }
 
@@ -195,6 +210,7 @@ impl Cost {
             bytes_read: self.bytes_read.max(other.bytes_read),
             effects: self.effects.max(other.effects),
             calls: self.calls.max(other.calls),
+            memory: self.memory.max(other.memory),
         }
     }
 
@@ -208,6 +224,7 @@ impl Cost {
             bytes_read: self.bytes_read.saturating_mul(n),
             effects: self.effects.saturating_mul(n),
             calls: self.calls.saturating_mul(n),
+            memory: self.memory.saturating_mul(n),
         }
     }
 

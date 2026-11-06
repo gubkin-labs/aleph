@@ -2,6 +2,7 @@
 import type { Field } from "./Field.js";
 import type { Index } from "./Index.js";
 import type { RowPredicate } from "./RowPredicate.js";
+import type { Ttl } from "./Ttl.js";
 
 /**
  * A stored entity: a schema plus an ordered primary key.
@@ -25,6 +26,19 @@ indexes: { [key in string]: Index },
  * fails the request and rolls back.
  */
 invariants?: { [key in string]: RowPredicate }, 
+/**
+ * Keeps an int `version` field: 1 on insert, incremented on every update. Updates can
+ * require an expected version (optimistic concurrency for clients).
+ */
+versioned?: boolean, 
+/**
+ * Rows expire: they're invisible once `field + ms` has passed, and swept in the background.
+ */
+ttl?: Ttl, 
+/**
+ * Marks the entity deprecated, with a note. A later revision may then remove it.
+ */
+deprecated?: string, 
 /**
  * `false` for append-only entities: rows can be inserted but never updated or deleted.
  */

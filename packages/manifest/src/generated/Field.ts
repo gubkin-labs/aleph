@@ -17,4 +17,8 @@ optional?: boolean,
 /**
  * Value used when the field isn't provided.
  */
-default?: DefaultValue, };
+default?: DefaultValue, 
+/**
+ * Marks the field deprecated, with a note. A later revision may then remove it.
+ */
+deprecated?: string, };

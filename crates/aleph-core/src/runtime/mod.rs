@@ -12,12 +12,16 @@ use crate::limits::Cost;
 use crate::manifest::{Auth, Method};
 use crate::store::{CommitError, Store};
 
+mod builtins;
+mod cron;
 mod effects;
 mod env;
 mod exec;
 mod input;
 mod meter;
 mod process;
+mod time;
+mod webhook;
 
 pub use effects::{
     Delivery, DeliveryKind, Integrations, MemorySink, MockIntegrations, NoIntegrations, NullSink,
@@ -26,8 +30,26 @@ pub use effects::{
 #[cfg(not(target_arch = "wasm32"))]
 pub use env::SystemEnv;
 pub use env::{Env, FixedEnv};
+pub use exec::LogEntry;
+pub(crate) use exec::sort_comparisons;
 pub use input::InputProblem;
 pub use process::{HandlerRun, ProcessReport};
+pub use webhook::{MemorySecrets, Secrets, sign_hex};
+
+/// Whether an IANA time zone exists in the bundled database.
+pub(crate) fn time_zone_exists(name: &str) -> bool {
+    time::zone(name).is_some()
+}
+
+/// Checks a cron expression.
+pub(crate) fn parse_cron(expr: &str) -> Result<(), String> {
+    cron::Cron::parse(expr).map(|_| ())
+}
+
+/// Checks a `strftime` pattern.
+pub(crate) fn valid_time_pattern(pattern: &str) -> Result<(), String> {
+    time::valid_pattern(pattern)
+}
 
 use exec::{Exec, ExecError};
 use input::Inputs;
@@ -66,6 +88,18 @@ pub struct Request {
     #[serde(default)]
     #[cfg_attr(feature = "codegen", ts(optional))]
     pub idempotency_key: Option<String>,
+    /// Request headers, with lowercase names. Used for webhook signatures and CORS.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, String>>", optional)
+    )]
+    pub headers: BTreeMap<String, String>,
+    /// The exact body text, for webhook signatures. When set and `body` isn't, the body is
+    /// parsed from it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub raw_body: Option<String>,
 }
 
 /// An authenticated caller.
@@ -88,6 +122,10 @@ pub struct Caller {
     #[serde(default)]
     #[cfg_attr(feature = "codegen", ts(optional))]
     pub api_key: Option<ApiKey>,
+    /// The signed-in user's profile fields (those declared in `auth.profile`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(feature = "codegen", ts(optional, type = "Record<string, unknown>"))]
+    pub profile: BTreeMap<String, serde_json::Value>,
 }
 
 impl Caller {
@@ -134,6 +172,38 @@ pub struct Response {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(feature = "codegen", ts(as = "Option<bool>", optional))]
     pub replayed: bool,
+    /// Response headers (lowercase names), set by the plan or by the platform (CORS,
+    /// deprecation).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, String>>", optional)
+    )]
+    pub headers: BTreeMap<String, String>,
+    /// `Set-Cookie` header values, one per cookie.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "codegen", ts(as = "Option<Vec<String>>", optional))]
+    pub cookies: Vec<String>,
+    /// Values the plan logged with `log`, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "codegen", ts(as = "Option<Vec<LogEntry>>", optional))]
+    pub logs: Vec<LogEntry>,
+}
+
+impl Default for Response {
+    fn default() -> Self {
+        Self {
+            route: None,
+            status: 200,
+            body: serde_json::Value::Null,
+            usage: Cost::default(),
+            attempts: 0,
+            replayed: false,
+            headers: BTreeMap::new(),
+            cookies: Vec::new(),
+            logs: Vec::new(),
+        }
+    }
 }
 
 impl Response {
@@ -152,12 +222,9 @@ impl Response {
             map.insert("details".into(), details);
         }
         Self {
-            route: None,
             status,
             body,
-            usage: Cost::default(),
-            attempts: 0,
-            replayed: false,
+            ..Self::default()
         }
     }
 }
@@ -208,9 +275,74 @@ pub struct Engine {
     env: Arc<dyn Env>,
     sink: Arc<dyn Sink>,
     integrations: Arc<dyn Integrations>,
+    secrets: Arc<dyn Secrets>,
     patterns: Vec<RoutePattern>,
     limits: crate::limits::Limits,
     rate_limiter: RateLimiter,
+    write_queues: WriteQueues,
+}
+
+/// Per-key write queuing for hot spots. Optimistic transactions are cheap until many writers
+/// hit the same key; then they mostly retry. After a conflict, a route's executions for that
+/// tenant take turns (one at a time) until it cools down, so they commit instead of retrying.
+#[derive(Debug)]
+struct WriteQueues {
+    stripes: Vec<WriteQueue>,
+}
+
+#[derive(Debug, Default)]
+struct WriteQueue {
+    turn: std::sync::Mutex<()>,
+    /// How many more executions take turns. Reset on every conflict, counted down on commit.
+    hot: std::sync::atomic::AtomicU32,
+}
+
+impl WriteQueues {
+    /// Executions after a conflict that keep taking turns.
+    const COOLDOWN: u32 = 16;
+
+    fn new() -> Self {
+        Self {
+            stripes: (0..64).map(|_| WriteQueue::default()).collect(),
+        }
+    }
+
+    fn stripe(&self, tenant: &TenantId, route: &str) -> &WriteQueue {
+        let hash = tenant
+            .as_str()
+            .bytes()
+            .chain([0])
+            .chain(route.bytes())
+            .fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+                (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+            });
+        &self.stripes[usize::try_from(hash % 64).unwrap_or(0)]
+    }
+}
+
+impl WriteQueue {
+    fn is_hot(&self) -> bool {
+        self.hot.load(std::sync::atomic::Ordering::Relaxed) > 0
+    }
+
+    fn take_turn(&self) -> std::sync::MutexGuard<'_, ()> {
+        self.turn
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn conflicted(&self) {
+        self.hot
+            .store(WriteQueues::COOLDOWN, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn committed(&self) {
+        let _ = self.hot.try_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |h| h.checked_sub(1),
+        );
+    }
 }
 
 /// Fixed-window rate limit counters, in memory. On the platform, rate limits are enforced at the
@@ -281,9 +413,11 @@ impl Engine {
             env,
             sink: Arc::new(NullSink),
             integrations: Arc::new(NoIntegrations),
+            secrets: Arc::new(MemorySecrets::new()),
             patterns,
             limits,
             rate_limiter: RateLimiter::default(),
+            write_queues: WriteQueues::new(),
         }
     }
 
@@ -310,6 +444,108 @@ impl Engine {
         self
     }
 
+    /// Uses `secrets` for webhook signing keys.
+    #[must_use]
+    pub fn with_secrets(mut self, secrets: Arc<dyn Secrets>) -> Self {
+        self.secrets = secrets;
+        self
+    }
+
+    /// Stores a user's profile in the tenant's user directory, for `auth.User.get`. Only fields
+    /// declared in `auth.profile` are kept; values that don't fit their declaration are errors.
+    pub fn put_user(
+        &self,
+        tenant: &TenantId,
+        user_id: &str,
+        profile: &serde_json::Map<String, serde_json::Value>,
+    ) -> Result<(), String> {
+        let keys = Keyspace::new(tenant);
+        let mut stored = BTreeMap::new();
+        for (name, field) in &self.manifest.manifest().auth.profile {
+            let value = match profile.get(name) {
+                Some(json) => crate::value::Value::from_json(json.clone())?,
+                None => crate::value::Value::Null,
+            };
+            let nullable = crate::manifest::Field {
+                optional: true,
+                ..field.clone()
+            };
+            let value = input::conform(&nullable, value).map_err(|p| format!("{name}: {p}"))?;
+            stored.insert(name.clone(), value);
+        }
+        let bytes =
+            serde_json::to_vec(&crate::value::Value::Object(stored)).map_err(|e| e.to_string())?;
+        let mut tx = self.store.begin();
+        tx.put(keys.user(user_id), bytes);
+        tx.commit().map_err(|e| format!("{e:?}"))
+    }
+
+    /// Inserts seed rows into an entity, as if a plan inserted them: defaults, indexes,
+    /// counters, invariants, and change triggers all apply. Rows whose key exists are skipped.
+    /// Returns how many were inserted.
+    pub fn seed(
+        &self,
+        tenant: &TenantId,
+        entity: &str,
+        rows: &[serde_json::Value],
+    ) -> Result<usize, String> {
+        let plan = crate::manifest::Plan {
+            body: Vec::new(),
+            output: crate::manifest::Expr::Lit {
+                value: crate::manifest::Literal::Null,
+            },
+        };
+        let errors = BTreeMap::new();
+        let keys = Keyspace::new(tenant);
+        let env = self.env.as_ref();
+        let now = env.now_ms();
+        let inputs = Inputs::default();
+        let mut journal = effects::Journal::default();
+        let mut tx = self.store.begin();
+        // Seeding isn't a plan, so it isn't held to plan limits.
+        let mut meter = Meter::new(crate::limits::Limits {
+            reads: u64::MAX,
+            writes: u64::MAX,
+            ops: u64::MAX,
+            bytes_read: u64::MAX,
+            effects: u64::MAX,
+            calls: 0,
+            ..self.limits
+        });
+        let mut exec = Exec {
+            manifest: self.manifest.manifest(),
+            plan: &plan,
+            errors: &errors,
+            tenant,
+            integrations: self.integrations.as_ref(),
+            journal: &mut journal,
+            effects: Vec::new(),
+            tx: &mut *tx,
+            keys: &keys,
+            meter: &mut meter,
+            env,
+            now,
+            caller: None,
+            inputs: &inputs,
+            vars: HashMap::new(),
+            metered: false,
+            meta: exec::ResponseMeta::default(),
+        };
+        let mut inserted = 0;
+        for (i, row) in rows.iter().enumerate() {
+            if exec
+                .seed_row(entity, row)
+                .map_err(|e| format!("row {i}: {e}"))?
+            {
+                inserted += 1;
+            }
+        }
+        let effects = std::mem::take(&mut exec.effects);
+        process::write_outbox(&mut *tx, &keys, env, now, effects).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| format!("{e:?}"))?;
+        Ok(inserted)
+    }
+
     /// The manifest this engine runs.
     pub fn manifest(&self) -> &ValidatedManifest {
         &self.manifest
@@ -317,6 +553,63 @@ impl Engine {
 
     /// Handles one request for `tenant`.
     pub fn handle(&self, tenant: &TenantId, request: &Request) -> Response {
+        let cors = self.cors_headers(request);
+        if request.method == Method::Options {
+            // A CORS preflight: answered without running anything.
+            return match cors {
+                Some(mut headers) => {
+                    let cfg = self.manifest.manifest().cors.as_ref();
+                    let mut allowed: Vec<String> =
+                        ["content-type", "authorization", "idempotency-key"]
+                            .iter()
+                            .map(|h| (*h).to_owned())
+                            .collect();
+                    allowed.extend(cfg.map(|c| c.headers.clone()).unwrap_or_default());
+                    headers.insert(
+                        "access-control-allow-methods".into(),
+                        "GET, POST, PUT, PATCH, DELETE".into(),
+                    );
+                    headers.insert("access-control-allow-headers".into(), allowed.join(", "));
+                    if let Some(max_age) = cfg.and_then(|c| c.max_age_s) {
+                        headers.insert("access-control-max-age".into(), max_age.to_string());
+                    }
+                    Response {
+                        status: 204,
+                        headers,
+                        ..Response::default()
+                    }
+                }
+                None => Response::error(405, "method_not_allowed", "OPTIONS isn't allowed here"),
+            };
+        }
+        let mut response = self.route_request(tenant, request);
+        if let Some(headers) = cors {
+            response.headers.extend(headers);
+        }
+        response
+    }
+
+    /// CORS headers for a request from an allowed origin.
+    fn cors_headers(&self, request: &Request) -> Option<BTreeMap<String, String>> {
+        let cors = self.manifest.manifest().cors.as_ref()?;
+        let origin = request.headers.get("origin")?;
+        let any = cors.origins.iter().any(|o| o == "*");
+        if !any && !cors.origins.contains(origin) {
+            return None;
+        }
+        let mut headers = BTreeMap::new();
+        let allow = if any { "*".to_owned() } else { origin.clone() };
+        headers.insert("access-control-allow-origin".into(), allow);
+        if !any {
+            headers.insert("vary".into(), "Origin".into());
+        }
+        if cors.credentials {
+            headers.insert("access-control-allow-credentials".into(), "true".into());
+        }
+        Some(headers)
+    }
+
+    fn route_request(&self, tenant: &TenantId, request: &Request) -> Response {
         let segments = split_path(&request.path);
         let mut path_matched = false;
         let mut found = None;
@@ -349,13 +642,18 @@ impl Engine {
             };
         };
         let route = &self.manifest.manifest().routes[route_index];
-        Response {
+        let mut response = Response {
             route: Some(route.id.clone()),
             ..self.handle_route(tenant, route, &raw_params, request)
+        };
+        if route.deprecated.is_some() {
+            response.headers.insert("deprecation".into(), "true".into());
         }
+        response
     }
 
     /// Authorizes the caller, decodes inputs, and runs one matched route.
+    #[allow(clippy::too_many_lines, reason = "the request pipeline, in order")]
     fn handle_route(
         &self,
         tenant: &TenantId,
@@ -378,7 +676,57 @@ impl Engine {
                 );
             }
         }
+        let parsed_body;
+        let mut body = request.body.as_ref();
+        let mut event_id = None;
+        if let Some(hook) = &route.webhook {
+            let Some(raw) = request.raw_body.as_deref() else {
+                return Response::error(400, "invalid_input", "webhooks need the raw request body");
+            };
+            let secret = self.secrets.get(tenant, hook.verify.secret());
+            match webhook::verify(
+                &hook.verify,
+                secret.as_deref(),
+                &request.headers,
+                raw,
+                self.env.now_ms(),
+            ) {
+                Ok(()) => {}
+                Err(webhook::Rejected::MissingSecret(name)) => {
+                    return Response::error(
+                        500,
+                        "secret_missing",
+                        format!("the webhook secret {name:?} isn't configured"),
+                    );
+                }
+                Err(webhook::Rejected::Invalid(why)) => {
+                    return Response::error(401, "invalid_signature", why);
+                }
+            }
+            parsed_body = match serde_json::from_str::<serde_json::Value>(raw) {
+                Ok(json) => json,
+                Err(_) => return Response::error(400, "invalid_json", "the body isn't valid JSON"),
+            };
+            if let Some(dedupe) = &hook.dedupe {
+                let from_header = dedupe
+                    .header
+                    .as_ref()
+                    .and_then(|h| request.headers.get(h))
+                    .cloned();
+                let from_body = dedupe
+                    .body_field
+                    .as_ref()
+                    .and_then(|f| match parsed_body.get(f) {
+                        Some(serde_json::Value::String(s)) => Some(s.clone()),
+                        Some(serde_json::Value::Number(n)) => Some(n.to_string()),
+                        _ => None,
+                    });
+                event_id = from_header.or(from_body).map(|id| (dedupe.ttl_ms, id));
+            }
+            body = Some(&parsed_body);
+        }
         let idempotency = match (route.idempotency, request.idempotency_key.as_deref()) {
+            _ if event_id.is_some() => None,
             (Some(cfg), None) if cfg.required => {
                 return Response::error(
                     400,
@@ -421,7 +769,8 @@ impl Engine {
             ),
             body: input::decode_body(
                 &route.input.body,
-                request.body.as_ref(),
+                body,
+                route.webhook.is_some(),
                 env,
                 now,
                 &mut problems,
@@ -439,11 +788,19 @@ impl Engine {
         }
 
         let keys = Keyspace::new(tenant);
-        let idempotency = idempotency.map(|(cfg, key)| Replay {
-            key: keys.idempotency(&route.id, key),
-            fingerprint: fingerprint(&inputs),
-            ttl_ms: i64::from(cfg.ttl_ms),
-        });
+        let idempotency = match &event_id {
+            // Webhook deliveries are deduplicated by event id, through the same replay records.
+            Some((ttl_ms, id)) => Some(Replay {
+                key: keys.idempotency(&route.id, id),
+                fingerprint: fingerprint(&inputs),
+                ttl_ms: i64::from(*ttl_ms),
+            }),
+            None => idempotency.map(|(cfg, key)| Replay {
+                key: keys.idempotency(&route.id, key),
+                fingerprint: fingerprint(&inputs),
+                ttl_ms: i64::from(cfg.ttl_ms),
+            }),
+        };
         self.execute(
             &keys,
             route,
@@ -457,6 +814,7 @@ impl Engine {
     /// Runs a route's plan, re-running it on transaction conflicts. With `replay`, a stored
     /// response for the same idempotency key is returned instead, and a new successful response
     /// is stored in the same transaction as the plan's writes.
+    #[allow(clippy::too_many_arguments)]
     fn execute(
         &self,
         keys: &Keyspace,
@@ -471,14 +829,23 @@ impl Engine {
         let max_attempts = limits.max_conflict_retries.saturating_add(1);
         let mut usage = Cost::default();
         let mut journal = effects::Journal::default();
+        let queue = self.write_queues.stripe(keys.tenant(), &route.id);
+        // While the route is hot, take turns from the start.
+        let mut turn = queue.is_hot().then(|| queue.take_turn());
         for attempt in 1..=max_attempts {
+            if attempt > 1 && turn.is_none() {
+                // This execution conflicted: queue behind the other writers instead of racing.
+                turn = Some(queue.take_turn());
+            }
             let mut tx = self.store.begin();
             let mut meter = Meter::new(limits);
             journal.rewind();
+            let mut logs = Vec::new();
             let response = match attempt_once(&mut *tx, &mut meter, replay, now, |tx, meter| {
                 let mut exec = Exec {
                     manifest: self.manifest.manifest(),
                     plan: &route.plan,
+                    errors: &route.errors,
                     tenant: keys.tenant(),
                     integrations: self.integrations.as_ref(),
                     journal: &mut journal,
@@ -492,30 +859,38 @@ impl Engine {
                     inputs,
                     vars: HashMap::new(),
                     metered: true,
+                    meta: exec::ResponseMeta::default(),
                 };
-                let value = exec.run()?;
+                let result = exec.run();
+                logs = std::mem::take(&mut exec.meta.logs);
+                let value = result?;
                 let effects = std::mem::take(&mut exec.effects);
                 process::write_outbox(exec.tx, keys, env, now, effects)?;
-                Ok(value)
+                finish(route, value, std::mem::take(&mut exec.meta))
             }) {
                 Ok(Outcome::Replayed(stored)) => Response {
-                    route: None,
                     status: stored.status,
                     body: stored.body,
-                    usage: Cost::default(),
-                    attempts: attempt,
+                    headers: stored.headers,
+                    cookies: stored.cookies,
                     replayed: true,
+                    ..Response::default()
                 },
-                Ok(Outcome::Ran(body)) => match tx.commit() {
-                    Ok(()) => Response {
-                        route: None,
-                        status: 200,
-                        body,
-                        usage: Cost::default(),
-                        attempts: attempt,
-                        replayed: false,
-                    },
+                Ok(Outcome::Ran(finished)) => match tx.commit() {
+                    Ok(()) => {
+                        if turn.is_some() {
+                            queue.committed();
+                        }
+                        Response {
+                            status: finished.status,
+                            body: finished.body,
+                            headers: finished.headers,
+                            cookies: finished.cookies,
+                            ..Response::default()
+                        }
+                    }
                     Err(CommitError::Conflict) => {
+                        queue.conflicted();
                         usage = meter.used();
                         continue;
                     }
@@ -527,6 +902,7 @@ impl Engine {
                     // The failure was decided on what this attempt read; if any of it changed
                     // meanwhile, the decision may be wrong, so re-run instead of answering.
                     if tx.validate() == Err(CommitError::Conflict) {
+                        queue.conflicted();
                         usage = meter.used();
                         continue;
                     }
@@ -536,6 +912,7 @@ impl Engine {
             return Response {
                 usage: meter.used(),
                 attempts: attempt,
+                logs,
                 ..response
             };
         }
@@ -549,6 +926,40 @@ impl Engine {
             )
         }
     }
+}
+
+/// A successful response, before commit.
+struct Finished {
+    status: u16,
+    body: serde_json::Value,
+    headers: BTreeMap<String, String>,
+    cookies: Vec<String>,
+}
+
+/// Shapes a plan's result into a response: the declared `returns` type (dropping undeclared
+/// fields), the status it set, and no body for 204.
+fn finish(
+    route: &crate::manifest::Route,
+    value: crate::value::Value,
+    meta: exec::ResponseMeta,
+) -> Result<Finished, ExecError> {
+    let value = match &route.returns {
+        Some(declared) => input::conform_output(declared, value)
+            .map_err(|p| ExecError::Runtime(format!("response doesn't match `returns`: {p}")))?,
+        None => value,
+    };
+    let status = meta.status.unwrap_or(200);
+    let body = if status == 204 {
+        serde_json::Value::Null
+    } else {
+        value.to_json()
+    };
+    Ok(Finished {
+        status,
+        body,
+        headers: meta.headers,
+        cookies: meta.cookies,
+    })
 }
 
 /// Where and how to store a route's response for idempotent replay.
@@ -565,11 +976,15 @@ struct StoredResponse {
     fingerprint: String,
     status: u16,
     body: serde_json::Value,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    headers: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    cookies: Vec<String>,
     expires_at: i64,
 }
 
 enum Outcome {
-    Ran(serde_json::Value),
+    Ran(Finished),
     Replayed(StoredResponse),
 }
 
@@ -580,10 +995,7 @@ fn attempt_once(
     meter: &mut Meter,
     replay: Option<&Replay>,
     now: i64,
-    run: impl FnOnce(
-        &mut dyn crate::store::Transaction,
-        &mut Meter,
-    ) -> Result<crate::value::Value, ExecError>,
+    run: impl FnOnce(&mut dyn crate::store::Transaction, &mut Meter) -> Result<Finished, ExecError>,
 ) -> Result<Outcome, ExecError> {
     if let Some(replay) = replay
         && let Some(bytes) = tx.get(&replay.key)?
@@ -600,12 +1012,14 @@ fn attempt_once(
     } else if replay.is_some() {
         meter.read(0)?;
     }
-    let body = run(&mut *tx, &mut *meter)?.to_json();
+    let finished = run(&mut *tx, &mut *meter)?;
     if let Some(replay) = replay {
         let stored = StoredResponse {
             fingerprint: replay.fingerprint.clone(),
-            status: 200,
-            body,
+            status: finished.status,
+            body: finished.body,
+            headers: finished.headers,
+            cookies: finished.cookies,
             expires_at: now.saturating_add(replay.ttl_ms),
         };
         let bytes = serde_json::to_vec(&stored).map_err(|e| ExecError::Runtime(e.to_string()))?;
@@ -618,9 +1032,14 @@ fn attempt_once(
         }
         tx.put(replay.key.clone(), bytes);
         meter.write(1)?;
-        return Ok(Outcome::Ran(stored.body));
+        return Ok(Outcome::Ran(Finished {
+            status: stored.status,
+            body: stored.body,
+            headers: stored.headers,
+            cookies: stored.cookies,
+        }));
     }
-    Ok(Outcome::Ran(body))
+    Ok(Outcome::Ran(finished))
 }
 
 /// A stable fingerprint of a request's decoded inputs (FNV-1a over canonical JSON), so a reused
@@ -656,6 +1075,7 @@ fn rate_subject(per: crate::manifest::RateSubject, request: &Request) -> String 
 }
 
 /// Enforces a route's auth rule. The caller's identity is already authenticated by the platform.
+#[allow(clippy::result_large_err, reason = "the error is the response to send")]
 fn authorize(
     auth: &Auth,
     caller: Option<&Caller>,
@@ -706,8 +1126,13 @@ fn authorize(
 
 fn error_response(route: &crate::manifest::Route, error: ExecError) -> Response {
     match error {
-        ExecError::Failed(name) => match route.errors.get(&name) {
-            Some(decl) => Response::error(decl.status, &name, decl.message.clone()),
+        ExecError::Failed(name, details) => match route.errors.get(&name) {
+            Some(decl) => Response::error_with(
+                decl.status,
+                &name,
+                decl.message.clone(),
+                details.map(|d| d.to_json()),
+            ),
             None => Response::error(500, "runtime_error", format!("undeclared error {name}")),
         },
         ExecError::OverBudget(e) => Response::error(500, "budget_exceeded", e.to_string()),
@@ -728,6 +1153,11 @@ fn error_response(route: &crate::manifest::Route, error: ExecError) -> Response 
             "idempotency_key_reused",
             "this idempotency key was already used with different inputs",
         ),
+        ExecError::VersionConflict(entity) => Response::error(
+            409,
+            "version_conflict",
+            format!("{entity} was changed since you read it; reload and try again"),
+        ),
         ExecError::NotFound(entity) => {
             Response::error(404, "not_found", format!("{entity} not found"))
         }
@@ -736,5 +1166,7 @@ fn error_response(route: &crate::manifest::Route, error: ExecError) -> Response 
         }
         ExecError::Store(e) => Response::error(503, "storage_unavailable", e.to_string()),
         ExecError::Runtime(message) => Response::error(500, "runtime_error", message),
+        // `run` turns an early return into a value; it never reaches here.
+        ExecError::Returned(_) => Response::error(500, "runtime_error", "unexpected return"),
     }
 }

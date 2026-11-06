@@ -16,6 +16,7 @@ use crate::value::Value;
 const NULL: u8 = 0x00;
 const STRING: u8 = 0x02;
 const INT: u8 = 0x15;
+const DECIMAL: u8 = 0x16;
 const FALSE: u8 = 0x26;
 const TRUE: u8 = 0x27;
 const ESCAPE: u8 = 0xFF;
@@ -26,6 +27,8 @@ const COUNTERS: &str = "c";
 const IDEMPOTENCY: &str = "d";
 const OUTBOX: &str = "o";
 const SCHEDULES: &str = "s";
+const USERS: &str = "u";
+const JOBS: &str = "j";
 
 /// A tenant (app) identifier: 1–64 characters of `[A-Za-z0-9_-]`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -71,6 +74,11 @@ impl Key {
     /// The encoded bytes.
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
+    }
+
+    /// A key from its encoded bytes (from [`Key::as_bytes`]).
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        Self(bytes)
     }
 
     /// The smallest key greater than this one.
@@ -204,6 +212,8 @@ pub enum KeyPart<'a> {
     Int(i64),
     /// A string.
     Str(&'a str),
+    /// A decimal, as its units at scale 18.
+    Decimal(i128),
 }
 
 impl<'a> KeyPart<'a> {
@@ -214,6 +224,7 @@ impl<'a> KeyPart<'a> {
             Value::Bool(b) => Self::Bool(*b),
             Value::Int(i) => Self::Int(*i),
             Value::String(s) => Self::Str(s),
+            Value::Decimal(d) => Self::Decimal(d.normalized()),
             Value::List(_) | Value::Object(_) => return None,
         })
     }
@@ -227,6 +238,10 @@ impl<'a> KeyPart<'a> {
                 out.push(INT);
                 // Flipping the sign bit makes two's-complement order match unsigned byte order.
                 out.extend_from_slice(&(i.cast_unsigned() ^ (1 << 63)).to_be_bytes());
+            }
+            Self::Decimal(units) => {
+                out.push(DECIMAL);
+                out.extend_from_slice(&(units.cast_unsigned() ^ (1 << 127)).to_be_bytes());
             }
             Self::Str(s) => {
                 out.push(STRING);
@@ -340,6 +355,21 @@ impl Keyspace {
     }
 
     /// The key of a stored idempotent response.
+    /// The key of a user's profile in the tenant's user directory.
+    pub fn user(&self, user_id: &str) -> Key {
+        self.key(&[KeyPart::Str(USERS)], &[KeyPart::Str(user_id)], &[])
+    }
+
+    /// The key of a keyed job's pointer to its outbox entry.
+    pub fn job(&self, queue: &str, job_key: &str) -> Key {
+        self.key(
+            &[KeyPart::Str(JOBS), KeyPart::Str(queue)],
+            &[KeyPart::Str(job_key)],
+            &[],
+        )
+    }
+
+    /// The key of the idempotency record for `key` on `route`.
     pub fn idempotency(&self, route: &str, key: &str) -> Key {
         self.key(
             &[KeyPart::Str(IDEMPOTENCY), KeyPart::Str(route)],
@@ -351,6 +381,11 @@ impl Keyspace {
     /// The key of one counter group.
     pub fn counter(&self, counter: &str, group: &[KeyPart<'_>]) -> Key {
         self.key(&[KeyPart::Str(COUNTERS), KeyPart::Str(counter)], group, &[])
+    }
+
+    /// The range of a counter's keys that extend `group` (aggregate entries).
+    pub fn counter_range(&self, counter: &str, group: &[KeyPart<'_>]) -> KeyRange {
+        self.range(&[&[KeyPart::Str(COUNTERS), KeyPart::Str(counter)], group])
     }
 
     fn key(&self, head: &[KeyPart<'_>], middle: &[KeyPart<'_>], tail: &[KeyPart<'_>]) -> Key {

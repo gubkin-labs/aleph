@@ -9,6 +9,8 @@ import type {
   CheckReport,
   Delivery,
   Diagnostic,
+  EvolutionReport,
+  ExampleResult,
   Limits,
   Manifest,
   ProcessReport,
@@ -23,6 +25,11 @@ interface WasmDevEngine {
   mock(integration: string, operation: string, responseJson: string, error?: string): void;
   takeDeliveries(): string;
   takeCalls(): string;
+  setSecret(name: string, value: string): void;
+  putUser(userId: string, profileJson: string): void;
+  seed(entity: string, rowsJson: string, nowMs: number): number;
+  snapshot(): string;
+  restore(snapshotJson: string): void;
   free(): void;
 }
 
@@ -31,6 +38,8 @@ interface WasmBindings {
   defaultLimits(): string;
   jobLimits(): string;
   validate(manifestJson: string): string;
+  runExamples(manifestJson: string): string;
+  compareManifests(oldJson: string, newJson: string): string;
   DevEngine: new (manifestJson: string, seed: number) => WasmDevEngine;
 }
 
@@ -74,6 +83,31 @@ export function jobLimits(): Limits {
 export function validate(manifest: Manifest | string): ValidateResult {
   const json = typeof manifest === "string" ? manifest : JSON.stringify(manifest);
   return JSON.parse(wasm.validate(json)) as ValidateResult;
+}
+
+/**
+ * Runs every route example (`.example(...)`) on a fresh engine with deterministic time and ids.
+ * Throws {@link InvalidManifestError} if the manifest is invalid.
+ */
+export function runExamples(manifest: Manifest | string): ExampleResult[] {
+  const json = typeof manifest === "string" ? manifest : JSON.stringify(manifest);
+  try {
+    return JSON.parse(wasm.runExamples(json)) as ExampleResult[];
+  } catch (error) {
+    throw toInvalidManifest(error);
+  }
+}
+
+/** The result of {@link compareManifests}. */
+export type Evolution = EvolutionReport & {
+  /** No breaking change that the deployed manifest didn't deprecate first. */
+  deployable: boolean;
+};
+
+/** Classifies every change from the deployed manifest to a new one, with a migration plan. */
+export function compareManifests(deployed: Manifest | string, next: Manifest | string): Evolution {
+  const json = (m: Manifest | string) => (typeof m === "string" ? m : JSON.stringify(m));
+  return JSON.parse(wasm.compareManifests(json(deployed), json(next))) as Evolution;
 }
 
 /** Options for {@link DevEngine}. */
@@ -133,6 +167,38 @@ export class DevEngine {
   /** Removes and returns the integration calls made so far. */
   takeCalls(): RecordedCall[] {
     return JSON.parse(this.#engine.takeCalls()) as RecordedCall[];
+  }
+
+  /** Sets a secret, such as a webhook signing key. */
+  setSecret(name: string, value: string): void {
+    this.#engine.setSecret(name, value);
+  }
+
+  /** Stores a user profile in the user directory (read with `auth.User.get`). */
+  putUser(userId: string, profile: Record<string, unknown>): void {
+    this.#engine.putUser(userId, JSON.stringify(profile));
+  }
+
+  /**
+   * Inserts seed rows into an entity, maintaining indexes and counters like a real insert.
+   * Rows whose key exists are skipped. Returns how many were inserted.
+   */
+  seed(
+    entity: string,
+    rows: readonly Record<string, unknown>[],
+    nowMs: number = Date.now(),
+  ): number {
+    return this.#engine.seed(entity, JSON.stringify(rows), nowMs);
+  }
+
+  /** Every stored entry, to persist dev data between restarts (see {@link DevEngine.restore}). */
+  snapshot(): string {
+    return this.#engine.snapshot();
+  }
+
+  /** Replaces the stored data with a {@link DevEngine.snapshot}. */
+  restore(snapshot: string): void {
+    this.#engine.restore(snapshot);
   }
 
   /** Releases the WASM memory held by this engine. */

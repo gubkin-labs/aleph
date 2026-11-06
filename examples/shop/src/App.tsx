@@ -7,18 +7,10 @@ import {
   useQuery,
 } from "@aleph-examples/inspector/react";
 import { useState } from "react";
+// Generated from app.ts by `pnpm client`: changing a route's response breaks this file's types.
+import type { Routes } from "./client.ts";
 
-interface Order {
-  orderId: string;
-  totalCents: number;
-  status: "pending" | "paid" | "failed";
-  chargeId: string | null;
-}
-
-interface Orders {
-  revenueCents: number;
-  page: { items: Order[]; cursor: string | null };
-}
+type Orders = Routes["myOrders"]["output"];
 
 const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 

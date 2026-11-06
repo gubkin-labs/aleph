@@ -6,17 +6,11 @@ import {
   useQuery,
 } from "@aleph-examples/inspector/react";
 import { useState } from "react";
+// Generated from app.ts by `pnpm client`: changing a route's response breaks this file's types.
+import type { Routes } from "./client.ts";
 
-interface Member {
-  memberId: string;
-  email: string;
-  role: "owner" | "admin" | "member";
-}
-
-interface Members {
-  seats: number;
-  page: { items: Member[]; cursor: string | null };
-}
+type Members = Routes["listMembers"]["output"];
+type Member = Members["page"]["items"][number];
 
 const ORG = "/orgs/acme";
 

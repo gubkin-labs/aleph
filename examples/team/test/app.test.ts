@@ -28,14 +28,14 @@ describe("team", () => {
       caller: owner,
       body: { name: "Acme", plan: "free" },
     });
-    expect(invite("a@acme.dev", "k1").status).toBe(200);
+    expect(invite("a@acme.dev", "k1").status).toBe(201);
     expect(invite("a@acme.dev", "k1").replayed).toBe(true);
     expect(invite("A@ACME.DEV").body).toMatchObject({ error: "unique_violation" });
     expect(invite("x@acme.dev", undefined, { userId: "cy", orgs: { acme: "member" } }).status).toBe(
       403,
     );
-    expect(invite("b@acme.dev").status).toBe(200);
-    expect(invite("c@acme.dev").status).toBe(200);
+    expect(invite("b@acme.dev").status).toBe(201);
+    expect(invite("c@acme.dev").status).toBe(201);
     expect(invite("d@acme.dev").body).toMatchObject({ error: "seatLimit" });
 
     const key = { apiKey: { orgId: "acme", scopes: ["members:read"] } };

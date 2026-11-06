@@ -34,6 +34,8 @@ fn request(method: Method, path: &str, body: Option<Json>) -> Request {
         }),
         ip: None,
         idempotency_key: None,
+        headers: BTreeMap::new(),
+        raw_body: None,
     }
 }
 
@@ -134,7 +136,8 @@ fn concurrent_deposits_serialize_with_conflict_retries() {
     );
     let accounts = engine.handle(&t, &request(Method::Get, "/accounts", None));
     let balance = accounts.body["accounts"][0]["balance"].as_i64().unwrap();
-    assert!(balance > 0 && balance <= threads * deposits);
+    // Write queuing: after the first conflicts, deposits take turns, so every one commits.
+    assert_eq!(balance, threads * deposits);
     let all_entries = entries.body["entries"].as_array().unwrap().len();
     assert_eq!(i64::try_from(all_entries).unwrap(), balance.min(100));
     println!("committed {balance} deposits with {retried} conflict retries");

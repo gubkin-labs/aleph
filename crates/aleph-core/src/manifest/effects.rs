@@ -181,7 +181,8 @@ pub enum Trigger {
     },
     /// A schedule: runs at every multiple of `every_ms` (plus `offset_ms`) since the epoch.
     Cron {
-        /// Interval, in milliseconds (1 second to 30 days).
+        /// Interval, in milliseconds (1 second to 30 days). Ignored (and 0) with `schedule`.
+        #[serde(default)]
         every_ms: u32,
         /// Offset into each interval, in milliseconds.
         #[serde(default)]
@@ -191,7 +192,24 @@ pub enum Trigger {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "codegen", ts(optional))]
         scan: Option<CronScan>,
+        /// A calendar schedule instead of an interval.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        schedule: Option<CronSchedule>,
     },
+}
+
+/// A calendar schedule: a five-field cron expression in a time zone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CronSchedule {
+    /// `minute hour day-of-month month weekday`, like `0 9 * * mon`.
+    pub cron: String,
+    /// An IANA time zone (default UTC).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub tz: Option<String>,
 }
 
 /// The rows a scanning cron walks through.

@@ -1,0 +1,411 @@
+{
+  "seed": 3,
+  "startMs": 1700000000000,
+  "stepMs": 1000,
+  "steps": [
+    {
+      "name": "add a book",
+      "request": {
+        "method": "PUT",
+        "path": "/products/BK-1",
+        "caller": {
+          "userId": "admin"
+        },
+        "body": {
+          "name": "Rust",
+          "price": "20",
+          "category": "books"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "price": "20.00",
+          "version": 1
+        }
+      }
+    },
+    {
+      "name": "c1 is in the directory",
+      "user": {
+        "id": "c1",
+        "profile": {
+          "email": "c1@example.com",
+          "name": "Cee"
+        }
+      }
+    },
+    {
+      "name": "c1 places an order",
+      "request": {
+        "method": "POST",
+        "path": "/orders",
+        "caller": {
+          "userId": "c1",
+          "profile": {
+            "email": "c1@example.com"
+          }
+        },
+        "body": {
+          "items": [
+            {
+              "sku": "BK-1",
+              "qty": 1
+            }
+          ],
+          "shipTo": {
+            "city": "Lyon",
+            "zip": "69001"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "total": "20.00",
+          "items": 1
+        }
+      },
+      "capture": {
+        "first": "body.orderId"
+      }
+    },
+    {
+      "name": "c1 places a second order",
+      "request": {
+        "method": "POST",
+        "path": "/orders",
+        "caller": {
+          "userId": "c1"
+        },
+        "body": {
+          "items": [
+            {
+              "sku": "BK-1",
+              "qty": 1
+            }
+          ],
+          "shipTo": {
+            "city": "Lyon",
+            "zip": "69001"
+          }
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "second": "body.orderId"
+      }
+    },
+    {
+      "name": "the order email goes out; reminders wait an hour",
+      "process": true,
+      "expect": {
+        "deliveries": [
+          {
+            "kind": "send",
+            "target": "mail",
+            "data": {
+              "to": "c1@example.com",
+              "subject": "Order total 20.00"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "paying the second order cancels its reminder",
+      "request": {
+        "method": "POST",
+        "path": "/orders/{{second}}/pay",
+        "caller": {
+          "userId": "c1"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "paid",
+          "changed": true
+        }
+      }
+    },
+    {
+      "name": "paying again returns early",
+      "request": {
+        "method": "POST",
+        "path": "/orders/{{second}}/pay",
+        "caller": {
+          "userId": "c1"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "changed": false
+        }
+      }
+    },
+    {
+      "name": "an hour later only the unpaid order's reminder runs",
+      "advanceMs": 3600000,
+      "process": true,
+      "expect": {
+        "report": {
+          "runs": [
+            {
+              "handler": "remind"
+            }
+          ]
+        },
+        "deliveries": [
+          {
+            "target": "mail",
+            "data": {
+              "to": "c1@example.com",
+              "subject": "Your order is waiting for payment"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "stats count one distinct customer",
+      "request": {
+        "method": "GET",
+        "path": "/stats"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "customers": 1
+        }
+      }
+    },
+    {
+      "name": "seed an order for the webhook",
+      "seed": {
+        "entity": "Order",
+        "rows": [
+          {
+            "customerId": "c2",
+            "orderId": "01J00000000000000000000002",
+            "items": [],
+            "shipTo": {
+              "city": "Oslo",
+              "zip": "0150"
+            },
+            "total": "0.00"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the payment provider's secret",
+      "secret": {
+        "name": "PAYMENTS_SECRET",
+        "value": "whsec_live"
+      }
+    },
+    {
+      "name": "a signed payment webhook",
+      "request": {
+        "method": "POST",
+        "path": "/webhooks/payments",
+        "headers": {
+          "x-signature": "88b1c1c9e3a217a25871c3a323a28d3d3e723443e539362f87b910b89986343a"
+        },
+        "rawBody": "{\"customerId\":\"c2\",\"eventId\":\"evt_9\",\"orderId\":\"01J00000000000000000000002\"}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "paid": true
+        },
+        "replayed": false
+      }
+    },
+    {
+      "name": "the same event delivered again runs once",
+      "request": {
+        "method": "POST",
+        "path": "/webhooks/payments",
+        "headers": {
+          "x-signature": "88b1c1c9e3a217a25871c3a323a28d3d3e723443e539362f87b910b89986343a"
+        },
+        "rawBody": "{\"customerId\":\"c2\",\"eventId\":\"evt_9\",\"orderId\":\"01J00000000000000000000002\"}"
+      },
+      "expect": {
+        "status": 200,
+        "replayed": true
+      }
+    },
+    {
+      "name": "a tampered body is rejected",
+      "request": {
+        "method": "POST",
+        "path": "/webhooks/payments",
+        "headers": {
+          "x-signature": "88b1c1c9e3a217a25871c3a323a28d3d3e723443e539362f87b910b89986343a"
+        },
+        "rawBody": "{\"customerId\":\"c2\",\"eventId\":\"evt_8\",\"orderId\":\"01J00000000000000000000002\"}"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "save a cart",
+      "request": {
+        "method": "PUT",
+        "path": "/cart",
+        "caller": {
+          "userId": "c1"
+        },
+        "body": {
+          "skus": ["b", "a", "b"]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "skus": ["b", "a"]
+        }
+      }
+    },
+    {
+      "name": "the cart is there",
+      "request": {
+        "method": "GET",
+        "path": "/cart",
+        "caller": {
+          "userId": "c1"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "exists": true,
+          "first": "a"
+        }
+      }
+    },
+    {
+      "name": "a day later the cart has expired",
+      "advanceMs": 86400000,
+      "request": {
+        "method": "GET",
+        "path": "/cart",
+        "caller": {
+          "userId": "c1"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "exists": false
+        }
+      }
+    },
+    {
+      "name": "note on the first order",
+      "request": {
+        "method": "POST",
+        "path": "/orders/{{first}}/notes",
+        "caller": {
+          "userId": "c1"
+        },
+        "body": {
+          "text": "leave at door"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "the notes",
+      "request": {
+        "method": "GET",
+        "path": "/orders/{{first}}/notes",
+        "caller": {
+          "userId": "c1"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "notes": ["leave at door"]
+        }
+      }
+    },
+    {
+      "name": "delete the first order",
+      "request": {
+        "method": "DELETE",
+        "path": "/orders/{{first}}",
+        "caller": {
+          "userId": "c1"
+        }
+      },
+      "expect": {
+        "status": 204,
+        "body": null
+      }
+    },
+    {
+      "name": "its notes are deleted in the background",
+      "process": true,
+      "expect": {
+        "report": {
+          "runs": [
+            {
+              "handler": "cascade_Note"
+            },
+            {
+              "handler": "cascade_Note_batch"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a CORS preflight from the shop",
+      "request": {
+        "method": "OPTIONS",
+        "path": "/orders",
+        "headers": {
+          "origin": "https://shop.example.com"
+        }
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "short links redirect",
+      "request": {
+        "method": "GET",
+        "path": "/go/BK-1"
+      },
+      "expect": {
+        "status": 301,
+        "body": null
+      }
+    },
+    {
+      "name": "the deprecated route still answers",
+      "request": {
+        "method": "GET",
+        "path": "/legacy/products"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "products": ["BK-1"]
+        }
+      }
+    }
+  ]
+}

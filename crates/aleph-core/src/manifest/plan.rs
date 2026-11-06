@@ -41,11 +41,51 @@ pub enum Stmt {
         cond: Expr,
         /// The declared error to fail with.
         error: String,
+        /// Values for the error's declared `details` fields.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        #[cfg_attr(
+            feature = "codegen",
+            ts(as = "Option<BTreeMap<String, Expr>>", optional)
+        )]
+        details: BTreeMap<String, Expr>,
     },
     /// Fail with a declared error.
     Fail {
         /// The declared error.
         error: String,
+        /// Values for the error's declared `details` fields.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        #[cfg_attr(
+            feature = "codegen",
+            ts(as = "Option<BTreeMap<String, Expr>>", optional)
+        )]
+        details: BTreeMap<String, Expr>,
+    },
+    /// Finish successfully now, responding with `value` (routes) or ending the run (handlers).
+    /// The transaction commits.
+    Return {
+        /// The response body.
+        value: Expr,
+    },
+    /// Set a response header. `set-cookie` adds a cookie each time; other headers are replaced.
+    SetHeader {
+        /// The header name, lowercase.
+        name: String,
+        /// The value (a string).
+        value: Expr,
+    },
+    /// Set the success status (200-399; the default is 200).
+    SetStatus {
+        /// The status.
+        status: u16,
+    },
+    /// Record a value for debugging. Logs are returned with the response in development and
+    /// sampled in production; they never change what the plan does.
+    Log {
+        /// A short label.
+        label: String,
+        /// The value logged.
+        value: Expr,
     },
     /// Conditional execution. Variables defined inside a branch aren't visible after it.
     If {
@@ -154,6 +194,10 @@ pub enum Op {
         key: BTreeMap<String, Expr>,
         /// New field values. Key fields can't be changed.
         set: BTreeMap<String, Expr>,
+        /// For versioned entities: fail with 409 unless the row has this version.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        if_version: Option<Box<Expr>>,
     },
     /// Delete a row if it exists. Evaluates to `null`.
     Delete {
@@ -173,6 +217,11 @@ pub enum Op {
         /// Values for a prefix of the key (or index) fields.
         #[serde(default)]
         prefix: Vec<Expr>,
+        /// Values for the field after the prefix: rows matching any of them are merged in key
+        /// order (at most 10 values). Can't be combined with `after` or `page`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        any_of: Option<Vec<Expr>>,
         /// Maximum number of rows. Must have a statically known upper bound.
         limit: Box<Expr>,
         /// Scan order.
@@ -243,6 +292,24 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "codegen", ts(optional))]
         delay_ms: Option<Box<Expr>>,
+        /// A key for the job (a string). A pending job with the same key is replaced, and
+        /// `cancel` with the key removes it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        key: Option<Box<Expr>>,
+    },
+    /// Cancel the pending job with this key, if any. Released after commit.
+    Cancel {
+        /// The queue.
+        queue: String,
+        /// The job's key.
+        key: Box<Expr>,
+    },
+    /// Read a user's profile from the tenant's user directory. Evaluates to
+    /// `{ userId, ...profile fields }`, or `null` if there's no such user.
+    GetUser {
+        /// The user id.
+        user_id: Box<Expr>,
     },
     /// Publish a message to a realtime channel. Released after commit.
     Publish {
@@ -283,7 +350,11 @@ impl Op {
     pub fn is_effect(&self) -> bool {
         matches!(
             self,
-            Self::Emit { .. } | Self::Enqueue { .. } | Self::Publish { .. } | Self::Send { .. }
+            Self::Emit { .. }
+                | Self::Enqueue { .. }
+                | Self::Cancel { .. }
+                | Self::Publish { .. }
+                | Self::Send { .. }
         )
     }
 

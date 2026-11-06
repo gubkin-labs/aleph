@@ -19,6 +19,12 @@ export interface Step {
   advanceMs?: number;
   /** A request. Strings may contain `{{var}}` placeholders filled from earlier captures. */
   request?: unknown;
+  /** Sets a secret (such as a webhook signing key). */
+  secret?: { name: string; value: string };
+  /** Stores a user profile in the directory. */
+  user?: { id: string; profile: Record<string, unknown> };
+  /** Inserts seed rows into an entity. */
+  seed?: { entity: string; rows: Record<string, unknown>[] };
   /** Sets a mock integration response (or failure) for later calls. */
   mock?: { integration: string; operation: string; response?: unknown; error?: string };
   /** Runs due async work: cron ticks, handlers, deliveries. */

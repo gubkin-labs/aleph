@@ -3,20 +3,24 @@
  */
 import type {
   Auth,
+  Caller,
   ErrorDecl,
   Field,
+  FieldType,
   Idempotency,
   InputSource,
   Method,
   RateLimit,
   Route,
+  RouteExample,
+  Webhook,
 } from "@aleph/manifest";
-import { ErrorRef, List } from "./data.js";
+import { type Accessor, ErrorRef, materialize, shapeOfType } from "./data.js";
 import { $ } from "./dsl.js";
-import { Expr } from "./expr.js";
 import { type FieldBuilder, type Fields, type FieldValue, fieldSpecs, t } from "./fields.js";
 import { toNode } from "./node.js";
 import { AlephBuildError, callSite, Recorder, recording } from "./recorder.js";
+import { type Duration, durationMs } from "./units.js";
 
 const METHODS = new Set<Method>(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 
@@ -30,13 +34,9 @@ export type PathParams<P extends string> = P extends `${string}:${infer Param}/$
 /** Path params default to strings of at most 128 characters. */
 export type DefaultParams<P extends string> = { [K in PathParams<P>]: FieldBuilder<string> };
 
-/** What a handler sees for one input field. */
+/** What a handler sees for one input field: lists, objects of accessors, or expressions. */
 export type InputValue<F> =
-  F extends FieldBuilder<infer V, boolean, boolean>
-    ? V extends readonly (infer U)[]
-      ? List<Expr<U>>
-      : Expr<FieldValue<F>>
-    : never;
+  F extends FieldBuilder<unknown, boolean, boolean> ? Accessor<FieldValue<F>> : never;
 
 /** What a handler sees for a record of input fields. */
 export type InputValues<F extends Fields> = { readonly [K in keyof F]: InputValue<F[K]> };
@@ -60,20 +60,7 @@ export type Handler<P extends Fields, Q extends Fields, B extends Fields, E exte
   ctx: HandlerContext<P, Q, B, E>,
 ) => unknown;
 
-/** A duration: milliseconds, or a number with a unit (`"30s"`, `"15m"`, `"24h"`, `"7d"`). */
-export type Duration = number | `${number}${"s" | "m" | "h" | "d"}`;
-
-const UNIT_MS = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000 } as const;
-
-/** Converts a {@link Duration} to milliseconds. */
-export function durationMs(duration: Duration): number {
-  if (typeof duration === "number") return duration;
-  const match = /^(\d+)([smhd])$/.exec(duration);
-  const unit = match?.[2] as keyof typeof UNIT_MS | undefined;
-  if (!match?.[1] || !unit)
-    throw new AlephBuildError(`invalid duration ${JSON.stringify(duration)}`);
-  return Number(match[1]) * UNIT_MS[unit];
-}
+export { type Duration, durationMs } from "./units.js";
 
 /** @internal What a route builder hands back to its app. */
 export interface RouteSink {
@@ -86,9 +73,7 @@ export interface RouteSink {
 export function inputs<F extends Fields>(source: InputSource, fields: F): InputValues<F> {
   const out: Record<string, unknown> = {};
   for (const [name, field] of Object.entries(fields)) {
-    const node = { kind: "input" as const, source, name };
-    out[name] =
-      field.spec.type.kind === "array" ? new List(node, { kind: "scalar" }) : new Expr(node);
+    out[name] = materialize(shapeOfType(field.spec.type), { kind: "input", source, name });
   }
   return out as InputValues<F>;
 }
@@ -123,6 +108,12 @@ export class RouteBuilder<
   #description: string | undefined;
   #mcp: string | undefined;
   #rateLimit: RateLimit | undefined;
+  #webhook: Webhook | undefined;
+  #returns: FieldType | undefined;
+  #deprecated: string | undefined;
+  #version: string | undefined;
+  #status: number | undefined;
+  #examples: RouteExample[] = [];
 
   /** @internal */
   constructor(sink: RouteSink, spec: string) {
@@ -193,6 +184,56 @@ export class RouteBuilder<
     return this;
   }
 
+  /** @internal Makes the route a webhook (see `App.webhook`). */
+  webhookConfig(webhook: Webhook): this {
+    this.#webhook = webhook;
+    return this;
+  }
+
+  /**
+   * Declares the response type. The checker verifies every response fits it, fields the type
+   * doesn't list are dropped from the response, and generated clients and docs use it.
+   */
+  returns(type: FieldBuilder<unknown, boolean, boolean>): this {
+    this.#returns = type.spec.type;
+    return this;
+  }
+
+  /** The success status, like 201 for creates or 204 for no content (the body is dropped). */
+  status(status: 200 | 201 | 202 | 204): this {
+    this.#status = status;
+    return this;
+  }
+
+  /** Marks the route deprecated. Responses carry `Deprecation: true`, and docs mark it. */
+  deprecated(note: string): this {
+    this.#deprecated = note;
+    return this;
+  }
+
+  /** An API version label for docs, like `"2024-06-01"`. */
+  version(version: string): this {
+    this.#version = version;
+    return this;
+  }
+
+  /**
+   * A worked example: given some rows, this request gets this response. `aleph test` runs every
+   * example; docs show them. Bodies match as subsets (listed keys only).
+   */
+  example(example: ExampleDef<P, Q, B>): this {
+    const { as, ...rest } = example;
+    this.#examples.push(
+      structuredClone({
+        ...rest,
+        request: rest.request ?? {},
+        expect: rest.expect ?? {},
+        ...(as === undefined ? {} : { caller: as }),
+      }) as RouteExample,
+    );
+    return this;
+  }
+
   idempotent(options: { ttl: Duration; required?: boolean }): this {
     this.#idempotency = {
       ttlMs: durationMs(options.ttl),
@@ -254,7 +295,11 @@ export class RouteBuilder<
     const rec = new Recorder(`routes[${index}].plan.body`);
     const site = callSite();
     if (site) rec.sourceMap[`routes[${index}]`] = site;
-    const output = recording(rec, () => toNode(handler($, ctx)));
+    const status = this.#status;
+    const output = recording(rec, () => {
+      if (status !== undefined && status !== 200) rec.push({ kind: "setStatus", status });
+      return toNode(handler($, ctx));
+    });
     const route: Route = {
       id: this.#id,
       method: this.#method,
@@ -266,10 +311,53 @@ export class RouteBuilder<
       ...(this.#description ? { description: this.#description } : {}),
       ...(this.#mcp ? { mcp: { name: this.#mcp } } : {}),
       ...(this.#rateLimit ? { rateLimit: this.#rateLimit } : {}),
+      ...(this.#webhook ? { webhook: this.#webhook } : {}),
+      ...(this.#returns ? { returns: this.#returns } : {}),
+      ...(this.#deprecated ? { deprecated: this.#deprecated } : {}),
+      ...(this.#version ? { version: this.#version } : {}),
+      ...(this.#examples.length > 0 ? { examples: this.#examples } : {}),
       plan: { body: rec.body, output },
     };
     this.#sink.add(route, rec.sourceMap);
   }
+}
+
+/** Plain JSON values for a record of fields, as a client sends them. */
+type JsonValues<F extends Fields> = { [K in keyof F]?: FieldValue<F[K]> };
+
+/** A worked example of a route (see {@link RouteBuilder.example}). */
+export interface ExampleDef<P extends Fields, Q extends Fields, B extends Fields> {
+  /** What the example shows. */
+  name: string;
+  /** Rows that exist before the request, by entity name. */
+  given?: Record<string, readonly Record<string, unknown>[]>;
+  /** User profiles in the directory, by user id. */
+  users?: Record<string, Record<string, unknown>>;
+  /** Test secret values, such as a webhook signing key (never real ones: examples ship in the manifest). */
+  secrets?: Record<string, string>;
+  /** Who calls (anonymous if omitted). */
+  as?: Caller;
+  /** The request. */
+  request?: {
+    params?: { [K in keyof P]?: string };
+    query?: { [K in keyof Q]?: string };
+    body?: JsonValues<B> | Record<string, unknown>;
+    headers?: Record<string, string>;
+  };
+  /** Integration responses for calls the request makes. */
+  mocks?: readonly { integration: string; operation: string; response?: unknown; error?: string }[];
+  /** Run the async work the request caused before checking `runs` and `deliveries`. */
+  process?: boolean;
+  /** What should happen. */
+  expect?: {
+    status?: number;
+    /** A subset of the response body (or an error body: `{ error: "<name>" }`). */
+    body?: unknown;
+    /** The handlers that ran (with `process`). */
+    runs?: readonly string[];
+    /** The deliveries made, each a subset (with `process`). */
+    deliveries?: readonly unknown[];
+  };
 }
 
 function specs(fields: Fields): Record<string, Field> {

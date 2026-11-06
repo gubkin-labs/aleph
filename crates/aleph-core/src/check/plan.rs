@@ -7,25 +7,35 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use super::types::{CALLER_ID_MAX, CURSOR_MAX};
 use super::{EntityInfo, Ty, unknown_entity, unknown_field};
 use crate::diagnostics::{Diagnostic, DiagnosticCode as Code};
 use crate::limits::Cost;
 use crate::manifest::{
-    BinaryOp, Change, Entity, ErrorDecl, Expr, Field, Handler, Input, InputSource, Manifest, Op,
-    OpMode, Route, RowPredicate, Stmt, Trigger, VarId,
+    AggOp, BinaryOp, Change, Entity, ErrorDecl, Expr, Field, FieldType, Handler, Input,
+    InputSource, Manifest, Op, OpMode, Route, RowPredicate, Stmt, StrOp, Trigger, VarId,
 };
 
 /// The match case that catches every other value.
 pub(crate) const DEFAULT_CASE: &str = "_";
 
-/// Checks a route's plan and returns its worst-case cost.
+/// What checking a route's plan found.
+pub(crate) struct RouteCheck {
+    /// Worst-case cost.
+    pub(crate) cost: Cost,
+    /// The type of every response the plan can give (early returns, then the output), with the
+    /// manifest path of each.
+    pub(crate) outputs: Vec<(Ty, String)>,
+}
+
+/// Checks a route's plan and returns its worst-case cost and response types.
 pub(crate) fn check_route(
     m: &Manifest,
     infos: &BTreeMap<String, EntityInfo>,
     route: &Route,
     path: &str,
     diags: &mut Vec<Diagnostic>,
-) -> Cost {
+) -> RouteCheck {
     let mut checker = Checker::new(m, infos, diags);
     checker.errors = Some(&route.errors);
     checker.input = Some(&route.input);
@@ -35,8 +45,19 @@ pub(crate) fn check_route(
     for (i, stmt) in route.plan.body.iter().enumerate() {
         cost += checker.stmt(stmt, &format!("{plan_path}.body[{i}]"), false);
     }
-    let (_, output_cost) = checker.expr(&route.plan.output, &format!("{plan_path}.output"));
-    cost + output_cost
+    let output_path = format!("{plan_path}.output");
+    let (output, output_cost) = checker.expr(&route.plan.output, &output_path);
+    let mut outputs = std::mem::take(&mut checker.outputs);
+    outputs.push((output, output_path));
+    // The response value, whichever path produced it.
+    let response_memory = outputs
+        .iter()
+        .map(|(ty, _)| checker.memory(ty))
+        .fold(Cost::ZERO, Cost::max);
+    RouteCheck {
+        cost: cost + output_cost + response_memory,
+        outputs,
+    }
 }
 
 /// Checks a handler's plan against its payload and returns its worst-case cost.
@@ -57,8 +78,15 @@ pub(crate) fn check_handler(
     for (i, stmt) in handler.plan.body.iter().enumerate() {
         cost += checker.stmt(stmt, &format!("{plan_path}.body[{i}]"), false);
     }
-    let (_, output_cost) = checker.expr(&handler.plan.output, &format!("{plan_path}.output"));
-    cost + output_cost
+    let (output, output_cost) = checker.expr(&handler.plan.output, &format!("{plan_path}.output"));
+    let outputs = std::mem::take(&mut checker.outputs);
+    let response_memory = outputs
+        .iter()
+        .map(|(ty, _)| ty)
+        .chain(std::iter::once(&output))
+        .map(|ty| checker.memory(ty))
+        .fold(Cost::ZERO, Cost::max);
+    cost + output_cost + response_memory
 }
 
 /// How many handlers react to a change of an entity's rows.
@@ -113,7 +141,7 @@ pub(crate) fn check_row_predicate(
         RowExprKind::Int if !ty.is_intish() => checker.type_mismatch(&expr_path, "int", &ty),
         RowExprKind::Scalar
             if matches!(
-                ty,
+                ty.non_null(),
                 Ty::List { .. } | Ty::Object(_) | Ty::Row(_) | Ty::OptRow(_)
             ) =>
         {
@@ -127,9 +155,9 @@ pub(crate) fn check_row_predicate(
 fn impurity(expr: &Expr) -> Option<&'static str> {
     match expr {
         Expr::Input { .. } => Some("a route input"),
-        Expr::Caller | Expr::CallerRole { .. } => Some("the caller"),
+        Expr::Caller | Expr::CallerRole { .. } | Expr::CallerProfile { .. } => Some("the caller"),
         Expr::Now => Some("the current time"),
-        Expr::Lit { .. } | Expr::Var { .. } => None,
+        Expr::Lit { .. } | Expr::Var { .. } | Expr::Decimal { .. } => None,
         Expr::Field { of, .. }
         | Expr::IsNull { of }
         | Expr::Length { of }
@@ -139,11 +167,44 @@ fn impurity(expr: &Expr) -> Option<&'static str> {
         | Expr::First { of }
         | Expr::Not { arg: of }
         | Expr::Neg { arg: of }
-        | Expr::In { value: of, .. } => impurity(of),
+        | Expr::In { value: of, .. }
+        | Expr::Distinct { of }
+        | Expr::Pad { of, .. }
+        | Expr::Matches { of, .. }
+        | Expr::FormatNumber { of, .. }
+        | Expr::Round { of, .. }
+        | Expr::ToInt { of, .. } => impurity(of),
         Expr::Binary { lhs, rhs, .. }
         | Expr::StrTest {
             of: lhs, arg: rhs, ..
+        }
+        | Expr::Includes {
+            list: lhs,
+            value: rhs,
+        }
+        | Expr::Sort {
+            list: lhs, by: rhs, ..
+        }
+        | Expr::Split {
+            of: lhs, sep: rhs, ..
         } => impurity(lhs).or_else(|| impurity(rhs)),
+        Expr::Agg { list, value, .. } => {
+            impurity(list).or_else(|| value.as_deref().and_then(impurity))
+        }
+        Expr::Slice { of, start, end } => impurity(of)
+            .or_else(|| impurity(start))
+            .or_else(|| end.as_deref().and_then(impurity)),
+        Expr::Replace { of, find, with } => impurity(of)
+            .or_else(|| impurity(find))
+            .or_else(|| impurity(with)),
+        Expr::StartOf { of, tz, .. }
+        | Expr::TimePart { of, tz, .. }
+        | Expr::FormatTime { of, tz, .. } => {
+            impurity(of).or_else(|| tz.as_deref().and_then(impurity))
+        }
+        Expr::AddTime { of, amount, tz, .. } => impurity(of)
+            .or_else(|| impurity(amount))
+            .or_else(|| tz.as_deref().and_then(impurity)),
         Expr::Select {
             cond,
             then,
@@ -153,7 +214,33 @@ fn impurity(expr: &Expr) -> Option<&'static str> {
             .or_else(|| impurity(otherwise)),
         Expr::Match { on, cases } => impurity(on).or_else(|| cases.values().find_map(impurity)),
         Expr::Object { fields } => fields.values().find_map(impurity),
-        Expr::List { items: parts } | Expr::Concat { parts } => parts.iter().find_map(impurity),
+        Expr::List { items: parts } | Expr::Concat { parts } | Expr::ListConcat { parts } => {
+            parts.iter().find_map(impurity)
+        }
+    }
+}
+
+fn field_kind(ty: &FieldType) -> &'static str {
+    match ty {
+        FieldType::String { .. } => "string",
+        FieldType::Int { .. } => "int",
+        FieldType::Decimal { .. } => "decimal",
+        FieldType::Bool => "bool",
+        FieldType::Enum { .. } => "enum",
+        FieldType::Id => "id",
+        FieldType::Timestamp => "timestamp",
+        FieldType::TimeZone => "time zone",
+        FieldType::Array { .. } => "array",
+        FieldType::Object { .. } => "object",
+    }
+}
+
+/// `result`, made nullable if `operand` may be `null` (operations pass `null` through).
+fn keep_null(operand: &Ty, result: Ty) -> Ty {
+    if matches!(operand, Ty::Null | Ty::Opt(_)) {
+        result.nullable()
+    } else {
+        result
     }
 }
 
@@ -171,6 +258,8 @@ struct Checker<'a> {
     /// Every variable defined anywhere in the plan. Ids are unique per plan, even across
     /// branches, so a plan never shadows.
     defined: HashSet<VarId>,
+    /// The types of early `return` values, with their paths.
+    outputs: Vec<(Ty, String)>,
 }
 
 impl<'a> Checker<'a> {
@@ -188,6 +277,7 @@ impl<'a> Checker<'a> {
             diags,
             scopes: Vec::new(),
             defined: HashSet::new(),
+            outputs: Vec::new(),
         }
     }
 
@@ -213,6 +303,121 @@ impl<'a> Checker<'a> {
         }
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert(var, ty);
+        }
+    }
+
+    /// Binds an expression's own variable (an aggregate's or sort's item). Expressions can be
+    /// shared by reference in a plan, so these may repeat; they're visible only inside it.
+    fn bind_scoped(&mut self, var: VarId, ty: Ty) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(var, ty);
+        }
+    }
+
+    /// After `ensure(cond)` passes, what `cond` proves holds for the rest of the block: a variable
+    /// that isn't null (`not(isNull(v))`, as `getOrFail` records) loses its `null`.
+    fn narrow(&mut self, cond: &Expr) {
+        match cond {
+            Expr::Not { arg } => {
+                if let Expr::IsNull { of } = &**arg
+                    && let Expr::Var { id } = &**of
+                    && let Some(ty) = self.lookup(*id).cloned()
+                {
+                    let narrowed = match ty {
+                        Ty::OptRow(entity) => Ty::Row(entity),
+                        other => other.non_null().clone(),
+                    };
+                    // Shadow it in the current block only: a narrowing inside a branch must
+                    // not leak out of it.
+                    if let Some(scope) = self.scopes.last_mut() {
+                        scope.insert(*id, narrowed);
+                    }
+                }
+            }
+            Expr::Binary {
+                op: BinaryOp::And,
+                lhs,
+                rhs,
+            } => {
+                self.narrow(lhs);
+                self.narrow(rhs);
+            }
+            _ => {}
+        }
+    }
+
+    /// Checks a value written to a declared field: it must not be `null` unless the field is
+    /// optional, and it must be the right kind of value.
+    fn check_write(&mut self, ty: &Ty, field: &Field, path: &str) {
+        let may_be_null = matches!(ty, Ty::Null | Ty::Opt(_) | Ty::OptRow(_));
+        if may_be_null && !field.optional {
+            self.diag(
+                Code::TypeMismatch,
+                path,
+                format!(
+                    "the value may be null, but the field is required. Check it first (getOrFail, \
+                     $.ensure(x.isSet())) or give a fallback with .ifNull(...); found {}",
+                    ty.describe()
+                ),
+            );
+            return;
+        }
+        let ok = matches!(
+            (ty.non_null(), &field.ty),
+            (Ty::Unknown | Ty::Null, _)
+                | (Ty::Bool, FieldType::Bool)
+                | (
+                    Ty::Int { .. },
+                    FieldType::Int { .. } | FieldType::Timestamp | FieldType::Decimal { .. },
+                )
+                | (Ty::Decimal { .. }, FieldType::Decimal { .. })
+                | (
+                    Ty::String { .. } | Ty::Enum(_),
+                    FieldType::String { .. }
+                        | FieldType::Id
+                        | FieldType::TimeZone
+                        | FieldType::Enum { .. }
+                        | FieldType::Decimal { .. },
+                )
+                | (Ty::List { .. }, FieldType::Array { .. })
+                | (
+                    Ty::Object(_) | Ty::Row(_) | Ty::OptRow(_),
+                    FieldType::Object { .. }
+                )
+        );
+        if !ok {
+            self.type_mismatch(
+                path,
+                &format!("a value for a {} field", field_kind(&field.ty)),
+                ty,
+            );
+            return;
+        }
+        // Inside objects and lists, every declared field and item must fit too.
+        match (ty.non_null(), &field.ty) {
+            (Ty::Object(found), FieldType::Object { fields }) => {
+                for (name, inner) in fields {
+                    match found.get(name) {
+                        Some(found) => self.check_write(found, inner, &format!("{path}.{name}")),
+                        None if inner.optional => {}
+                        None => self.diag(
+                            Code::MissingRequiredField,
+                            path,
+                            format!("the object needs field {name:?}"),
+                        ),
+                    }
+                }
+            }
+            (Ty::List { item, .. }, FieldType::Array { items, .. }) => {
+                let item_field = Field {
+                    ty: (**items).clone(),
+                    optional: false,
+                    default: None,
+                    deprecated: None,
+                };
+                self.check_write(item, &item_field, &format!("{path}[]"));
+            }
+            _ => {}
         }
     }
 
@@ -251,17 +456,53 @@ impl<'a> Checker<'a> {
         match stmt {
             Stmt::Let { var, op } => {
                 let (ty, cost) = self.op(op, &format!("{path}.op"), pure);
+                let memory = self.memory(&ty);
                 self.bind(*var, ty, path);
+                own + cost + memory
+            }
+            Stmt::Ensure {
+                cond,
+                error,
+                details,
+            } => {
+                let details = self.error_ref(error, details, path);
+                let cost = own + self.condition(cond, &format!("{path}.cond")) + details;
+                self.narrow(cond);
+                cost
+            }
+            Stmt::Fail { error, details } => own + self.error_ref(error, details, path),
+            Stmt::Return { value } => {
+                if pure {
+                    self.diag(
+                        Code::WriteInPureBlock,
+                        path,
+                        "return can't be used inside map or filter",
+                    );
+                }
+                let (ty, cost) = self.expr(value, &format!("{path}.value"));
+                self.outputs.push((ty, format!("{path}.value")));
                 own + cost
             }
-            Stmt::Ensure { cond, error } => {
-                self.error_ref(error, &format!("{path}.error"));
-                own + self.condition(cond, &format!("{path}.cond"))
+            Stmt::SetHeader { name, value } => {
+                self.response_stmt(pure, path);
+                if let Err(message) = crate::check::check_header_name(name) {
+                    self.diag(Code::InvalidRoute, &format!("{path}.name"), message);
+                }
+                let (_, cost) = self.string(value, &format!("{path}.value"));
+                own + cost
             }
-            Stmt::Fail { error } => {
-                self.error_ref(error, &format!("{path}.error"));
+            Stmt::SetStatus { status } => {
+                self.response_stmt(pure, path);
+                if !(200..=399).contains(status) {
+                    self.diag(
+                        Code::InvalidErrorStatus,
+                        &format!("{path}.status"),
+                        "success statuses are 200-399; fail with a declared error for 4xx and 5xx",
+                    );
+                }
                 own
             }
+            Stmt::Log { value, .. } => own + self.expr(value, &format!("{path}.value")).1,
             Stmt::If {
                 cond,
                 then,
@@ -279,10 +520,11 @@ impl<'a> Checker<'a> {
                     return own + list_cost;
                 };
                 self.scopes.push(HashMap::new());
+                let item_memory = self.memory(&item_ty);
                 self.bind(*item, item_ty, path);
                 let body_cost = self.block(body, &format!("{path}.body"), pure);
                 self.scopes.pop();
-                own + list_cost + body_cost.plus(Cost::ops(1)).times(max)
+                own + list_cost + body_cost.plus(Cost::ops(1) + item_memory).times(max)
             }
         }
     }
@@ -295,9 +537,25 @@ impl<'a> Checker<'a> {
         cost
     }
 
-    fn error_ref(&mut self, name: &str, path: &str) {
-        let declared = self.errors.is_some_and(|errors| errors.contains_key(name));
-        if !declared {
+    /// Statements that shape the HTTP response only make sense in routes, outside map/filter.
+    fn response_stmt(&mut self, pure: bool, path: &str) {
+        if pure || self.input.is_none() {
+            self.diag(
+                Code::InvalidRoute,
+                path,
+                "response headers and statuses can only be set in a route's plan, outside map and filter",
+            );
+        }
+    }
+
+    /// Checks a reference to a declared error and the details it's given.
+    fn error_ref(&mut self, name: &str, details: &BTreeMap<String, Expr>, path: &str) -> Cost {
+        let decl = self.errors.and_then(|errors| errors.get(name));
+        if let Some(decl) = decl {
+            return self.values(&decl.details, details, &format!("{path}.details"), false);
+        }
+        let path = &format!("{path}.error");
+        {
             let known: Vec<&str> = self
                 .errors
                 .map(|errors| errors.keys().map(String::as_str).collect())
@@ -308,10 +566,15 @@ impl<'a> Checker<'a> {
                 format!("unknown error {name:?} (declared: {known:?})"),
             );
         }
+        Cost::ZERO
     }
 
     /// Resolves a list type to its item type and maximum length.
     fn bounded_list(&mut self, ty: Ty, path: &str) -> Option<(Ty, u64)> {
+        let ty = match ty {
+            Ty::Opt(inner) => *inner,
+            other => other,
+        };
         match ty {
             Ty::List { item, max } => Some((*item, max)),
             other => {
@@ -386,8 +649,23 @@ impl<'a> Checker<'a> {
                 let (_, cost) = self.insert(entity, values, path, 1, &[Change::Inserted]);
                 (Ty::Bool, own + cost)
             }
-            Op::Update { entity, key, set } => {
-                let (ty, cost) = self.update(entity, key, set, path);
+            Op::Update {
+                entity,
+                key,
+                set,
+                if_version,
+            } => {
+                let (ty, mut cost) = self.update(entity, key, set, path);
+                if let Some(expected) = if_version {
+                    if !self.m.entities.get(entity).is_some_and(|e| e.versioned) {
+                        self.diag(
+                            Code::InvalidRoute,
+                            &format!("{path}.ifVersion"),
+                            format!("{entity} isn't versioned; declare it with versioned: true"),
+                        );
+                    }
+                    cost += self.int(expected, &format!("{path}.ifVersion"));
+                }
                 (ty, own + cost)
             }
             Op::Delete { entity, key } => {
@@ -408,20 +686,57 @@ impl<'a> Checker<'a> {
                 range,
                 after,
                 page,
+                any_of,
             } => {
                 let (list, mut cost) = self.query(entity, index.as_deref(), prefix, limit, path);
+                if let Some(values) = any_of {
+                    let any_path = format!("{path}.anyOf");
+                    if values.is_empty() || values.len() > 10 {
+                        self.diag(Code::InvalidPrefix, &any_path, "anyOf takes 1-10 values");
+                    }
+                    if after.is_some() || *page {
+                        self.diag(
+                            Code::InvalidPrefix,
+                            &any_path,
+                            "anyOf merges several ranges, so it can't be paged with a cursor",
+                        );
+                    }
+                    let parts = self.m.entities.get(entity).and_then(|e| match index {
+                        None => Some(e.key.len()),
+                        Some(name) => e.indexes.get(name).map(|ix| ix.fields.len()),
+                    });
+                    if parts.is_some_and(|parts| prefix.len() >= parts) {
+                        self.diag(Code::InvalidPrefix, &any_path, "anyOf gives values for the field after the prefix, but the prefix already covers every field");
+                    }
+                    for (i, value) in values.iter().enumerate() {
+                        cost += self.expr(value, &format!("{any_path}[{i}]")).1;
+                    }
+                    // Each value's range is scanned up to the limit, then merged.
+                    let k = values.len().max(1) as u64;
+                    let max = match &list {
+                        Ty::List { max, .. } => *max,
+                        _ => 0,
+                    };
+                    let row = self.row_bytes(entity);
+                    cost += Cost {
+                        reads: (k - 1) * max,
+                        bytes_read: (k - 1) * max * row,
+                        ops: k * max,
+                        ..Cost::ZERO
+                    };
+                }
                 if let Some(range) = range {
                     cost += self.range(
                         entity,
                         index.as_deref(),
-                        prefix.len(),
+                        prefix.len() + usize::from(any_of.is_some()),
                         range,
                         &format!("{path}.range"),
                     );
                 }
                 if let Some(after) = after {
                     let (ty, after_cost) = self.expr(after, &format!("{path}.after"));
-                    if !matches!(ty, Ty::String | Ty::Null | Ty::Unknown) {
+                    if !matches!(ty.non_null(), Ty::String { .. } | Ty::Null | Ty::Unknown) {
                         self.type_mismatch(&format!("{path}.after"), "cursor string or null", &ty);
                     }
                     cost += after_cost;
@@ -429,17 +744,26 @@ impl<'a> Checker<'a> {
                 let ty = if *page {
                     Ty::Object(BTreeMap::from([
                         ("items".to_owned(), list),
-                        ("cursor".to_owned(), Ty::String),
+                        ("cursor".to_owned(), Ty::string(CURSOR_MAX).nullable()),
                     ]))
                 } else {
                     list
                 };
                 (ty, own + cost)
             }
-            Op::CounterGet { counter, key } => (
-                Ty::Int { max: None },
-                own + self.counter_get(counter, key, path),
-            ),
+            Op::CounterGet { counter, key } => {
+                let cost = self.counter_get(counter, key, path);
+                let ty = match self.m.counters.get(counter).and_then(|c| {
+                    let agg = c.agg.as_ref()?;
+                    Some((agg, self.m.entities.get(&c.of)?.fields.get(&agg.field)?))
+                }) {
+                    Some((agg, field)) if agg.kind != crate::manifest::AggKind::Distinct => {
+                        Ty::from_field_type(&field.ty).nullable()
+                    }
+                    _ => Ty::Int { max: None },
+                };
+                (ty, own + cost)
+            }
             Op::Map {
                 list,
                 item,
@@ -453,11 +777,12 @@ impl<'a> Checker<'a> {
                 };
                 // The body and the yield share one scope: the yield may use the body's variables.
                 self.scopes.push(HashMap::new());
+                let item_memory = self.memory(&item_ty);
                 self.bind(*item, item_ty, path);
                 let body_cost = self.stmts(body, &format!("{path}.body"), true);
                 let (result_ty, result_cost) = self.expr(result, &format!("{path}.yield"));
                 self.scopes.pop();
-                let per_item = body_cost + result_cost + Cost::ops(1);
+                let per_item = body_cost + result_cost + Cost::ops(1) + item_memory;
                 (
                     Ty::List {
                         item: Box::new(result_ty),
@@ -478,11 +803,12 @@ impl<'a> Checker<'a> {
                     return (Ty::Unknown, own + list_cost);
                 };
                 self.scopes.push(HashMap::new());
+                let item_memory = self.memory(&item_ty);
                 self.bind(*item, item_ty.clone(), path);
                 let body_cost = self.stmts(body, &format!("{path}.body"), true);
                 let keep_cost = self.condition(keep, &format!("{path}.keep"));
                 self.scopes.pop();
-                let per_item = body_cost + keep_cost + Cost::ops(1);
+                let per_item = body_cost + keep_cost + Cost::ops(1) + item_memory;
                 (
                     Ty::List {
                         item: Box::new(item_ty),
@@ -517,6 +843,7 @@ impl<'a> Checker<'a> {
                 queue,
                 payload,
                 delay_ms,
+                key,
             } => {
                 let mut cost = match self.m.queues.get(queue) {
                     Some(decl) => {
@@ -533,6 +860,9 @@ impl<'a> Checker<'a> {
                         Cost::default()
                     }
                 };
+                if let Some(key) = key {
+                    cost += self.string(key, &format!("{path}.key")).1;
+                }
                 if let Some(delay) = delay_ms {
                     let (ty, delay_cost) = self.expr(delay, &format!("{path}.delayMs"));
                     if !ty.is_intish() {
@@ -630,7 +960,7 @@ impl<'a> Checker<'a> {
                     let output = op_decl
                         .output
                         .iter()
-                        .map(|(n, f)| (n.clone(), Ty::from_field_type(&f.ty)))
+                        .map(|(n, f)| (n.clone(), Ty::from_field(f)))
                         .collect();
                     (
                         Ty::Object(output),
@@ -655,6 +985,45 @@ impl<'a> Checker<'a> {
                 let (ty, cost) = self.expr(expr, &format!("{path}.expr"));
                 (ty, own + cost)
             }
+            Op::Cancel { queue, key } => {
+                if !self.m.queues.contains_key(queue) {
+                    self.unknown(
+                        Code::UnknownQueue,
+                        &format!("{path}.queue"),
+                        "queue",
+                        queue,
+                        self.m.queues.keys(),
+                    );
+                }
+                let (_, cost) = self.string(key, &format!("{path}.key"));
+                (
+                    Ty::Null,
+                    own + cost
+                        + Cost {
+                            effects: 1,
+                            ..Cost::ZERO
+                        },
+                )
+            }
+            Op::GetUser { user_id } => {
+                let (_, cost) = self.string(user_id, &format!("{path}.userId"));
+                let profile = &self.m.auth.profile;
+                let mut fields: BTreeMap<String, Ty> = profile
+                    .iter()
+                    .map(|(n, f)| (n.clone(), Ty::from_field(f)))
+                    .collect();
+                fields.insert("userId".into(), Ty::string(CALLER_ID_MAX));
+                let bytes = crate::check::size::profile_bytes(profile);
+                (
+                    Ty::Object(fields).nullable(),
+                    own + cost
+                        + Cost {
+                            reads: 1,
+                            bytes_read: bytes,
+                            ..Cost::ZERO
+                        },
+                )
+            }
         }
     }
 
@@ -673,10 +1042,12 @@ impl<'a> Checker<'a> {
         let mut cost = self.write_cost(entity, per_index, changes);
         for (name, value) in values {
             let value_path = format!("{path}.values.{name}");
-            if !e.fields.contains_key(name) {
-                self.diags.push(unknown_field(&value_path, name, e));
+            let (ty, value_cost) = self.expr(value, &value_path);
+            match e.fields.get(name) {
+                None => self.diags.push(unknown_field(&value_path, name, e)),
+                Some(field) => self.check_write(&ty, field, &value_path),
             }
-            cost += self.expr(value, &value_path).1;
+            cost += value_cost;
         }
         for (name, field) in &e.fields {
             if values.contains_key(name) || field.default.is_some() {
@@ -713,16 +1084,17 @@ impl<'a> Checker<'a> {
             + self.write_cost(entity, 2, &[Change::Updated]);
         for (name, value) in set {
             let value_path = format!("{path}.set.{name}");
-            if !e.fields.contains_key(name) {
-                self.diags.push(unknown_field(&value_path, name, e));
-            } else if e.key.contains(name) {
-                self.diag(
+            let (ty, value_cost) = self.expr(value, &value_path);
+            match e.fields.get(name) {
+                None => self.diags.push(unknown_field(&value_path, name, e)),
+                Some(_) if e.key.contains(name) => self.diag(
                     Code::ImmutableKeyField,
                     &value_path,
                     format!("key field {name:?} can't be updated"),
-                );
+                ),
+                Some(field) => self.check_write(&ty, field, &value_path),
             }
-            cost += self.expr(value, &value_path).1;
+            cost += value_cost;
         }
         (Ty::Row(entity.to_owned()), cost)
     }
@@ -808,9 +1180,16 @@ impl<'a> Checker<'a> {
     }
 
     fn counter_get(&mut self, counter: &str, key: &[Expr], path: &str) -> Cost {
+        let decl = self.m.counters.get(counter);
+        let shards = decl.and_then(|c| c.shards).map_or(1, u64::from);
+        let bytes = match decl.and_then(|c| c.agg.as_ref()) {
+            // A min/max entry holds the value.
+            Some(_) => 64,
+            None => 20,
+        };
         let mut cost = Cost {
-            reads: 1,
-            bytes_read: 20,
+            reads: shards,
+            bytes_read: shards * bytes,
             ..Cost::default()
         };
         for (i, value) in key.iter().enumerate() {
@@ -928,6 +1307,16 @@ impl<'a> Checker<'a> {
         cost
     }
 
+    /// The memory a bound value of type `ty` can take (values of unknown size count as a
+    /// maximum row; the runtime meter is the backstop for those).
+    fn memory(&self, ty: &Ty) -> Cost {
+        let rows = |entity: &str| self.row_bytes(entity);
+        Cost {
+            memory: super::size::ty_bytes(ty, &rows, 64 * 1024),
+            ..Cost::ZERO
+        }
+    }
+
     fn row_bytes(&self, entity: &str) -> u64 {
         self.infos.get(entity).map_or(0, |info| info.row_bytes)
     }
@@ -937,9 +1326,18 @@ impl<'a> Checker<'a> {
     /// entry (delete + insert) or move a row between counter groups.
     /// The write also releases one effect per handler of each change it may make.
     fn write_cost(&self, entity: &str, per_index: u64, changes: &[Change]) -> Cost {
-        let writes = self.infos.get(entity).map_or(1, |info| {
+        let mut writes = self.infos.get(entity).map_or(1, |info| {
             1 + per_index * info.index_count + per_index * info.counter_count
         });
+        // An insert into a TTL entity may first purge an expired row with the same key.
+        if changes.contains(&Change::Inserted)
+            && self.m.entities.get(entity).is_some_and(|e| e.ttl.is_some())
+        {
+            writes += self
+                .infos
+                .get(entity)
+                .map_or(1, |info| 1 + info.index_count + info.counter_count);
+        }
         // Each unique index is probed before its entry is written.
         let probes = self.infos.get(entity).map_or(0, |info| info.unique_count);
         let effects = changes
@@ -981,11 +1379,27 @@ impl<'a> Checker<'a> {
         cost
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::too_many_lines, reason = "one arm per expression kind")]
     fn expr(&mut self, expr: &Expr, path: &str) -> (Ty, Cost) {
         let own = Cost::ops(1);
         match expr {
             Expr::Lit { value } => (Ty::from_literal(value), own),
+            Expr::Decimal { value } => match crate::decimal::Decimal::parse(value) {
+                Some(d) => (
+                    Ty::Decimal {
+                        scale: Some(d.scale()),
+                    },
+                    own,
+                ),
+                None => {
+                    self.diag(
+                        Code::InvalidExpression,
+                        path,
+                        format!("{value:?} isn't a decimal number"),
+                    );
+                    (Ty::Unknown, own)
+                }
+            },
             Expr::Var { id } => match self.lookup(*id) {
                 Some(ty) => (ty.clone(), own),
                 None => {
@@ -1009,7 +1423,7 @@ impl<'a> Checker<'a> {
                                 InputSource::Query => &input.query,
                                 _ => &input.body,
                             };
-                            fields.get(name).map(|field| Ty::from_field_type(&field.ty))
+                            fields.get(name).map(Ty::from_field)
                         })
                     }
                 };
@@ -1025,24 +1439,42 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
-            Expr::Caller => (Ty::String, own),
+            Expr::Caller => (Ty::string(CALLER_ID_MAX), own),
             Expr::CallerRole { org } => {
                 let (_, cost) = self.expr(org, &format!("{path}.org"));
                 let roles = &self.m.auth.roles;
                 let ty = if roles.is_empty() {
-                    Ty::String
+                    Ty::string(64)
                 } else {
                     Ty::Enum(roles.clone())
                 };
-                (ty, own + cost)
+                (ty.nullable(), own + cost)
+            }
+            Expr::CallerProfile { field } => {
+                let ty = match self.m.auth.profile.get(field) {
+                    Some(f) => Ty::from_field(f).nullable(),
+                    None => {
+                        let known: Vec<&String> = self.m.auth.profile.keys().collect();
+                        self.diag(
+                            Code::UnknownField,
+                            path,
+                            format!(
+                                "the caller profile has no field {field:?} (declared in auth.profile: {known:?})"
+                            ),
+                        );
+                        Ty::Unknown
+                    }
+                };
+                (ty, own)
             }
             Expr::Now => (Ty::Int { max: None }, own),
             Expr::Field { of, name } => {
                 let (of_ty, cost) = self.expr(of, &format!("{path}.of"));
-                let ty = match &of_ty {
+                let nullable = matches!(of_ty, Ty::OptRow(_) | Ty::Opt(_));
+                let ty = match of_ty.non_null() {
                     Ty::Row(entity) | Ty::OptRow(entity) => {
                         match self.m.entities.get(entity).map(|e| (e, e.fields.get(name))) {
-                            Some((_, Some(field))) => Ty::from_field_type(&field.ty),
+                            Some((_, Some(field))) => Ty::from_field(field),
                             Some((e, None)) => {
                                 self.diags.push(unknown_field(path, name, e));
                                 Ty::Unknown
@@ -1072,55 +1504,15 @@ impl<'a> Checker<'a> {
                         Ty::Unknown
                     }
                 };
-                (ty, own + cost)
+                (if nullable { ty.nullable() } else { ty }, own + cost)
             }
             Expr::IsNull { of } => (Ty::Bool, own + self.expr(of, &format!("{path}.of")).1),
             Expr::Not { arg } => (Ty::Bool, own + self.condition(arg, &format!("{path}.arg"))),
             Expr::Neg { arg } | Expr::Abs { arg } => {
-                let (ty, cost) = self.expr(arg, &format!("{path}.arg"));
-                if !ty.is_intish() {
-                    self.type_mismatch(&format!("{path}.arg"), "int", &ty);
-                }
-                (Ty::Int { max: None }, own + cost)
+                let (ty, cost) = self.numeric(arg, &format!("{path}.arg"));
+                (ty, own + cost)
             }
-            Expr::Binary { op, lhs, rhs } => {
-                let (lt, lc) = self.expr(lhs, &format!("{path}.lhs"));
-                let (rt, rc) = self.expr(rhs, &format!("{path}.rhs"));
-                let cost = own + lc + rc;
-                let ty = match op {
-                    op if op.is_comparison() => Ty::Bool,
-                    BinaryOp::And | BinaryOp::Or => {
-                        for (side, ty) in [("lhs", &lt), ("rhs", &rt)] {
-                            if !ty.is_boolish() {
-                                self.type_mismatch(&format!("{path}.{side}"), "bool", ty);
-                            }
-                        }
-                        Ty::Bool
-                    }
-                    _ => {
-                        for (side, ty) in [("lhs", &lt), ("rhs", &rt)] {
-                            if !ty.is_intish() {
-                                self.type_mismatch(&format!("{path}.{side}"), "int", ty);
-                            }
-                        }
-                        let bound = |ty: &Ty| match ty {
-                            Ty::Int { max } => *max,
-                            _ => None,
-                        };
-                        let max = match op {
-                            // min(a, b) never exceeds either bound.
-                            BinaryOp::Min => match (bound(&lt), bound(&rt)) {
-                                (Some(a), Some(b)) => Some(a.min(b)),
-                                (a, b) => a.or(b),
-                            },
-                            BinaryOp::Max => bound(&lt).zip(bound(&rt)).map(|(a, b)| a.max(b)),
-                            _ => None,
-                        };
-                        Ty::Int { max }
-                    }
-                };
-                (ty, cost)
-            }
+            Expr::Binary { op, lhs, rhs } => self.binary(*op, lhs, rhs, path),
             Expr::In { value, list: _ } => {
                 (Ty::Bool, own + self.expr(value, &format!("{path}.value")).1)
             }
@@ -1130,8 +1522,20 @@ impl<'a> Checker<'a> {
                 otherwise,
             } => {
                 let cond_cost = self.condition(cond, &format!("{path}.cond"));
-                let (tt, tc) = self.expr(then, &format!("{path}.then"));
-                let (et, ec) = self.expr(otherwise, &format!("{path}.else"));
+                let (mut tt, tc) = self.expr(then, &format!("{path}.then"));
+                let (mut et, ec) = self.expr(otherwise, &format!("{path}.else"));
+                // `x is null ? fallback : x` (and its negation) never yields null from `x`.
+                match &**cond {
+                    Expr::IsNull { of } if **of == **otherwise => et = et.non_null().clone(),
+                    Expr::Not { arg } => {
+                        if let Expr::IsNull { of } = &**arg
+                            && **of == **then
+                        {
+                            tt = tt.non_null().clone();
+                        }
+                    }
+                    _ => {}
+                }
                 (tt.join(et), own + cond_cost + tc.max(ec))
             }
             Expr::Match { on, cases } => self.match_expr(on, cases, path),
@@ -1164,11 +1568,11 @@ impl<'a> Checker<'a> {
             }
             Expr::First { of } => {
                 let (ty, cost) = self.expr(of, &format!("{path}.of"));
-                let item = match ty {
-                    Ty::List { item, .. } => item.join(Ty::Null),
+                let item = match ty.non_null() {
+                    Ty::List { item, .. } => (**item).clone().nullable(),
                     Ty::Unknown => Ty::Unknown,
                     other => {
-                        self.type_mismatch(&format!("{path}.of"), "list", &other);
+                        self.type_mismatch(&format!("{path}.of"), "list", other);
                         Ty::Unknown
                     }
                 };
@@ -1176,47 +1580,469 @@ impl<'a> Checker<'a> {
             }
             Expr::Length { of } => {
                 let (ty, cost) = self.expr(of, &format!("{path}.of"));
-                let max = match ty {
-                    Ty::List { max, .. } => i64::try_from(max).ok(),
-                    Ty::String | Ty::Enum(_) | Ty::Unknown => None,
+                let max = match ty.non_null() {
+                    Ty::List { max, .. } => i64::try_from(*max).ok(),
+                    t @ (Ty::String { .. } | Ty::Enum(_)) => {
+                        t.max_chars().and_then(|m| i64::try_from(m).ok())
+                    }
+                    Ty::Unknown => None,
                     other => {
-                        self.type_mismatch(&format!("{path}.of"), "list or string", &other);
+                        self.type_mismatch(&format!("{path}.of"), "list or string", other);
                         None
                     }
                 };
                 (Ty::Int { max }, own + cost)
             }
-            Expr::Str { of, .. } | Expr::Truncate { of, .. } => (
-                Ty::String,
-                own + self.string_operand(of, &format!("{path}.of")),
-            ),
+            Expr::Str { op, of } => {
+                let (ty, cost) = self.string(of, &format!("{path}.of"));
+                // Case mapping can turn one character into up to three (`ß` → `SS`).
+                let grow = if matches!(op, StrOp::Trim) { 1 } else { 3 };
+                let max = ty.max_chars().map(|m| m.saturating_mul(grow));
+                (Ty::String { max }, own + cost)
+            }
+            Expr::Truncate { of, max } => {
+                let (ty, cost) = self.string(of, &format!("{path}.of"));
+                let max = ty
+                    .max_chars()
+                    .map_or(u64::from(*max), |m| m.min(u64::from(*max)));
+                (Ty::string(max), own + cost)
+            }
             Expr::StrTest { of, arg, .. } => {
-                let cost = self.string_operand(of, &format!("{path}.of"))
-                    + self.string_operand(arg, &format!("{path}.arg"));
+                let cost = self.string(of, &format!("{path}.of")).1
+                    + self.string(arg, &format!("{path}.arg")).1;
                 (Ty::Bool, own + cost)
             }
             Expr::Concat { parts } => {
                 let mut cost = own;
+                let mut max = Some(0_u64);
                 for (i, part) in parts.iter().enumerate() {
-                    cost += self.expr(part, &format!("{path}.parts[{i}]")).1;
+                    let (ty, c) = self.expr(part, &format!("{path}.parts[{i}]"));
+                    cost += c;
+                    max = max.zip(ty.max_chars()).map(|(a, b)| a.saturating_add(b));
                 }
-                (Ty::String, cost)
+                (Ty::String { max }, cost)
+            }
+            Expr::Agg {
+                op,
+                list,
+                item,
+                value,
+            } => self.aggregate(*op, list, *item, value.as_deref(), path),
+            Expr::Sort {
+                list,
+                item,
+                by,
+                desc: _,
+            } => {
+                let (list_ty, list_cost) = self.expr(list, &format!("{path}.list"));
+                let Some((item_ty, max)) =
+                    self.bounded_list(list_ty.clone(), &format!("{path}.list"))
+                else {
+                    return (Ty::Unknown, own + list_cost);
+                };
+                self.scopes.push(HashMap::new());
+                self.bind_scoped(*item, item_ty);
+                let (by_ty, by_cost) = self.expr(by, &format!("{path}.by"));
+                self.scopes.pop();
+                self.orderable(&by_ty, &format!("{path}.by"));
+                let cost = own
+                    + list_cost
+                    + by_cost.plus(Cost::ops(1)).times(max)
+                    + Cost::ops(crate::runtime::sort_comparisons(max));
+                (list_ty.non_null().clone(), cost)
+            }
+            Expr::Slice { of, start, end } => {
+                let (ty, mut cost) = self.expr(of, &format!("{path}.of"));
+                cost += self.int(start, &format!("{path}.start"));
+                let mut end_bound = None;
+                if let Some(end) = end {
+                    cost += self.int(end, &format!("{path}.end"));
+                    if let Expr::Lit {
+                        value: crate::manifest::Literal::Int(n),
+                    } = &**end
+                        && *n >= 0
+                    {
+                        end_bound = Some(n.cast_unsigned());
+                    }
+                }
+                let result = match ty.non_null() {
+                    Ty::List { item, max } => Ty::List {
+                        item: item.clone(),
+                        max: end_bound.map_or(*max, |e| e.min(*max)),
+                    },
+                    t @ (Ty::String { .. } | Ty::Enum(_)) => Ty::String { max: t.max_chars() },
+                    Ty::Unknown => Ty::Unknown,
+                    other => {
+                        self.type_mismatch(&format!("{path}.of"), "list or string", other);
+                        Ty::Unknown
+                    }
+                };
+                (result, own + cost)
+            }
+            Expr::Distinct { of } => {
+                let (ty, cost) = self.expr(of, &format!("{path}.of"));
+                let Some((item, max)) = self.bounded_list(ty, &format!("{path}.of")) else {
+                    return (Ty::Unknown, own + cost);
+                };
+                (
+                    Ty::List {
+                        item: Box::new(item),
+                        max,
+                    },
+                    own + cost + Cost::ops(max),
+                )
+            }
+            Expr::ListConcat { parts } => {
+                let mut cost = own;
+                let mut item_ty: Option<Ty> = None;
+                let mut total = 0_u64;
+                for (i, part) in parts.iter().enumerate() {
+                    let part_path = format!("{path}.parts[{i}]");
+                    let (ty, c) = self.expr(part, &part_path);
+                    cost += c;
+                    if let Some((item, max)) = self.bounded_list(ty, &part_path) {
+                        total = total.saturating_add(max);
+                        item_ty = Some(match item_ty {
+                            Some(prev) => prev.join(item),
+                            None => item,
+                        });
+                    }
+                }
+                (
+                    Ty::List {
+                        item: Box::new(item_ty.unwrap_or(Ty::Unknown)),
+                        max: total,
+                    },
+                    cost,
+                )
+            }
+            Expr::Includes { list, value } => {
+                let (ty, list_cost) = self.expr(list, &format!("{path}.list"));
+                let max = self
+                    .bounded_list(ty, &format!("{path}.list"))
+                    .map_or(0, |(_, max)| max);
+                let (_, value_cost) = self.expr(value, &format!("{path}.value"));
+                (Ty::Bool, own + list_cost + value_cost + Cost::ops(max))
+            }
+            Expr::Split { of, sep, max } => {
+                let (ty, cost) = self.string(of, &format!("{path}.of"));
+                let sep_cost = self.string(sep, &format!("{path}.sep")).1;
+                if !(1..=1000).contains(max) {
+                    self.diag(
+                        Code::InvalidExpression,
+                        &format!("{path}.max"),
+                        "split takes 1-1000 parts",
+                    );
+                }
+                let list = Ty::List {
+                    item: Box::new(Ty::String {
+                        max: ty.max_chars(),
+                    }),
+                    max: u64::from(*max),
+                };
+                (list, own + cost + sep_cost)
+            }
+            Expr::Replace { of, find, with } => {
+                let (ty, cost) = self.string(of, &format!("{path}.of"));
+                let find_cost = self.string(find, &format!("{path}.find")).1;
+                let (with_ty, with_cost) = self.string(with, &format!("{path}.with"));
+                // At most one match per character, each replaced by `with`.
+                let max = ty
+                    .max_chars()
+                    .zip(with_ty.max_chars())
+                    .map(|(n, w)| n.saturating_mul(w.max(1)));
+                (Ty::String { max }, own + cost + find_cost + with_cost)
+            }
+            Expr::Pad {
+                of, length, fill, ..
+            } => {
+                let (ty, cost) = self.expr(of, &format!("{path}.of"));
+                if *length > 1000 || fill.is_empty() {
+                    self.diag(
+                        Code::InvalidExpression,
+                        path,
+                        "padding needs a length of at most 1000 and a fill that isn't empty",
+                    );
+                }
+                let max = ty.max_chars().map(|m| m.max(u64::from(*length)));
+                (Ty::String { max }, own + cost)
+            }
+            Expr::Matches { of, pattern } => {
+                let cost = self.string(of, &format!("{path}.of")).1;
+                if pattern.chars().count() > 256 {
+                    self.diag(
+                        Code::InvalidExpression,
+                        &format!("{path}.pattern"),
+                        "patterns are limited to 256 characters",
+                    );
+                } else if let Err(e) = regex_lite::Regex::new(pattern) {
+                    self.diag(
+                        Code::InvalidExpression,
+                        &format!("{path}.pattern"),
+                        format!("invalid pattern: {e}"),
+                    );
+                }
+                (Ty::Bool, own + cost)
+            }
+            Expr::FormatNumber { of, .. } => {
+                let (ty, cost) = self.numeric(of, &format!("{path}.of"));
+                (keep_null(&ty, Ty::string(60)), own + cost)
+            }
+            Expr::Round { of, scale, .. } => {
+                let (ty, cost) = self.numeric(of, &format!("{path}.of"));
+                self.scale(*scale, &format!("{path}.scale"));
+                let result = Ty::Decimal {
+                    scale: Some(*scale),
+                };
+                (keep_null(&ty, result), own + cost)
+            }
+            Expr::ToInt { of, .. } => {
+                let (ty, cost) = self.numeric(of, &format!("{path}.of"));
+                (keep_null(&ty, Ty::Int { max: None }), own + cost)
+            }
+            Expr::StartOf { of, tz, .. } => {
+                let cost = self.int(of, &format!("{path}.of")) + self.tz(tz.as_deref(), path);
+                (Ty::Int { max: None }, own + cost)
+            }
+            Expr::AddTime { of, amount, tz, .. } => {
+                let cost = self.int(of, &format!("{path}.of"))
+                    + self.int(amount, &format!("{path}.amount"))
+                    + self.tz(tz.as_deref(), path);
+                (Ty::Int { max: None }, own + cost)
+            }
+            Expr::TimePart { of, part, tz } => {
+                let cost = self.int(of, &format!("{path}.of")) + self.tz(tz.as_deref(), path);
+                let max = match part {
+                    crate::manifest::TimePart::Year => 9999,
+                    crate::manifest::TimePart::Month => 12,
+                    crate::manifest::TimePart::Day => 31,
+                    crate::manifest::TimePart::Hour => 23,
+                    crate::manifest::TimePart::Minute | crate::manifest::TimePart::Second => 59,
+                    crate::manifest::TimePart::Weekday => 7,
+                    crate::manifest::TimePart::DayOfYear => 366,
+                };
+                (Ty::Int { max: Some(max) }, own + cost)
+            }
+            Expr::FormatTime { of, pattern, tz } => {
+                let cost = self.int(of, &format!("{path}.of")) + self.tz(tz.as_deref(), path);
+                let max = match pattern {
+                    None => 29,
+                    Some(pattern) => {
+                        if pattern.chars().count() > 64 {
+                            self.diag(
+                                Code::InvalidExpression,
+                                &format!("{path}.pattern"),
+                                "time patterns are limited to 64 characters",
+                            );
+                        } else if let Err(e) = crate::runtime::valid_time_pattern(pattern) {
+                            self.diag(
+                                Code::InvalidExpression,
+                                &format!("{path}.pattern"),
+                                format!("invalid time pattern: {e}"),
+                            );
+                        }
+                        // The longest directive (a time zone name) is under 32 characters.
+                        pattern.chars().count() as u64 * 32
+                    }
+                };
+                (Ty::string(max), own + cost)
             }
         }
     }
 
-    fn string_operand(&mut self, expr: &Expr, path: &str) -> Cost {
+    fn binary(&mut self, op: BinaryOp, lhs: &Expr, rhs: &Expr, path: &str) -> (Ty, Cost) {
+        let (lt, lc) = self.expr(lhs, &format!("{path}.lhs"));
+        let (rt, rc) = self.expr(rhs, &format!("{path}.rhs"));
+        let cost = Cost::ops(1) + lc + rc;
+        let ty = match op {
+            op if op.is_comparison() => Ty::Bool,
+            BinaryOp::And | BinaryOp::Or => {
+                for (side, ty) in [("lhs", &lt), ("rhs", &rt)] {
+                    if !ty.is_boolish() {
+                        self.type_mismatch(&format!("{path}.{side}"), "bool", ty);
+                    }
+                }
+                Ty::Bool
+            }
+            _ => {
+                let int_only = matches!(
+                    op,
+                    BinaryOp::Mod | BinaryOp::Pow | BinaryOp::DivFloor | BinaryOp::DivCeil
+                );
+                for (side, ty) in [("lhs", &lt), ("rhs", &rt)] {
+                    if int_only && !ty.is_intish() {
+                        self.type_mismatch(&format!("{path}.{side}"), "int", ty);
+                    } else if !ty.is_numeric() {
+                        self.type_mismatch(&format!("{path}.{side}"), "int or decimal", ty);
+                    }
+                }
+                let scale = |ty: &Ty| match ty.non_null() {
+                    Ty::Decimal { scale } => Some(*scale),
+                    Ty::Int { .. } => Some(Some(0)),
+                    _ => None,
+                };
+                let is_decimal = |ty: &Ty| matches!(ty.non_null(), Ty::Decimal { .. });
+                let nullable =
+                    matches!(lt, Ty::Null | Ty::Opt(_)) || matches!(rt, Ty::Null | Ty::Opt(_));
+                let result = if is_decimal(&lt) || is_decimal(&rt) {
+                    let (a, b) = (scale(&lt).flatten(), scale(&rt).flatten());
+                    let scale = a.zip(b).map(|(a, b)| match op {
+                        BinaryOp::Mul => (a + b).min(crate::decimal::MAX_SCALE),
+                        _ => a.max(b),
+                    });
+                    Ty::Decimal { scale }
+                } else {
+                    let bound = |ty: &Ty| match ty.non_null() {
+                        Ty::Int { max } => *max,
+                        _ => None,
+                    };
+                    let max = match op {
+                        // min(a, b) never exceeds either bound.
+                        BinaryOp::Min => match (bound(&lt), bound(&rt)) {
+                            (Some(a), Some(b)) => Some(a.min(b)),
+                            (a, b) => a.or(b),
+                        },
+                        BinaryOp::Max => bound(&lt).zip(bound(&rt)).map(|(a, b)| a.max(b)),
+                        _ => None,
+                    };
+                    Ty::Int { max }
+                };
+                // `null` propagates through arithmetic.
+                if nullable { result.nullable() } else { result }
+            }
+        };
+        (ty, cost)
+    }
+
+    fn aggregate(
+        &mut self,
+        op: AggOp,
+        list: &Expr,
+        item: VarId,
+        value: Option<&Expr>,
+        path: &str,
+    ) -> (Ty, Cost) {
+        let own = Cost::ops(1);
+        let (list_ty, list_cost) = self.expr(list, &format!("{path}.list"));
+        let Some((item_ty, max)) = self.bounded_list(list_ty, &format!("{path}.list")) else {
+            return (Ty::Unknown, own + list_cost);
+        };
+        self.scopes.push(HashMap::new());
+        self.bind_scoped(item, item_ty.clone());
+        let (value_ty, value_cost) = match value {
+            Some(value) => self.expr(value, &format!("{path}.value")),
+            None => (item_ty, Cost::ZERO),
+        };
+        self.scopes.pop();
+        let value_path = format!("{path}.value");
+        let ty = match op {
+            AggOp::Some | AggOp::Every | AggOp::Count => {
+                if value.is_some() && !value_ty.is_boolish() {
+                    self.type_mismatch(&value_path, "bool", &value_ty);
+                } else if value.is_none() && !matches!(op, AggOp::Count) && !value_ty.is_boolish() {
+                    self.type_mismatch(&value_path, "a list of bools", &value_ty);
+                }
+                if matches!(op, AggOp::Count) {
+                    Ty::Int {
+                        max: i64::try_from(max).ok(),
+                    }
+                } else {
+                    Ty::Bool
+                }
+            }
+            AggOp::Sum => {
+                if !value_ty.is_numeric() {
+                    self.type_mismatch(&value_path, "int or decimal", &value_ty);
+                }
+                match value_ty.non_null() {
+                    Ty::Decimal { scale } => Ty::Decimal { scale: *scale },
+                    _ => Ty::Int { max: None },
+                }
+            }
+            AggOp::Min | AggOp::Max => {
+                self.orderable(&value_ty, &value_path);
+                value_ty.non_null().clone().nullable()
+            }
+        };
+        (
+            ty,
+            own + list_cost + value_cost.plus(Cost::ops(1)).times(max),
+        )
+    }
+
+    /// Checks a numeric operand and returns its type (ints and decimals keep their kind, and a
+    /// value that may be `null` stays nullable).
+    fn numeric(&mut self, expr: &Expr, path: &str) -> (Ty, Cost) {
         let (ty, cost) = self.expr(expr, path);
-        if !matches!(ty, Ty::String | Ty::Enum(_) | Ty::Unknown | Ty::Null) {
-            self.type_mismatch(path, "string", &ty);
+        if !ty.is_numeric() {
+            self.type_mismatch(path, "int or decimal", &ty);
+        }
+        let numeric = match ty.non_null() {
+            Ty::Decimal { scale } => Ty::Decimal { scale: *scale },
+            _ => Ty::Int { max: None },
+        };
+        (keep_null(&ty, numeric), cost)
+    }
+
+    fn int(&mut self, expr: &Expr, path: &str) -> Cost {
+        let (ty, cost) = self.expr(expr, path);
+        if !ty.is_intish() && ty != Ty::Null {
+            self.type_mismatch(path, "int", &ty);
         }
         cost
+    }
+
+    fn tz(&mut self, tz: Option<&Expr>, path: &str) -> Cost {
+        let Some(tz) = tz else {
+            return Cost::ZERO;
+        };
+        let tz_path = format!("{path}.tz");
+        if let Expr::Lit {
+            value: crate::manifest::Literal::String(name),
+        } = tz
+            && !crate::runtime::time_zone_exists(name)
+        {
+            self.diag(
+                Code::InvalidExpression,
+                &tz_path,
+                format!("{name:?} isn't an IANA time zone"),
+            );
+        }
+        self.string(tz, &tz_path).1
+    }
+
+    fn scale(&mut self, scale: u8, path: &str) {
+        if scale > crate::decimal::MAX_SCALE {
+            self.diag(
+                Code::InvalidExpression,
+                path,
+                format!("decimal scales are 0-{}", crate::decimal::MAX_SCALE),
+            );
+        }
+    }
+
+    /// Checks that values of a type can be ordered (sort keys, min, max).
+    fn orderable(&mut self, ty: &Ty, path: &str) {
+        if matches!(
+            ty.non_null(),
+            Ty::List { .. } | Ty::Object(_) | Ty::Row(_) | Ty::OptRow(_)
+        ) {
+            self.type_mismatch(path, "a string, int, decimal, or bool", ty);
+        }
+    }
+
+    fn string(&mut self, expr: &Expr, path: &str) -> (Ty, Cost) {
+        let (ty, cost) = self.expr(expr, path);
+        if !ty.is_stringish() {
+            self.type_mismatch(path, "string", &ty);
+        }
+        (ty.non_null().clone(), cost)
     }
 
     fn match_expr(&mut self, on: &Expr, cases: &BTreeMap<String, Expr>, path: &str) -> (Ty, Cost) {
         let (on_ty, on_cost) = self.expr(on, &format!("{path}.on"));
         let has_default = cases.contains_key(DEFAULT_CASE);
-        match &on_ty {
+        match on_ty.non_null() {
             Ty::Enum(values) => {
                 for case in cases.keys().filter(|c| *c != DEFAULT_CASE) {
                     if !values.contains(case) {

@@ -4,12 +4,15 @@
  * statement into the current handler's plan.
  */
 import type {
+  AggOp,
   Counter as CounterSpec,
   Entity as EntitySpec,
+  FieldType,
+  IndexPart,
   Expr as Node,
   Stmt,
 } from "@aleph/manifest";
-import { Expr, type ExprLike } from "./expr.js";
+import { Expr, type ExprLike, type Numeric } from "./expr.js";
 import {
   type AnyField,
   type Fields,
@@ -19,6 +22,7 @@ import {
 } from "./fields.js";
 import { type HasNode, hasNode, NODE, toNode } from "./node.js";
 import { AlephBuildError, Recorder, recorder, recording } from "./recorder.js";
+import { type Duration, durationMs } from "./units.js";
 
 /** A declared error a plan can fail with. Created by `route.errors({...})`. */
 export class ErrorRef {
@@ -40,9 +44,37 @@ export type Shape =
 
 const SCALAR: Shape = { kind: "scalar" };
 const ROW_ENTITY: unique symbol = Symbol("aleph.rowEntity");
+const SHAPE: unique symbol = Symbol("aleph.shape");
+
+/** @internal The shape of a value of a declared field type. */
+export function shapeOfType(type: FieldType): Shape {
+  switch (type.kind) {
+    case "array":
+      return { kind: "list", item: shapeOfType(type.items) };
+    case "object":
+      return {
+        kind: "object",
+        fields: Object.fromEntries(
+          Object.entries(type.fields).map(([name, f]) => [name, shapeOfType(f.type)]),
+        ),
+      };
+    default:
+      return SCALAR;
+  }
+}
+
+/** @internal The shapes of a record of declared fields. */
+export function shapeOfFields(fields: Fields): Record<string, Shape> {
+  return Object.fromEntries(
+    Object.entries(fields).map(([name, f]) => [name, shapeOfType(f.spec.type)]),
+  );
+}
 
 /** @internal The shape of an SDK value. */
 export function shapeOf(value: unknown): Shape {
+  if (typeof value === "object" && value !== null && SHAPE in value) {
+    return (value as { [SHAPE]: Shape })[SHAPE];
+  }
   if (value instanceof List) return { kind: "list", item: value.itemShape };
   if (value instanceof Page) {
     return {
@@ -74,19 +106,49 @@ export function materialize(shape: Shape, node: Node): unknown {
     case "list":
       return new List(node, shape.item);
     case "object": {
-      const out: Record<string, unknown> = {};
+      const out: Record<string | symbol, unknown> = {};
       for (const [name, fieldShape] of Object.entries(shape.fields)) {
         out[name] = materialize(fieldShape, { kind: "field", of: node, name });
       }
+      // The object stands for one expression (which may be `null`), not a rebuilt literal.
+      Object.defineProperty(out, NODE, { value: node, enumerable: false });
+      Object.defineProperty(out, SHAPE, { value: shape, enumerable: false });
       return out;
     }
   }
 }
 
+/**
+ * What a plan sees for a value of type `V`: lists of bounded length become {@link List}s,
+ * objects become objects of accessors, and everything else is an {@link Expr}.
+ */
+export type Accessor<V> = [NonNullable<V>] extends [readonly (infer U)[]]
+  ? List<Accessor<U>>
+  : [NonNullable<V>] extends [Record<string, unknown>]
+    ? ObjectAccessor<NonNullable<V>, null extends V ? true : false>
+    : Expr<V>;
+
+/** An object value's fields. If the object may be `null`, every field may be too. */
+export type ObjectAccessor<O, N extends boolean> = {
+  readonly [K in keyof O]: Accessor<N extends true ? O[K] | null : O[K]>;
+} & HasNode;
+
+/**
+ * A value accepted where a value of type `V` is expected: an expression, a constant, or (for
+ * lists and objects) a literal built from those.
+ */
+export type ValueLike<V> = Expr<V> | PlainLike<V>;
+
+type PlainLike<V> = V extends readonly (infer U)[]
+  ? readonly ValueLike<U>[] | List<unknown>
+  : V extends Record<string, unknown>
+    ? { readonly [K in keyof V]: ValueLike<V[K]> }
+    : V;
+
 // ─── Rows ──────────────────────────────────────────────────────────────────────────────────────
 
 /** Values for a set of fields, as expressions or constants. */
-export type ValuesLike<F extends Fields> = { [K in keyof F]: ExprLike<FieldValue<F[K]>> };
+export type ValuesLike<F extends Fields> = { [K in keyof F]: ValueLike<FieldValue<F[K]>> };
 
 /** Field values an insert takes: required fields must be given, the rest may be. */
 export type InsertValues<F extends Fields> = Pick<ValuesLike<F>, RequiredFields<F>> &
@@ -94,7 +156,7 @@ export type InsertValues<F extends Fields> = Pick<ValuesLike<F>, RequiredFields<
 
 /** A row of an entity. Fields are expressions; methods record operations on the row. */
 export type Row<F extends Fields> = {
-  readonly [K in keyof F]: Expr<FieldValue<F[K]>>;
+  readonly [K in keyof F]: Accessor<FieldValue<F[K]>>;
 } & RowMethods<F> &
   HasNode;
 
@@ -102,9 +164,15 @@ export interface RowMethods<F extends Fields> {
   /** `false` if this row came from a `get` that found nothing. */
   exists(): Expr<boolean>;
   /** Updates fields of this row and returns the updated row. */
-  update(set: Partial<ValuesLike<F>>): Row<F>;
+  update(set: Partial<ValuesLike<F>>, options?: UpdateOptions): Row<F>;
   /** Deletes this row. */
   delete(): void;
+}
+
+/** Options for updates. */
+export interface UpdateOptions {
+  /** For versioned entities: fail with 409 `version_conflict` unless the row has this version. */
+  ifVersion?: ExprLike<number | null>;
 }
 
 const RESERVED = new Set(["exists", "update", "delete"]);
@@ -114,12 +182,14 @@ function makeRow<F extends Fields>(entity: Entity<F, string, string>, node: Node
     [NODE]: node,
     [ROW_ENTITY]: entity,
     exists: () => new Expr<boolean>({ kind: "isNull", of: node }).not(),
-    update: (set: Partial<ValuesLike<F>>) => entity.update(entity.keyOf(node) as never, set),
+    update: (set: Partial<ValuesLike<F>>, options?: UpdateOptions) =>
+      entity.update(entity.keyOf(node) as never, set, options),
     delete: () => entity.delete(entity.keyOf(node) as never),
   };
-  for (const name of Object.keys(entity.fields)) {
+  for (const [name, field] of Object.entries(entity.fields)) {
+    const shape = shapeOfType(field.spec.type);
     Object.defineProperty(row, name, {
-      get: () => new Expr({ kind: "field", of: node, name }),
+      get: () => materialize(shape, { kind: "field", of: node, name }),
       enumerable: true,
     });
   }
@@ -185,6 +255,95 @@ export class List<T> implements HasNode {
     return new List<T>(node, this.itemShape);
   }
 
+  #agg<R>(op: AggOp, fn?: (item: T) => unknown): Expr<R> {
+    if (!fn) return new Expr({ kind: "agg", op, list: this["~node"], item: freshVar() });
+    const item = freshVar();
+    const value = toNode(fn(materialize(this.itemShape, { kind: "var", id: item }) as T));
+    return new Expr({ kind: "agg", op, list: this["~node"], item, value });
+  }
+
+  /** The sum of the items (or of `fn(item)`); 0 for an empty list. */
+  sum<N extends Numeric>(fn: (item: T) => ExprLike<N>): Expr<N>;
+  sum<N extends Numeric>(this: List<Expr<N | null>>): Expr<N>;
+  sum(fn?: (item: T) => unknown): Expr<Numeric> {
+    return this.#agg("sum", fn);
+  }
+
+  /** The smallest item (or `fn(item)`), or `null` for an empty list. */
+  min<V>(fn: (item: T) => ExprLike<V>): Expr<V | null>;
+  min<V>(this: List<Expr<V>>): Expr<V | null>;
+  min(fn?: (item: T) => unknown): Expr<unknown> {
+    return this.#agg("min", fn);
+  }
+
+  /** The largest item (or `fn(item)`), or `null` for an empty list. */
+  max<V>(fn: (item: T) => ExprLike<V>): Expr<V | null>;
+  max<V>(this: List<Expr<V>>): Expr<V | null>;
+  max(fn?: (item: T) => unknown): Expr<unknown> {
+    return this.#agg("max", fn);
+  }
+
+  /** `true` if `fn` holds for any item. */
+  some(fn: (item: T) => ExprLike<boolean>): Expr<boolean> {
+    return this.#agg("some", fn);
+  }
+
+  /** `true` if `fn` holds for every item (also for an empty list). */
+  every(fn: (item: T) => ExprLike<boolean>): Expr<boolean> {
+    return this.#agg("every", fn);
+  }
+
+  /** How many items `fn` holds for (or all items). */
+  count(fn?: (item: T) => ExprLike<boolean>): Expr<number> {
+    return this.#agg("count", fn);
+  }
+
+  /** The items sorted by a key (a string, number, decimal, or bool), stable. */
+  sortBy(fn: (item: T) => Expr<unknown>, order: "asc" | "desc" = "asc"): List<T> {
+    const item = freshVar();
+    const by = toNode(fn(materialize(this.itemShape, { kind: "var", id: item }) as T));
+    const node: Node = {
+      kind: "sort",
+      list: this["~node"],
+      item,
+      by,
+      ...(order === "desc" ? { desc: true } : {}),
+    };
+    return new List<T>(node, this.itemShape);
+  }
+
+  /** Items from `start` up to `end`, like JavaScript's `slice`. */
+  slice(start: ExprLike<number>, end?: ExprLike<number>): List<T> {
+    const node: Node = {
+      kind: "slice",
+      of: this["~node"],
+      start: toNode(start),
+      ...(end === undefined ? {} : { end: toNode(end) }),
+    };
+    return new List<T>(node, this.itemShape);
+  }
+
+  /** The first `n` items. With a constant `n`, the list's bound shrinks to it. */
+  take(n: ExprLike<number>): List<T> {
+    return this.slice(0, n);
+  }
+
+  /** The list without repeated items (first occurrences kept). */
+  distinct(): List<T> {
+    return new List<T>({ kind: "distinct", of: this["~node"] }, this.itemShape);
+  }
+
+  /** This list followed by others. */
+  concat(...others: List<T>[]): List<T> {
+    const parts = [this["~node"], ...others.map((o) => o["~node"])];
+    return new List<T>({ kind: "listConcat", parts }, this.itemShape);
+  }
+
+  /** `true` if the list contains `value`. */
+  includes(value: unknown): Expr<boolean> {
+    return new Expr({ kind: "includes", list: this["~node"], value: toNode(value) });
+  }
+
   /** Updates every row in a list of rows. */
   updateAll<F extends Fields>(this: List<Row<F>>, set: Partial<ValuesLike<F>>): void {
     forEach(this, (row) => {
@@ -198,6 +357,11 @@ export class List<T> implements HasNode {
       row.delete();
     });
   }
+}
+
+/** A fresh variable id: from the current plan, or a row expression's recorder. */
+function freshVar(): number {
+  return recorder().newVar();
 }
 
 /** Runs `fn` once per item. Unlike `map`, the body may write. */
@@ -238,6 +402,31 @@ export interface EntityDef<F extends Fields, K extends keyof F & string, I exten
   invariants?: Record<string, (row: Row<F>) => Expr<boolean>>;
   /** Rows can be inserted but never updated or deleted. */
   appendOnly?: boolean;
+  /**
+   * Keep a `version` field (declare it as `version: t.version()`): 1 on insert, +1 on every
+   * update. Updates can then pass `ifVersion` for optimistic concurrency.
+   */
+  versioned?: boolean;
+  /** Rows expire `after` their timestamp `field`: invisible once expired, swept in the background. */
+  ttl?: { field: keyof F & string; after: Duration };
+  /** Marks the entity deprecated, so a later revision may remove it. */
+  deprecated?: string;
+  /**
+   * The parent this entity's rows belong to: `key` maps this entity's fields to the parent's
+   * key fields, and must be a prefix of this entity's key (so `childrenOf` is one range scan).
+   * With `onDelete: "cascade"`, deleting a parent deletes its children in the background.
+   */
+  parent?: ParentDef<F>;
+}
+
+/** How a child entity points at its parent. */
+export interface ParentDef<F extends Fields> {
+  // biome-ignore lint/suspicious/noExplicitAny: any entity can be a parent.
+  entity: Entity<any, any, any>;
+  /** Child field → parent key field. */
+  key: Partial<Record<keyof F & string, string>>;
+  /** Delete children when the parent is deleted (in batches of 50, in the background). */
+  onDelete?: "cascade";
 }
 
 /** One part of an index: a field, or a named value computed from the row. */
@@ -277,6 +466,11 @@ export interface QueryOptions<I extends string> {
   range?: RangeBounds;
   /** Continue after a cursor from a previous page (`null` starts from the beginning). */
   after?: ExprLike<string | null>;
+  /**
+   * Values for the field right after the prefix: rows matching any of them, merged in key order
+   * (at most 10 values; not with `after` or `page`). Like SQL's `IN`.
+   */
+  anyOf?: readonly ExprLike<unknown>[];
 }
 
 /** One page of a query: its rows and a cursor for the next page (`null` if this one wasn't full). */
@@ -334,6 +528,10 @@ export class Entity<F extends Fields, K extends keyof F & string, I extends stri
       };
     }
     const spec: EntitySpec = { key: [...this.#def.key], fields: fieldSpecs(this.fields), indexes };
+    if (this.#def.versioned) spec.versioned = true;
+    if (this.#def.ttl)
+      spec.ttl = { field: this.#def.ttl.field, ms: durationMs(this.#def.ttl.after) };
+    if (this.#def.deprecated) spec.deprecated = this.#def.deprecated;
     const invariants = Object.entries(this.#def.invariants ?? {});
     if (invariants.length > 0) {
       spec.invariants = Object.fromEntries(
@@ -405,14 +603,50 @@ export class Entity<F extends Fields, K extends keyof F & string, I extends stri
     return nodes;
   }
 
-  /** Updates fields of an existing row. Fails the request with 404 if it doesn't exist. */
-  update(key: KeyValues<F, K>, set: Partial<ValuesLike<F>>): Row<F> {
+  /**
+   * Updates fields of an existing row. Fails the request with 404 if it doesn't exist (or, with
+   * `ifVersion`, with 409 if someone changed it since).
+   */
+  update(key: KeyValues<F, K>, set: Partial<ValuesLike<F>>, options: UpdateOptions = {}): Row<F> {
     const nodes: Record<string, Node> = {};
     for (const [name, value] of Object.entries(set)) nodes[name] = toNode(value);
     return makeRow(
       this,
-      recorder().let({ op: "update", entity: this.name, key: this.#key(key), set: nodes }),
+      recorder().let({
+        op: "update",
+        entity: this.name,
+        key: this.#key(key),
+        set: nodes,
+        ...(options.ifVersion === undefined ? {} : { ifVersion: toNode(options.ifVersion) }),
+      }),
     );
+  }
+
+  /** @internal The declared parent, if any. */
+  get parent(): ParentDef<F> | undefined {
+    return this.#def.parent;
+  }
+
+  /** @internal The primary key fields. */
+  get keyFields(): readonly string[] {
+    return this.#def.key;
+  }
+
+  /**
+   * This entity's rows belonging to a parent row (declared with `parent`), in key order: one
+   * range scan over the shared key prefix.
+   */
+  childrenOf(parent: HasNode, options: Omit<QueryOptions<I>, "prefix" | "index">): List<Row<F>> {
+    const def = this.#def.parent;
+    if (!def)
+      throw new AlephBuildError(`${this.name} has no parent; declare one with parent: {...}`);
+    const prefix: Expr<unknown>[] = [];
+    for (const field of this.#def.key) {
+      const parentField = def.key[field];
+      if (parentField === undefined) break;
+      prefix.push(new Expr({ kind: "field", of: parent["~node"], name: parentField }));
+    }
+    return this.query({ ...options, prefix });
   }
 
   /** Deletes a row if it exists. */
@@ -445,6 +679,7 @@ export class Entity<F extends Fields, K extends keyof F & string, I extends stri
       ...(options.order === "desc" ? { order: "desc" as const } : {}),
       ...(options.range ? { range: rangeNodes(options.range) } : {}),
       ...(options.after === undefined ? {} : { after: toNode(options.after) }),
+      ...(options.anyOf === undefined ? {} : { anyOf: options.anyOf.map(toNode) }),
       ...(page ? { page: true } : {}),
     });
   }
@@ -488,46 +723,86 @@ function rowExpression<F extends Fields>(
 
 // ─── Counters ──────────────────────────────────────────────────────────────────────────────────
 
+/** A group part computed from the row, like the day of a timestamp. */
+export interface ComputedGroup<F extends Fields, N extends string = string> {
+  name: N;
+  value: (row: Row<F>) => Expr<unknown>;
+}
+
+/** What an aggregate counter tracks instead of a count. */
+export type CounterAggDef<F extends Fields> =
+  | { min: keyof F & string }
+  | { max: keyof F & string }
+  | { distinct: keyof F & string };
+
 /** How to declare a counter. */
 export interface CounterDef<
   F extends Fields,
   G extends keyof F & string,
   K extends keyof F & string = keyof F & string,
   I extends string = string,
+  C extends string = never,
 > {
   /** The counted entity. */
   of: Entity<F, K, I>;
-  /** Fields the count is grouped by. */
-  groupBy: readonly G[];
+  /** What the count is grouped by: fields, or computed parts (`{ name, value: row => ... }`). */
+  groupBy: readonly (G | ComputedGroup<F, C>)[];
   /** Only rows matching this predicate are counted. */
   where?: (row: Row<F>) => Expr<boolean>;
   /** Sum this integer over the rows instead of counting them. */
   sum?: (row: Row<F>) => Expr<number>;
+  /** Track a field's smallest or largest value (latest, for timestamps), or its distinct count. */
+  agg?: CounterAggDef<F>;
+  /** Spread a hot counter over this many shards (2-64) so concurrent writers rarely conflict. */
+  shards?: number;
 }
 
+/** The value a counter reads: a count or sum, or for `min`/`max`, the field's value or `null`. */
+export type CounterValue<F extends Fields, A> = A extends { min: infer M extends keyof F }
+  ? FieldValue<F[M]> | null
+  : A extends { max: infer M extends keyof F }
+    ? FieldValue<F[M]> | null
+    : number;
+
 /** A counter: maintained on every write to its entity, read in O(1). */
-export class Counter<F extends Fields, G extends keyof F & string> {
+export class Counter<F extends Fields, G extends string, R = number> {
   readonly name: string;
-  readonly #def: CounterDef<F, G, string, string>;
+  declare readonly __result?: R;
+  readonly #def: CounterDef<F, keyof F & string, keyof F & string, string, string>;
 
   /** @internal */
-  constructor(name: string, def: CounterDef<F, G, keyof F & string, string>) {
+  constructor(
+    name: string,
+    def: CounterDef<F, keyof F & string, keyof F & string, string, string>,
+  ) {
     this.name = name;
-    this.#def = def as unknown as CounterDef<F, G, string, string>;
+    this.#def = def;
   }
 
   /** @internal The manifest declaration. */
   spec(): CounterSpec {
-    const spec: CounterSpec = { of: this.#def.of.name, groupBy: [...this.#def.groupBy] };
     const of = this.#def.of as unknown as Entity<F, string, string>;
+    const groupBy: IndexPart[] = this.#def.groupBy.map((part) =>
+      typeof part === "string"
+        ? part
+        : { name: part.name, ...rowExpression(of, `counter ${this.name}`, part.value) },
+    );
+    const spec: CounterSpec = { of: this.#def.of.name, groupBy };
     if (this.#def.where) spec.where = rowExpression(of, `counter ${this.name}`, this.#def.where);
     if (this.#def.sum) spec.sum = rowExpression(of, `counter ${this.name}`, this.#def.sum);
+    const agg = this.#def.agg;
+    if (agg) {
+      const [kind, field] = Object.entries(agg)[0] as ["min" | "max" | "distinct", string];
+      spec.agg = { kind, field };
+    }
+    if (this.#def.shards !== undefined) spec.shards = this.#def.shards;
     return spec;
   }
 
-  /** The current count for one group. */
-  get(group: { [P in G]: ExprLike<FieldValue<F[P]>> }): Expr<number> {
-    const key = this.#def.groupBy.map((name) => toNode(group[name]));
+  /** The current value for one group, by group part name. */
+  get(group: { [P in G]: ExprLike<unknown> }): Expr<R> {
+    const names = this.#def.groupBy.map((part) => (typeof part === "string" ? part : part.name));
+    const key = names.map((name) => toNode((group as Record<string, unknown>)[name]));
     return new Expr(recorder().let({ op: "counterGet", counter: this.name, key }));
   }
 }

@@ -16,4 +16,8 @@ orgs?: { [key in string]: string },
 /**
  * The API key used, if the caller is a machine.
  */
-apiKey?: ApiKey, };
+apiKey?: ApiKey, 
+/**
+ * The signed-in user's profile fields (those declared in `auth.profile`).
+ */
+profile?: Record<string, unknown>, };

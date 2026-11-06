@@ -6,18 +6,11 @@ import {
   useQuery,
 } from "@aleph-examples/inspector/react";
 import { useState } from "react";
+// Generated from app.ts by `pnpm client`: changing a route's response breaks this file's types.
+import type { Routes } from "./client.ts";
 
-interface Todo {
-  todoId: string;
-  title: string;
-  done: boolean;
-  dueAt: number | null;
-}
-
-interface TodoList {
-  open: number;
-  page: { items: Todo[]; cursor: string | null };
-}
+type TodoList = Routes["listTodos"]["output"];
+type Todo = Routes["dueBefore"]["output"][number];
 
 const DAY = 86_400_000;
 

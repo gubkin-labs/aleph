@@ -41,6 +41,18 @@ impl MemoryStore {
             .collect()
     }
 
+    /// Replaces the contents with `entries` (from [`MemoryStore::entries`]), as committed data.
+    /// Used to persist `aleph dev` data between restarts.
+    pub fn restore(&self, entries: Vec<(Key, Vec<u8>)>) {
+        let mut inner = self.lock();
+        inner.clock += 1;
+        let version = inner.clock;
+        inner.data = entries
+            .into_iter()
+            .map(|(k, value)| (k, Versioned { version, value }))
+            .collect();
+    }
+
     fn lock(&self) -> MutexGuard<'_, Inner> {
         // A panic while holding the lock can't leave `Inner` half-updated: commits validate before
         // they write, and writes are plain map inserts.
