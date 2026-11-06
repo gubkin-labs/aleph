@@ -29,7 +29,7 @@ class ElseBuilder {
     if (rec.last() !== this.#stmt) {
       throw new AlephBuildError(".else() must directly follow its .then()");
     }
-    this.#stmt.else = rec.block(fn);
+    this.#stmt.else = rec.block(fn, { suffix: ".else", ownerRecorded: true });
   }
 }
 
@@ -44,8 +44,13 @@ class IfBuilder {
   // biome-ignore lint/suspicious/noThenProperty: `$.if(c).then(...)` is the documented API; an IfBuilder is never awaited.
   then(fn: () => void): ElseBuilder {
     const rec = recorder();
-    // biome-ignore lint/suspicious/noThenProperty: `then` is a field of the manifest's `if` statement.
-    const stmt: IfStmt = { kind: "if", cond: toNode(this.#cond), then: rec.block(fn), else: [] };
+    const stmt: IfStmt = {
+      kind: "if",
+      cond: toNode(this.#cond),
+      // biome-ignore lint/suspicious/noThenProperty: `then` is a field of the manifest's `if` statement.
+      then: rec.block(fn, { suffix: ".then" }),
+      else: [],
+    };
     rec.push(stmt);
     return new ElseBuilder(stmt);
   }

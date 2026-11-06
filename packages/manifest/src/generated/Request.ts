@@ -28,6 +28,10 @@ body?: unknown,
  */
 caller?: Caller, 
 /**
+ * The client's IP address, for rate limits.
+ */
+ip?: string, 
+/**
  * The client's idempotency key (from the `Idempotency-Key` header), if any.
  */
 idempotencyKey?: string, };

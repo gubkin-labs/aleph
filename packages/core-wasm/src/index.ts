@@ -5,16 +5,31 @@
  * passes here passes in production.
  */
 import { createRequire } from "node:module";
-import type { CheckReport, Diagnostic, Limits, Manifest, Request, Response } from "@aleph/manifest";
+import type {
+  CheckReport,
+  Delivery,
+  Diagnostic,
+  Limits,
+  Manifest,
+  ProcessReport,
+  RecordedCall,
+  Request,
+  Response,
+} from "@aleph/manifest";
 
 interface WasmDevEngine {
   handle(requestJson: string, nowMs: number): string;
+  process(nowMs: number, maxItems: number): string;
+  mock(integration: string, operation: string, responseJson: string, error?: string): void;
+  takeDeliveries(): string;
+  takeCalls(): string;
   free(): void;
 }
 
 interface WasmBindings {
   formatVersion(): string;
   defaultLimits(): string;
+  jobLimits(): string;
   validate(manifestJson: string): string;
   DevEngine: new (manifestJson: string, seed: number) => WasmDevEngine;
 }
@@ -50,6 +65,11 @@ export function defaultLimits(): Limits {
   return JSON.parse(wasm.defaultLimits()) as Limits;
 }
 
+/** The default limits for handlers: queue jobs, triggers, and cron runs. */
+export function jobLimits(): Limits {
+  return JSON.parse(wasm.jobLimits()) as Limits;
+}
+
 /** Validates a manifest and computes the worst-case cost of every route. */
 export function validate(manifest: Manifest | string): ValidateResult {
   const json = typeof manifest === "string" ? manifest : JSON.stringify(manifest);
@@ -81,6 +101,38 @@ export class DevEngine {
   /** Handles one request at time `nowMs` (defaults to `Date.now()`). */
   handle(request: Request, nowMs: number = Date.now()): Response {
     return JSON.parse(this.#engine.handle(JSON.stringify(request), nowMs)) as Response;
+  }
+
+  /**
+   * Runs due async work at time `nowMs`: cron ticks, handlers (events, entity triggers, queue
+   * jobs), and deliveries, at most `maxItems` outbox entries.
+   */
+  process(nowMs: number = Date.now(), maxItems = 1000): ProcessReport {
+    return JSON.parse(this.#engine.process(nowMs, maxItems)) as ProcessReport;
+  }
+
+  /** Answers calls to `integration.operation` with `response`, or fails them with `{ error }`. */
+  mock(integration: string, operation: string, response: unknown | { error: string }): void {
+    if (typeof response === "object" && response !== null && "error" in response) {
+      this.#engine.mock(
+        integration,
+        operation,
+        "null",
+        String((response as { error: unknown }).error),
+      );
+    } else {
+      this.#engine.mock(integration, operation, JSON.stringify(response));
+    }
+  }
+
+  /** Removes and returns the integration sends and channel messages delivered so far. */
+  takeDeliveries(): Delivery[] {
+    return JSON.parse(this.#engine.takeDeliveries()) as Delivery[];
+  }
+
+  /** Removes and returns the integration calls made so far. */
+  takeCalls(): RecordedCall[] {
+    return JSON.parse(this.#engine.takeCalls()) as RecordedCall[];
   }
 
   /** Releases the WASM memory held by this engine. */

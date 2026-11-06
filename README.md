@@ -15,7 +15,7 @@ This repository is the open-source half of Aleph:
 | [`packages/manifest`](packages/manifest) | `@aleph/manifest`: generated TypeScript types for the manifest format |
 | [`packages/core-wasm`](packages/core-wasm) | `@aleph/core`: validation, cost analysis, and a local dev engine (the Rust core, via WASM) |
 | [`packages/sdk`](packages/sdk) | `@aleph/sdk`: the TypeScript builder that produces manifests |
-| [`packages/cli`](packages/cli) | `@aleph/cli`: the `aleph` command (`build`, `check`, `dev`) |
+| [`packages/cli`](packages/cli) | `@aleph/cli`: the `aleph` command (`build`, `check`, `dev`, `openapi`, `mcp`) |
 | [`conformance`](conformance) | Golden apps, manifests, bounds, and request scenarios that the SDK, WASM, and native core must all agree on |
 | [`schema`](schema) | `manifest.schema.json`, for third-party SDKs and platforms |
 
@@ -82,8 +82,36 @@ The create route's bounds include its idempotency record: one read, one write, a
 (64 KB) of stored response. `aleph dev app.ts` serves the app locally on the same core. Callers are faked with
 `x-aleph-user`, `x-aleph-orgs: acme=owner`, `x-aleph-api-key`, and `idempotency-key` headers.
 
+Asynchronous work is declared the same way, and it's bounded the same way:
+
+```ts
+const Process = a.queue("process", { payload: { orgId, docId: t.id() }, retries: 2, backoff: "1s" });
+const ocr = a.integration("ocr", {
+  provider: "http",
+  operations: { extract: { mode: "call", input: { docId: t.id() }, output: { pages: t.int().min(0) } } },
+});
+
+a.onInsert("enqueueProcessing", Doc, (_, { payload }) =>
+  Process.enqueue({ orgId: payload.after.orgId, docId: payload.after.docId }),
+);
+a.onQueue("processDoc", Process, (_, { payload }) => {
+  const result = ocr.call("extract", { docId: payload.docId }); // journaled: retries reuse it
+  Doc.update(payload, { status: "done", pages: result.pages });
+  Feed.publish({ orgId: payload.orgId }, { docId: payload.docId, status: "done" }); // after commit
+});
+a.every("purgeFailed", "1d", ($, { payload }) => $.forEach(payload.batch, (doc) => doc.delete()), {
+  scan: { entity: Doc, index: "byStatus", prefix: ["failed"], batch: 50 },
+});
+```
+
+Effects (events, jobs, change triggers, channel messages, integration sends) are written to a
+transactional outbox in the same commit as the writes, so a rolled-back or retried request never
+releases them, and a committed one releases each exactly once. Handlers are checked against job
+limits; failed jobs retry with exponential backoff and then go to a dead-letter handler.
+
 See [`conformance/cases`](conformance/cases) for complete apps: a SaaS backend with plan limits and
-bulk operations, and a ledger with transfers.
+bulk operations, a ledger with transfers, and a document pipeline with queues, retries, a
+dead-letter handler, an OCR integration, a realtime channel, and a scanning cron.
 
 ## How it fits together
 
@@ -135,14 +163,21 @@ condition, so tests and typechecking don't need a build. Published packages use 
 
 ## Status
 
-This is v0 (manifest format `0.1`). It covers:
-- Entities, indexes, counters, guards, branches, bounded loops, `map`/`filter`, and serializable transactions.
-- Auth: signed-in users, org members with roles, and API keys with scopes.
-- Cursor pagination, `upsert`, `insertIfAbsent`, and idempotency keys.
-- The `aleph` CLI (`build`, `check`, `dev`).
+Manifest format `0.2`. The core and SDK cover:
+- **Data:** entities, indexes, invariants, append-only entities, counters and sums, serializable
+  transactions, cursor pagination, `upsert`, `insertIfAbsent`.
+- **Logic:** guards, branches, bounded loops, `map`/`filter`, string and number helpers.
+- **Routes:** auth (signed-in users, org roles, API key scopes), idempotency keys, rate limits,
+  descriptions, MCP tools.
+- **Async:** events, entity-change triggers, queues with retries, backoff and dead letters, delayed
+  jobs, cron (optionally scanning an entity in batches), realtime channel publishes.
+- **Integrations:** journaled calls and after-commit sends, with mock providers for tests and `aleph dev`.
+- **Tooling:** the `aleph` CLI (`build`, `check` with route and handler cost tables, `dev` with
+  background processing, `openapi`, `mcp`), and source maps so diagnostics point at your code.
 
-Not here yet: effects (events, queues, cron, workflows), integrations, realtime channels, and
-source spans in diagnostics. See the tickets in `aleph-infra/todo`.
+Platform-side capabilities aren't here yet: durable multi-step workflows, streaming LLM routes,
+blob storage, search and vector indexes, channel subscriptions, and real providers behind
+integrations. See the tickets in `aleph-infra/todo`.
 
 ## License
 

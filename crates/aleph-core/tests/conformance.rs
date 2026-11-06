@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use aleph_core::check::CheckReport;
+use aleph_core::runtime::{MemorySink, MockIntegrations};
 use aleph_core::{Engine, FixedEnv, Limits, MemoryStore, Request, TenantId, parse_and_validate};
 use serde::Deserialize;
 use serde_json::Value as Json;
@@ -35,19 +36,58 @@ struct Scenario {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Step {
     name: String,
-    request: Json,
+    #[serde(default)]
+    advance_ms: i64,
+    request: Option<Json>,
+    mock: Option<Mock>,
+    #[serde(default)]
+    process: bool,
+    #[serde(default)]
     expect: Expectation,
     #[serde(default)]
     capture: BTreeMap<String, String>,
 }
 
 #[derive(Deserialize)]
+struct Mock {
+    integration: String,
+    operation: String,
+    response: Option<Json>,
+    error: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
 struct Expectation {
-    status: u16,
+    status: Option<u16>,
     body: Option<Json>,
     replayed: Option<bool>,
+    report: Option<Json>,
+    deliveries: Option<Vec<Json>>,
+    calls: Option<Vec<Json>>,
+}
+
+fn unordered_mismatch(expected: &[Json], actual: &[Json], path: &str) -> Option<String> {
+    if expected.len() != actual.len() {
+        return Some(format!(
+            "{path}: expected {} items, got {}",
+            expected.len(),
+            actual.len()
+        ));
+    }
+    let mut remaining: Vec<&Json> = actual.iter().collect();
+    for (i, item) in expected.iter().enumerate() {
+        let Some(index) = remaining
+            .iter()
+            .position(|c| subset_mismatch(item, c, "").is_none())
+        else {
+            return Some(format!("{path}.{i}: no match for {item}"));
+        };
+        remaining.remove(index);
+    }
+    None
 }
 
 fn substitute(value: &Json, vars: &BTreeMap<String, String>) -> Json {
@@ -137,22 +177,53 @@ fn scenarios_behave_as_expected_within_bounds() {
         let report = valid.report().clone();
         let scenario: Scenario = serde_json::from_str(&read(&dir.join("scenarios.json"))).unwrap();
         let env = Arc::new(FixedEnv::new(0, scenario.seed));
+        let sink = Arc::new(MemorySink::new());
+        let integrations = Arc::new(MockIntegrations::new());
         // The WASM dev engine uses tenant "dev"; ids and responses must match it exactly.
         let tenant = TenantId::new("dev").unwrap();
-        let engine = Engine::new(valid, Arc::new(MemoryStore::new()), env.clone());
+        let engine = Engine::new(valid, Arc::new(MemoryStore::new()), env.clone())
+            .with_sink(sink.clone())
+            .with_integrations(integrations.clone());
         let mut vars = BTreeMap::new();
+        let mut extra = 0;
 
         for (i, step) in scenario.steps.iter().enumerate() {
             let at = format!("{} step {i} {:?}", dir.display(), step.name);
-            let offset = i64::try_from(i).unwrap() * scenario.step_ms;
-            env.set_now(scenario.start_ms + offset);
-            let request: Request =
-                serde_json::from_value(substitute(&step.request, &vars)).unwrap();
+            extra += step.advance_ms;
+            env.set_now(scenario.start_ms + i64::try_from(i).unwrap() * scenario.step_ms + extra);
+            if let Some(mock) = &step.mock {
+                let response = match &mock.error {
+                    Some(error) => Err(error.clone()),
+                    None => Ok(mock.response.clone().unwrap_or(Json::Null)),
+                };
+                integrations.respond(&mock.integration, &mock.operation, response);
+                continue;
+            }
+            if step.process {
+                check_process(
+                    &engine,
+                    &tenant,
+                    &report,
+                    &sink,
+                    &integrations,
+                    step,
+                    &vars,
+                    &at,
+                );
+                continue;
+            }
+            let request = step
+                .request
+                .as_ref()
+                .unwrap_or_else(|| panic!("{at}: no request"));
+            let request: Request = serde_json::from_value(substitute(request, &vars)).unwrap();
             let response = engine.handle(&tenant, &request);
             let body = &response.body;
-            assert_eq!(response.status, step.expect.status, "{at}: {body}");
+            if let Some(status) = step.expect.status {
+                assert_eq!(response.status, status, "{at}: {body}");
+            }
             if let Some(expected) = &step.expect.body
-                && let Some(mismatch) = subset_mismatch(expected, body, "body")
+                && let Some(mismatch) = subset_mismatch(&substitute(expected, &vars), body, "body")
             {
                 panic!("{at}: {mismatch}\n{body}");
             }
@@ -177,6 +248,59 @@ fn scenarios_behave_as_expected_within_bounds() {
                         .to_owned(),
                 );
             }
+        }
+    }
+}
+
+/// Runs a `process` step and checks its report, deliveries, and calls, and that every handler
+/// run stayed within its bounds.
+#[allow(clippy::too_many_arguments)]
+fn check_process(
+    engine: &Engine,
+    tenant: &TenantId,
+    report: &CheckReport,
+    sink: &MemorySink,
+    integrations: &MockIntegrations,
+    step: &Step,
+    vars: &BTreeMap<String, String>,
+    at: &str,
+) {
+    let processed = engine.process(tenant, 1000);
+    for run in &processed.runs {
+        let bounds = report.handlers[&run.handler].bounds;
+        assert!(
+            run.usage.fits_within(&bounds),
+            "{at}: {} {:?} over {bounds:?}",
+            run.handler,
+            run.usage
+        );
+    }
+    let processed = serde_json::to_value(&processed).unwrap();
+    if let Some(expected) = &step.expect.report
+        && let Some(mismatch) = subset_mismatch(expected, &processed, "report")
+    {
+        panic!("{at}: {mismatch}\n{processed}");
+    }
+    let deliveries: Vec<Json> = sink
+        .take()
+        .into_iter()
+        .map(|(_, d)| serde_json::to_value(d).unwrap())
+        .collect();
+    if let Some(expected) = &step.expect.deliveries {
+        let expected: Vec<Json> = expected.iter().map(|e| substitute(e, vars)).collect();
+        if let Some(mismatch) = unordered_mismatch(&expected, &deliveries, "deliveries") {
+            panic!("{at}: {mismatch}\n{deliveries:?}");
+        }
+    }
+    let calls: Vec<Json> = integrations
+        .take_calls()
+        .into_iter()
+        .map(|c| serde_json::to_value(c).unwrap())
+        .collect();
+    if let Some(expected) = &step.expect.calls {
+        let expected: Vec<Json> = expected.iter().map(|e| substitute(e, vars)).collect();
+        if let Some(mismatch) = unordered_mismatch(&expected, &calls, "calls") {
+            panic!("{at}: {mismatch}\n{calls:?}");
         }
     }
 }

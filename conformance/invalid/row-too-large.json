@@ -1,7 +1,7 @@
 {
   "expect": ["row_too_large"],
   "manifest": {
-    "formatVersion": "0.1",
+    "formatVersion": "0.2",
     "app": {
       "name": "bad"
     },

@@ -1,0 +1,396 @@
+{
+  "seed": 5,
+  "startMs": 1700000000000,
+  "stepMs": 1000,
+  "steps": [
+    {
+      "name": "OCR answers with 12 pages",
+      "mock": {
+        "integration": "ocr",
+        "operation": "extract",
+        "response": {
+          "pages": 12,
+          "summary": "Quarterly results for the third quarter, including revenue, costs, and outlook. Quarterly results for the third quarter, including revenue, costs, and outlook. Quarterly results for the third quarter, including revenue, costs, and outlook. Quarterly results for the third quarter, including revenue, costs, and outlook. Quarterly results for the third quarter, including revenue, costs, and outlook. "
+        }
+      }
+    },
+    {
+      "name": "upload a document (title is trimmed)",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/docs",
+        "caller": {
+          "userId": "u2",
+          "orgs": {
+            "acme": "member"
+          }
+        },
+        "body": {
+          "title": "  Q3 report  "
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "title": "Q3 report",
+          "status": "queued",
+          "pages": 0
+        }
+      },
+      "capture": {
+        "d1": "body.docId"
+      }
+    },
+    {
+      "name": "the insert trigger enqueues processing, the job calls OCR, publishes, emits, and notifies",
+      "process": true,
+      "expect": {
+        "report": {
+          "fired": 1,
+          "ran": 4,
+          "delivered": 2,
+          "retried": 0,
+          "failures": [],
+          "remaining": false
+        },
+        "deliveries": [
+          {
+            "kind": "publish",
+            "target": "orgFeed",
+            "data": {
+              "key": {
+                "orgId": "acme"
+              },
+              "message": {
+                "docId": "{{d1}}",
+                "status": "done"
+              }
+            }
+          },
+          {
+            "kind": "send",
+            "target": "email",
+            "operation": "send",
+            "data": {
+              "to": "team@acme.dev",
+              "subject": "Processed: Q3 report"
+            }
+          }
+        ],
+        "calls": [
+          {
+            "integration": "ocr",
+            "operation": "extract",
+            "input": {
+              "docId": "{{d1}}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "the document is done, with a truncated summary and the org's page sum",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/docs/{{d1}}",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "doc": {
+            "status": "done",
+            "pages": 12
+          },
+          "orgPages": 12
+        }
+      }
+    },
+    {
+      "name": "an invariant blocks negative page counts",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/docs/{{d1}}/adjust",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
+        "body": {
+          "delta": -20
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "error": "invariant_violation"
+        }
+      }
+    },
+    {
+      "name": "members can't adjust",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/docs/{{d1}}/adjust",
+        "caller": {
+          "userId": "u2",
+          "orgs": {
+            "acme": "member"
+          }
+        },
+        "body": {
+          "delta": 1
+        }
+      },
+      "expect": {
+        "status": 403
+      }
+    },
+    {
+      "name": "owners can, and the sum counter follows",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/docs/{{d1}}/adjust",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
+        "body": {
+          "delta": 3
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "pages": 15
+        }
+      }
+    },
+    {
+      "name": "OCR goes down",
+      "mock": {
+        "integration": "ocr",
+        "operation": "extract",
+        "error": "ocr unavailable"
+      }
+    },
+    {
+      "name": "upload another document",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/docs",
+        "caller": {
+          "userId": "u2",
+          "orgs": {
+            "acme": "member"
+          }
+        },
+        "body": {
+          "title": "Broken scan"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "d2": "body.docId"
+      }
+    },
+    {
+      "name": "the job fails and is retried with backoff",
+      "process": true,
+      "expect": {
+        "report": {
+          "ran": 1,
+          "retried": 1,
+          "deadLettered": 0
+        },
+        "deliveries": []
+      }
+    },
+    {
+      "name": "after the first backoff (1s, one step later) it fails again",
+      "process": true,
+      "expect": {
+        "report": {
+          "retried": 1
+        }
+      }
+    },
+    {
+      "name": "the second backoff (2s) isn't over yet: nothing runs",
+      "process": true,
+      "expect": {
+        "report": {
+          "ran": 0,
+          "retried": 0
+        }
+      }
+    },
+    {
+      "name": "after the second backoff (2s) it's dead-lettered, and the dead-letter handler runs",
+      "process": true,
+      "expect": {
+        "report": {
+          "deadLettered": 1,
+          "ran": 1,
+          "delivered": 1
+        },
+        "deliveries": [
+          {
+            "kind": "publish",
+            "target": "orgFeed",
+            "data": {
+              "message": {
+                "docId": "{{d2}}",
+                "status": "failed"
+              }
+            }
+          }
+        ]
+      },
+      "advanceMs": 1000
+    },
+    {
+      "name": "the failed document is marked failed",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/docs/{{d2}}",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "doc": {
+            "status": "failed"
+          },
+          "orgPages": 15
+        }
+      }
+    },
+    {
+      "name": "a third upload is still within the rate limit",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/docs",
+        "caller": {
+          "userId": "u2",
+          "orgs": {
+            "acme": "member"
+          }
+        },
+        "body": {
+          "title": "Third"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "a fourth upload in the same minute is rate limited",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/docs",
+        "caller": {
+          "userId": "u2",
+          "orgs": {
+            "acme": "member"
+          }
+        },
+        "body": {
+          "title": "Fourth"
+        }
+      },
+      "expect": {
+        "status": 429,
+        "body": {
+          "error": "rate_limited"
+        }
+      }
+    },
+    {
+      "name": "other users have their own limit",
+      "request": {
+        "method": "POST",
+        "path": "/orgs/acme/docs",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        },
+        "body": {
+          "title": "Owner's"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "OCR recovers",
+      "mock": {
+        "integration": "ocr",
+        "operation": "extract",
+        "response": {
+          "pages": 2,
+          "summary": "short"
+        }
+      }
+    },
+    {
+      "name": "the two new documents now process (trigger, job, notification each)",
+      "process": true,
+      "expect": {
+        "report": {
+          "ran": 6,
+          "delivered": 4
+        }
+      }
+    },
+    {
+      "name": "the next day the cron purges failed documents in a scan batch",
+      "process": true,
+      "expect": {
+        "report": {
+          "fired": 1,
+          "ran": 1
+        }
+      },
+      "advanceMs": 86400000
+    },
+    {
+      "name": "the failed document is gone",
+      "request": {
+        "method": "GET",
+        "path": "/orgs/acme/docs/{{d2}}",
+        "caller": {
+          "userId": "u1",
+          "orgs": {
+            "acme": "owner"
+          }
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "error": "notFound"
+        }
+      }
+    }
+  ]
+}

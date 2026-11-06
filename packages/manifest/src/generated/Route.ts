@@ -3,8 +3,10 @@ import type { Auth } from "./Auth.js";
 import type { ErrorDecl } from "./ErrorDecl.js";
 import type { Idempotency } from "./Idempotency.js";
 import type { Input } from "./Input.js";
+import type { McpTool } from "./McpTool.js";
 import type { Method } from "./Method.js";
 import type { Plan } from "./Plan.js";
+import type { RateLimit } from "./RateLimit.js";
 
 /**
  * An HTTP route.
@@ -34,6 +36,18 @@ input: Input,
  * Declared business errors the plan may fail with, by name.
  */
 errors: { [key in string]: ErrorDecl }, 
+/**
+ * What the route does, for generated API docs and MCP tools.
+ */
+description?: string, 
+/**
+ * Exposes the route as an MCP tool with the same inputs, auth, and limits.
+ */
+mcp?: McpTool, 
+/**
+ * Limits how often the route may be called.
+ */
+rateLimit?: RateLimit, 
 /**
  * Replays successful responses for repeated idempotency keys.
  */

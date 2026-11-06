@@ -1,0 +1,94 @@
+{
+  "entities": {
+    "AuditLog": {
+      "maxRowBytes": 2249
+    },
+    "Doc": {
+      "maxRowBytes": 2488
+    }
+  },
+  "routes": {
+    "adjustPages": {
+      "bounds": {
+        "reads": 2,
+        "writes": 5,
+        "ops": 19,
+        "bytesRead": 4976,
+        "effects": 0,
+        "calls": 0
+      }
+    },
+    "getDoc": {
+      "bounds": {
+        "reads": 2,
+        "writes": 0,
+        "ops": 14,
+        "bytesRead": 2508,
+        "effects": 0,
+        "calls": 0
+      }
+    },
+    "uploadDoc": {
+      "bounds": {
+        "reads": 1,
+        "writes": 3,
+        "ops": 6,
+        "bytesRead": 2488,
+        "effects": 1,
+        "calls": 0
+      }
+    }
+  },
+  "handlers": {
+    "enqueueProcessing": {
+      "bounds": {
+        "reads": 0,
+        "writes": 0,
+        "ops": 7,
+        "bytesRead": 0,
+        "effects": 1,
+        "calls": 0
+      }
+    },
+    "notify": {
+      "bounds": {
+        "reads": 1,
+        "writes": 1,
+        "ops": 13,
+        "bytesRead": 2249,
+        "effects": 1,
+        "calls": 0
+      }
+    },
+    "processDoc": {
+      "bounds": {
+        "reads": 3,
+        "writes": 6,
+        "ops": 46,
+        "bytesRead": 7225,
+        "effects": 2,
+        "calls": 1
+      }
+    },
+    "processFailed": {
+      "bounds": {
+        "reads": 2,
+        "writes": 6,
+        "ops": 16,
+        "bytesRead": 4737,
+        "effects": 1,
+        "calls": 0
+      }
+    },
+    "purgeFailed": {
+      "bounds": {
+        "reads": 100,
+        "writes": 150,
+        "ops": 353,
+        "bytesRead": 248800,
+        "effects": 1,
+        "calls": 0
+      }
+    }
+  }
+}

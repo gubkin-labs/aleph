@@ -14,7 +14,13 @@ import { DevEngine, validate } from "@aleph/core";
 import type { CheckReport, Cost, Request, Response } from "@aleph/manifest";
 import type { App } from "@aleph/sdk";
 import { describe, expect, it } from "vitest";
-import { type Scenario, subsetMismatch, substitute, valueAt } from "./scenario.js";
+import {
+  type Scenario,
+  subsetMismatch,
+  substitute,
+  unorderedMismatch,
+  valueAt,
+} from "./scenario.js";
 
 const casesDir = join(import.meta.dirname, "..", "cases");
 const invalidDir = join(import.meta.dirname, "..", "invalid");
@@ -53,23 +59,79 @@ describe.each(cases)("case %s", (name) => {
   it("runs every scenario step as expected, within bounds", () => {
     const manifest = readFileSync(join(dir, "manifest.json"), "utf8");
     const report = JSON.parse(readFileSync(join(dir, "bounds.json"), "utf8")) as CheckReport;
+    const staticReport = report;
     const scenario = JSON.parse(readFileSync(join(dir, "scenarios.json"), "utf8")) as Scenario;
     const engine = new DevEngine(manifest, { seed: scenario.seed });
     const vars: Record<string, string> = {};
 
+    let extra = 0;
     scenario.steps.forEach((step, i) => {
-      const request = substitute(step.request, vars) as Request;
-      const response: Response = engine.handle(request, scenario.startMs + i * scenario.stepMs);
+      extra += step.advanceMs ?? 0;
+      const now = scenario.startMs + i * scenario.stepMs + extra;
       const where = `step ${i} "${step.name}"`;
-      expect(response.status, `${where}: ${JSON.stringify(response.body)}`).toBe(
-        step.expect.status,
-      );
-      if (step.expect.body !== undefined) {
-        const mismatch = subsetMismatch(step.expect.body, response.body);
+      if (step.mock) {
+        const { integration, operation, response, error } = step.mock;
+        engine.mock(integration, operation, error === undefined ? response : { error });
+        return;
+      }
+      if (step.process) {
+        const report = engine.process(now);
+        const boundsReport = staticReport;
+        const expected = step.expect ?? {};
+        const checks: [string, string | undefined][] = [
+          [
+            "report",
+            expected.report === undefined
+              ? undefined
+              : subsetMismatch(expected.report, report, "report"),
+          ],
+          [
+            "deliveries",
+            expected.deliveries === undefined
+              ? undefined
+              : unorderedMismatch(
+                  substitute(expected.deliveries, vars) as unknown[],
+                  engine.takeDeliveries(),
+                  "deliveries",
+                ),
+          ],
+          [
+            "calls",
+            expected.calls === undefined
+              ? undefined
+              : unorderedMismatch(
+                  substitute(expected.calls, vars) as unknown[],
+                  engine.takeCalls(),
+                  "calls",
+                ),
+          ],
+        ];
+        for (const run of report.runs) {
+          const bounds = boundsReport.handlers?.[run.handler]?.bounds;
+          expect(
+            bounds && fits(run.usage, bounds),
+            `${where}: ${run.handler} usage over bounds`,
+          ).toBe(true);
+        }
+        for (const [what, mismatch] of checks) {
+          expect(mismatch, `${where} ${what}: ${JSON.stringify(report)}`).toBeUndefined();
+        }
+        return;
+      }
+      const request = substitute(step.request, vars) as Request;
+      const response: Response = engine.handle(request, now);
+      const expectation = step.expect ?? {};
+      if (expectation.status !== undefined) {
+        expect(response.status, `${where}: ${JSON.stringify(response.body)}`).toBe(
+          expectation.status,
+        );
+      }
+      if (expectation.body !== undefined) {
+        const mismatch = subsetMismatch(substitute(expectation.body, vars), response.body);
         expect(mismatch, `${where}: ${JSON.stringify(response.body)}`).toBeUndefined();
       }
-      if (step.expect.replayed !== undefined) {
-        expect(response.replayed ?? false, `${where}: replayed`).toBe(step.expect.replayed);
+      if (expectation.replayed !== undefined) {
+        expect(response.replayed ?? false, `${where}: replayed`).toBe(expectation.replayed);
       }
       if (response.route !== undefined) {
         const bounds = report.routes[response.route]?.bounds;

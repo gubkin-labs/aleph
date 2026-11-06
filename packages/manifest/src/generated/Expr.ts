@@ -2,6 +2,8 @@
 import type { BinaryOp } from "./BinaryOp.js";
 import type { InputSource } from "./InputSource.js";
 import type { Literal } from "./Literal.js";
+import type { StrOp } from "./StrOp.js";
+import type { StrTest } from "./StrTest.js";
 
 /**
  * An expression.
@@ -98,7 +100,39 @@ items: Array<Expr>, } | { "kind": "length",
 /**
  * The list or string.
  */
-of: Expr, } | { "kind": "concat", 
+of: Expr, } | { "kind": "str", 
+/**
+ * The transformation.
+ */
+op: StrOp, 
+/**
+ * The string.
+ */
+of: Expr, } | { "kind": "strTest", 
+/**
+ * The test.
+ */
+op: StrTest, 
+/**
+ * The string tested.
+ */
+of: Expr, 
+/**
+ * The other string.
+ */
+arg: Expr, } | { "kind": "truncate", 
+/**
+ * The string.
+ */
+of: Expr, 
+/**
+ * Maximum length in characters.
+ */
+max: number, } | { "kind": "abs", 
+/**
+ * The operand.
+ */
+arg: Expr, } | { "kind": "concat", 
 /**
  * The parts.
  */

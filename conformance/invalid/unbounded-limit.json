@@ -1,7 +1,7 @@
 {
   "expect": ["unbounded_limit"],
   "manifest": {
-    "formatVersion": "0.1",
+    "formatVersion": "0.2",
     "app": {
       "name": "bad"
     },

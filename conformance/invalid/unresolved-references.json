@@ -1,7 +1,7 @@
 {
   "expect": ["unknown_entity", "undefined_var", "unknown_error", "unknown_field"],
   "manifest": {
-    "formatVersion": "0.1",
+    "formatVersion": "0.2",
     "app": {
       "name": "bad"
     },

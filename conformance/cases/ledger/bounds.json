@@ -13,7 +13,9 @@
         "reads": 3,
         "writes": 4,
         "ops": 31,
-        "bytesRead": 2004
+        "bytesRead": 2004,
+        "effects": 0,
+        "calls": 0
       }
     },
     "entries": {
@@ -21,7 +23,9 @@
         "reads": 101,
         "writes": 0,
         "ops": 18,
-        "bytesRead": 100303
+        "bytesRead": 100303,
+        "effects": 0,
+        "calls": 0
       }
     },
     "myAccounts": {
@@ -29,7 +33,9 @@
         "reads": 10,
         "writes": 0,
         "ops": 6,
-        "bytesRead": 5030
+        "bytesRead": 5030,
+        "effects": 0,
+        "calls": 0
       }
     },
     "openAccount": {
@@ -37,7 +43,9 @@
         "reads": 1,
         "writes": 2,
         "ops": 5,
-        "bytesRead": 503
+        "bytesRead": 503,
+        "effects": 0,
+        "calls": 0
       }
     },
     "transfer": {
@@ -45,7 +53,9 @@
         "reads": 7,
         "writes": 9,
         "ops": 78,
-        "bytesRead": 69544
+        "bytesRead": 69544,
+        "effects": 0,
+        "calls": 0
       }
     }
   }

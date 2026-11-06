@@ -40,6 +40,31 @@ pub struct ProcessReport {
     pub failures: Vec<String>,
     /// Whether due work remains (`max_items` was reached).
     pub remaining: bool,
+    /// What each committed handler run actually used. Always within the handler's bounds.
+    pub runs: Vec<HandlerRun>,
+}
+
+/// One committed handler run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase")]
+pub struct HandlerRun {
+    /// The handler id.
+    pub handler: String,
+    /// What the run used.
+    pub usage: crate::limits::Cost,
+}
+
+impl ProcessReport {
+    fn record(&mut self, handler: &str, usage: Option<crate::limits::Cost>) {
+        if let Some(usage) = usage {
+            self.ran += 1;
+            self.runs.push(HandlerRun {
+                handler: handler.to_owned(),
+                usage,
+            });
+        }
+    }
 }
 
 /// Writes buffered effects to the outbox, inside the transaction that produced them.
@@ -224,7 +249,7 @@ impl Engine {
                     return;
                 };
                 match self.run_handler(keys, now, key, handler, &payload, None) {
-                    Ok(()) => report.ran += 1,
+                    Ok(usage) => report.record(&id, usage),
                     Err(error) => {
                         let (retries, base, max) = retry_policy(self, handler);
                         if attempt < retries {
@@ -293,7 +318,7 @@ impl Engine {
                     &payload,
                     Some((scan, cursor.as_deref(), fired_at)),
                 ) {
-                    Ok(()) => report.ran += 1,
+                    Ok(usage) => report.record(&id, usage),
                     Err(error) => {
                         let (retries, base, max) = QueueDecl::HANDLER_DEFAULTS;
                         if attempt < retries {
@@ -325,7 +350,7 @@ impl Engine {
         handler: &Handler,
         payload: &BTreeMap<String, Value>,
         scan: Option<(&CronScan, Option<&str>, i64)>,
-    ) -> Result<(), ExecError> {
+    ) -> Result<Option<crate::limits::Cost>, ExecError> {
         let env = self.env.as_ref();
         let mut journal = Journal::default();
         for _ in 0..=Limits::JOB.max_conflict_retries {
@@ -333,7 +358,7 @@ impl Engine {
             journal.rewind();
             // Another worker may already have handled this entry.
             if tx.get(entry)?.is_none() {
-                return Ok(());
+                return Ok(None);
             }
             let mut meter = Meter::new(Limits::JOB);
             let mut payload = payload.clone();
@@ -382,7 +407,7 @@ impl Engine {
             write_outbox(&mut *tx, keys, env, now, effects)?;
             tx.delete(entry.clone());
             match tx.commit() {
-                Ok(()) => return Ok(()),
+                Ok(()) => return Ok(Some(meter.used())),
                 Err(CommitError::Conflict) => {}
                 Err(CommitError::Store(error)) => return Err(ExecError::Store(error)),
             }

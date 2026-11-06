@@ -1,7 +1,7 @@
 {
   "expect": ["invalid_key", "type_mismatch", "missing_key_field", "immutable_key_field"],
   "manifest": {
-    "formatVersion": "0.1",
+    "formatVersion": "0.2",
     "app": {
       "name": "bad"
     },

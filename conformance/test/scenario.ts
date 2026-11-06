@@ -15,17 +15,47 @@ export interface Scenario {
 
 export interface Step {
   name: string;
+  /** Moves the clock forward before this step (on top of `stepMs`). */
+  advanceMs?: number;
   /** A request. Strings may contain `{{var}}` placeholders filled from earlier captures. */
-  request: unknown;
-  expect: {
-    status: number;
+  request?: unknown;
+  /** Sets a mock integration response (or failure) for later calls. */
+  mock?: { integration: string; operation: string; response?: unknown; error?: string };
+  /** Runs due async work: cron ticks, handlers, deliveries. */
+  process?: boolean;
+  expect?: {
+    status?: number;
     /** A subset of the response body: objects match by the listed keys, arrays item by item. */
     body?: unknown;
     /** Whether the response must (or must not) be an idempotent replay. */
     replayed?: boolean;
+    /** For `process` steps: a subset of the process report. */
+    report?: unknown;
+    /** For `process` steps: the deliveries made, in any order (each a subset). */
+    deliveries?: unknown[];
+    /** For `process` steps: the integration calls made, in any order (each a subset). */
+    calls?: unknown[];
   };
   /** Variables to capture from the response, by dot path (`body.items.0.id`). */
   capture?: Record<string, string>;
+}
+
+/** Like {@link subsetMismatch} for lists in any order: each expected item matches a distinct one. */
+export function unorderedMismatch(
+  expected: unknown[],
+  actual: unknown[],
+  path: string,
+): string | undefined {
+  if (expected.length !== actual.length) {
+    return `${path}: expected ${expected.length} items, got ${actual.length}`;
+  }
+  const remaining = [...actual];
+  for (const [i, item] of expected.entries()) {
+    const index = remaining.findIndex((candidate) => subsetMismatch(item, candidate) === undefined);
+    if (index < 0) return `${path}.${i}: no match for ${JSON.stringify(item)}`;
+    remaining.splice(index, 1);
+  }
+  return undefined;
 }
 
 /** Replaces `{{var}}` placeholders in every string of a JSON value. */

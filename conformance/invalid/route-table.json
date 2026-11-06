@@ -6,7 +6,7 @@
     "invalid_error_status"
   ],
   "manifest": {
-    "formatVersion": "0.1",
+    "formatVersion": "0.2",
     "app": {
       "name": "bad"
     },

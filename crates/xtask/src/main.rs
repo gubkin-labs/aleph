@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use aleph_core::check::CheckReport;
+use aleph_core::runtime::{Delivery, ProcessReport, RecordedCall};
 use aleph_core::{Diagnostic, Limits, Manifest, Request, Response};
 use ts_rs::{Config, TS};
 
@@ -58,6 +59,9 @@ fn codegen(check: bool) -> Result<(), String> {
     Limits::export_all(&cfg).map_err(|e| e.to_string())?;
     Request::export_all(&cfg).map_err(|e| e.to_string())?;
     Response::export_all(&cfg).map_err(|e| e.to_string())?;
+    Delivery::export_all(&cfg).map_err(|e| e.to_string())?;
+    RecordedCall::export_all(&cfg).map_err(|e| e.to_string())?;
+    ProcessReport::export_all(&cfg).map_err(|e| e.to_string())?;
 
     let generated = root.join("packages/manifest/src/generated");
     let mut names: Vec<String> = Vec::new();

@@ -2,7 +2,8 @@
 import type { Expr } from "./Expr.js";
 
 /**
- * A boolean expression over one row, bound to `var`.
+ * An expression over one row, bound to `var`: a boolean predicate (`where`, invariants) or an
+ * integer (counter `sum`).
  */
 export type RowPredicate = { 
 /**

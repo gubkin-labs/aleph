@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 
 /** Anything with a deterministic `toJSON()`, like an `@aleph/sdk` app. */
 interface Buildable {
-  toJSON(): string;
+  toJSON(options?: { sourceMap?: boolean }): string;
 }
 
 function isBuildable(value: unknown): value is Buildable {
@@ -28,7 +28,10 @@ export class LoadError extends Error {
  * Returns the manifest JSON for `path`: the file itself if it's `.json`, otherwise the default
  * export of the module (TypeScript runs through Node's built-in type stripping).
  */
-export async function loadManifest(path: string): Promise<string> {
+export async function loadManifest(
+  path: string,
+  options: { sourceMap?: boolean } = {},
+): Promise<string> {
   const file = resolve(path);
   if (extname(file) === ".json") return readFile(file, "utf8");
   let module: { default?: unknown };
@@ -44,5 +47,5 @@ export async function loadManifest(path: string): Promise<string> {
       `${path} must \`export default\` an app created with app() from @aleph/sdk`,
     );
   }
-  return module.default.toJSON();
+  return module.default.toJSON(options);
 }

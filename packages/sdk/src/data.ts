@@ -114,8 +114,8 @@ function makeRow<F extends Fields>(entity: Entity<F, string, string>, node: Node
     [NODE]: node,
     [ROW_ENTITY]: entity,
     exists: () => new Expr<boolean>({ kind: "isNull", of: node }).not(),
-    update: (set: Partial<ValuesLike<F>>) => entity.update(entity.keyOf(node), set),
-    delete: () => entity.delete(entity.keyOf(node)),
+    update: (set: Partial<ValuesLike<F>>) => entity.update(entity.keyOf(node) as never, set),
+    delete: () => entity.delete(entity.keyOf(node) as never),
   };
   for (const name of Object.keys(entity.fields)) {
     Object.defineProperty(row, name, {
@@ -159,7 +159,7 @@ export class List<T> implements HasNode {
       () => {
         result = fn(materialize(this.itemShape, { kind: "var", id: item }) as T);
       },
-      { pure: true },
+      { pure: true, suffix: ".op.body" },
     );
     const node = rec.let({ op: "map", list: this["~node"], item, body, yield: toNode(result) });
     return new List<R>(node, shapeOf(result));
@@ -174,7 +174,7 @@ export class List<T> implements HasNode {
       () => {
         keep = fn(materialize(this.itemShape, { kind: "var", id: item }) as T);
       },
-      { pure: true },
+      { pure: true, suffix: ".op.body" },
     );
     const node = rec.let({ op: "filter", list: this["~node"], item, body, keep: toNode(keep) });
     return new List<T>(node, this.itemShape);
@@ -199,8 +199,9 @@ export class List<T> implements HasNode {
 export function forEach<T>(list: List<T>, fn: (item: T) => void): void {
   const rec = recorder();
   const item = rec.newVar();
-  const body: Stmt[] = rec.block(() =>
-    fn(materialize(list.itemShape, { kind: "var", id: item }) as T),
+  const body: Stmt[] = rec.block(
+    () => fn(materialize(list.itemShape, { kind: "var", id: item }) as T),
+    { suffix: ".body" },
   );
   rec.push({ kind: "forEach", list: list[NODE], item, body });
 }
@@ -225,6 +226,10 @@ export interface EntityDef<F extends Fields, K extends keyof F & string, I exten
   fields: F;
   /** Secondary indexes: name → indexed fields, in order. */
   indexes?: Record<I, readonly (keyof F & string)[]>;
+  /** Rules every row must satisfy, checked on every write. A violation fails the request (422). */
+  invariants?: Record<string, (row: Row<F>) => Expr<boolean>>;
+  /** Rows can be inserted but never updated or deleted. */
+  appendOnly?: boolean;
 }
 
 /** Options for {@link Entity.query}. */
@@ -281,14 +286,22 @@ export class Entity<F extends Fields, K extends keyof F & string, I extends stri
     for (const [name, fields] of Object.entries<readonly string[]>(this.#def.indexes ?? {})) {
       indexes[name] = { fields: [...fields] };
     }
-    return { key: [...this.#def.key], fields: fieldSpecs(this.fields), indexes };
+    const spec: EntitySpec = { key: [...this.#def.key], fields: fieldSpecs(this.fields), indexes };
+    const invariants = Object.entries(this.#def.invariants ?? {});
+    if (invariants.length > 0) {
+      spec.invariants = Object.fromEntries(
+        invariants.map(([name, rule]) => [name, rowExpression(this, `invariant ${name}`, rule)]),
+      );
+    }
+    if (this.#def.appendOnly) spec.mutable = false;
+    return spec;
   }
 
   /** @internal The key map of a row expression. */
-  keyOf(row: Node): KeyValues<F, K> {
+  keyOf(row: Node): Record<string, Expr<unknown>> {
     const key: Record<string, unknown> = {};
     for (const name of this.#def.key) key[name] = new Expr({ kind: "field", of: row, name });
-    return key as KeyValues<F, K>;
+    return key as Record<string, Expr<unknown>>;
   }
 
   #key(key: KeyValues<F, K>): Record<string, Node> {
@@ -388,6 +401,21 @@ export class Entity<F extends Fields, K extends keyof F & string, I extends stri
   }
 }
 
+/** Records a pure expression over one row (a counter predicate or sum, or an invariant). */
+function rowExpression<F extends Fields>(
+  entity: Entity<F, string, string>,
+  what: string,
+  fn: (row: Row<F>) => unknown,
+): { var: number; expr: Node } {
+  const rec = new Recorder();
+  const v = rec.newVar();
+  const expr = recording(rec, () => toNode(fn(makeRow(entity, { kind: "var", id: v }))));
+  if (rec.body.length > 0) {
+    throw new AlephBuildError(`${what} can only use the row: it can't read or write data`);
+  }
+  return { var: v, expr };
+}
+
 // ─── Counters ──────────────────────────────────────────────────────────────────────────────────
 
 /** How to declare a counter. */
@@ -403,6 +431,8 @@ export interface CounterDef<
   groupBy: readonly G[];
   /** Only rows matching this predicate are counted. */
   where?: (row: Row<F>) => Expr<boolean>;
+  /** Sum this integer over the rows instead of counting them. */
+  sum?: (row: Row<F>) => Expr<number>;
 }
 
 /** A counter: maintained on every write to its entity, read in O(1). */
@@ -419,19 +449,9 @@ export class Counter<F extends Fields, G extends keyof F & string> {
   /** @internal The manifest declaration. */
   spec(): CounterSpec {
     const spec: CounterSpec = { of: this.#def.of.name, groupBy: [...this.#def.groupBy] };
-    const where = this.#def.where;
-    if (where) {
-      const rec = new Recorder();
-      const v = rec.newVar();
-      const of = this.#def.of;
-      const node = recording(rec, () => toNode(where(makeRow(of, { kind: "var", id: v }))));
-      if (rec.body.length > 0) {
-        throw new AlephBuildError(
-          `counter ${this.name}: the where predicate can't read or write data`,
-        );
-      }
-      spec.where = { var: v, expr: node };
-    }
+    const of = this.#def.of as unknown as Entity<F, string, string>;
+    if (this.#def.where) spec.where = rowExpression(of, `counter ${this.name}`, this.#def.where);
+    if (this.#def.sum) spec.sum = rowExpression(of, `counter ${this.name}`, this.#def.sum);
     return spec;
   }
 

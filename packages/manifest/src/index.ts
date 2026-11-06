@@ -7,4 +7,4 @@
 export type * from "./generated.js";
 
 /** The manifest format version these types describe. */
-export const FORMAT_VERSION = "0.1" as const;
+export const FORMAT_VERSION = "0.2" as const;

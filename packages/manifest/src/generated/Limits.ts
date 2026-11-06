@@ -21,6 +21,14 @@ ops: number,
  */
 bytesRead: number, 
 /**
+ * Maximum effects (events, jobs, messages, sends, change triggers) released.
+ */
+effects: number, 
+/**
+ * Maximum integration calls.
+ */
+calls: number, 
+/**
  * Maximum encoded size of a single row.
  */
 maxRowBytes: number, 

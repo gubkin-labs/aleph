@@ -117,7 +117,7 @@ describe("build", () => {
   it("refuses data operations outside handlers", () => {
     const { Todo } = todoApp();
     expect(() => Todo.get({ ownerId: "a", todoId: "b" })).toThrow(
-      /only be used inside a route handler/,
+      /only be used inside a route or handler/,
     );
   });
 
@@ -184,5 +184,26 @@ describe("build", () => {
       after: { kind: "input", name: "cursor" },
     });
     expect(() => a.route("GET /x").idempotent({ ttl: "soon" as "1s" })).toThrow(/invalid duration/);
+  });
+
+  it("refuses effects inside map and records handlers with source maps", () => {
+    const a = app("fx");
+    const Ping = a.event("ping", { payload: { n: t.int() } });
+    const Note = a.entity("Note", { key: ["id"], fields: { id: t.id().generated() } });
+    expect(() =>
+      a.route("POST /x").handle(() => Note.query({ limit: 3 }).map(() => Ping.emit({ n: 1 }))),
+    ).toThrow(/release effects/);
+    a.onEvent("onPing", Ping, (_, { payload }) => {
+      Note.insert({});
+      return payload.n;
+    });
+    const m = a.build({ sourceMap: true });
+    expect(m.handlers?.[0]).toMatchObject({
+      id: "onPing",
+      trigger: { kind: "event", event: "ping" },
+    });
+    expect(m.events).toEqual({ ping: { payload: { n: { type: { kind: "int" } } } } });
+    // Without the option, builds stay free of machine-specific paths.
+    expect(a.build().sourceMap).toBeUndefined();
   });
 });

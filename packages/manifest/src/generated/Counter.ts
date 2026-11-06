@@ -16,4 +16,8 @@ groupBy: Array<string>,
 /**
  * Only rows matching this predicate are counted.
  */
-where?: RowPredicate, };
+where?: RowPredicate, 
+/**
+ * Sum this integer expression over the rows instead of counting them.
+ */
+sum?: RowPredicate, };

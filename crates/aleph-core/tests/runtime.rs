@@ -202,6 +202,65 @@ fn concurrent_retries_of_one_idempotent_transfer_apply_once() {
 }
 
 #[test]
+fn effects_are_released_exactly_once_under_conflict_retries() {
+    let engine = Arc::new(Engine::new(
+        load("pipeline"),
+        Arc::new(MemoryStore::new()),
+        Arc::new(FixedEnv::new(1_000, 9)),
+    ));
+    let t = tenant("docs");
+    // Every upload in one org bumps the same sum-counter key, so concurrent uploads conflict
+    // and are re-run. Each committed upload must release exactly one insert trigger.
+    let (committed, retried): (usize, u32) = thread::scope(|scope| {
+        let handles: Vec<_> = (0..8)
+            .map(|worker| {
+                let engine = &engine;
+                let t = &t;
+                scope.spawn(move || {
+                    let mut ok = (0, 0);
+                    for n in 0..3 {
+                        let caller = Caller {
+                            orgs: BTreeMap::from([("acme".into(), "member".into())]),
+                            ..Caller::user(format!("user-{worker}"))
+                        };
+                        let r = engine.handle(
+                            t,
+                            &Request {
+                                caller: Some(caller),
+                                ..request(
+                                    Method::Post,
+                                    "/orgs/acme/docs",
+                                    Some(json!({ "title": format!("doc {worker}-{n}") })),
+                                )
+                            },
+                        );
+                        if r.status == 200 {
+                            ok = (ok.0 + 1, ok.1 + r.attempts - 1);
+                        }
+                    }
+                    ok
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .fold((0, 0), |a, b| (a.0 + b.0, a.1 + b.1))
+    });
+    assert!(committed > 0);
+    let report = engine.process(&t, 10_000);
+    let triggers = report
+        .runs
+        .iter()
+        .filter(|r| r.handler == "enqueueProcessing")
+        .count();
+    assert_eq!(
+        triggers, committed,
+        "{committed} uploads committed after {retried} retries"
+    );
+}
+
+#[test]
 fn the_meter_stops_executions_the_analysis_allowed() {
     let engine = Engine::new(
         load("projects"),

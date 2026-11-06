@@ -18,7 +18,7 @@
  *   .handle(($, { body }) => Todo.insert({ ownerId: $.caller, title: body.title }));
  * ```
  */
-export { App, type AppOptions, app } from "./app.js";
+export { App, type AppOptions, app, type BuildOptions } from "./app.js";
 export {
   Counter,
   type CounterDef,
@@ -35,6 +35,20 @@ export {
   type ValuesLike,
 } from "./data.js";
 export { $, type MatchCases } from "./dsl.js";
+export {
+  type ChangePayload,
+  Channel,
+  type CronPayload,
+  Event,
+  type HandlerCtx,
+  type HandlerOptions,
+  type IntegrationDef,
+  IntegrationHandle,
+  type OperationDef,
+  Queue,
+  type QueueOptions,
+  type ScanOptions,
+} from "./effects.js";
 export { err } from "./errors.js";
 export { Expr, type ExprLike } from "./expr.js";
 export {

@@ -18,4 +18,12 @@ ops: number,
 /**
  * Bytes read from storage.
  */
-bytesRead: number, };
+bytesRead: number, 
+/**
+ * Effects released.
+ */
+effects: number, 
+/**
+ * Integration calls.
+ */
+calls: number, };

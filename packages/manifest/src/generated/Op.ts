@@ -128,7 +128,63 @@ body: Array<Stmt>,
 /**
  * The predicate.
  */
-keep: Expr, } | { "op": "eval", 
+keep: Expr, } | { "op": "emit", 
+/**
+ * The event.
+ */
+event: string, 
+/**
+ * Payload values.
+ */
+payload: { [key in string]: Expr }, } | { "op": "enqueue", 
+/**
+ * The queue.
+ */
+queue: string, 
+/**
+ * Payload values.
+ */
+payload: { [key in string]: Expr }, 
+/**
+ * Delay in milliseconds.
+ */
+delayMs?: Expr, } | { "op": "publish", 
+/**
+ * The channel.
+ */
+channel: string, 
+/**
+ * Values for the channel's key fields.
+ */
+key: { [key in string]: Expr }, 
+/**
+ * Message values.
+ */
+message: { [key in string]: Expr }, } | { "op": "call", 
+/**
+ * The integration.
+ */
+integration: string, 
+/**
+ * The operation (mode `call`).
+ */
+operation: string, 
+/**
+ * Input values.
+ */
+input: { [key in string]: Expr }, } | { "op": "send", 
+/**
+ * The integration.
+ */
+integration: string, 
+/**
+ * The operation (mode `effect`).
+ */
+operation: string, 
+/**
+ * Input values.
+ */
+input: { [key in string]: Expr }, } | { "op": "eval", 
 /**
  * The expression.
  */

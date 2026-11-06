@@ -19,7 +19,9 @@
         "reads": 2,
         "writes": 5,
         "ops": 16,
-        "bytesRead": 2522
+        "bytesRead": 2522,
+        "effects": 0,
+        "calls": 0
       }
     },
     "completeTasks": {
@@ -27,7 +29,9 @@
         "reads": 33,
         "writes": 48,
         "ops": 547,
-        "bytesRead": 54420
+        "bytesRead": 54420,
+        "effects": 0,
+        "calls": 0
       }
     },
     "createProject": {
@@ -35,7 +39,9 @@
         "reads": 3,
         "writes": 3,
         "ops": 22,
-        "bytesRead": 1712
+        "bytesRead": 1712,
+        "effects": 0,
+        "calls": 0
       }
     },
     "createTask": {
@@ -43,7 +49,9 @@
         "reads": 2,
         "writes": 2,
         "ops": 19,
-        "bytesRead": 2961
+        "bytesRead": 2961,
+        "effects": 0,
+        "calls": 0
       }
     },
     "getProject": {
@@ -51,7 +59,9 @@
         "reads": 22,
         "writes": 0,
         "ops": 30,
-        "bytesRead": 35281
+        "bytesRead": 35281,
+        "effects": 0,
+        "calls": 0
       }
     },
     "listProjects": {
@@ -59,7 +69,9 @@
         "reads": 50,
         "writes": 0,
         "ops": 7,
-        "bytesRead": 63050
+        "bytesRead": 63050,
+        "effects": 0,
+        "calls": 0
       }
     },
     "setPlan": {
@@ -67,7 +79,9 @@
         "reads": 1,
         "writes": 1,
         "ops": 5,
-        "bytesRead": 431
+        "bytesRead": 431,
+        "effects": 0,
+        "calls": 0
       }
     },
     "watchProject": {
@@ -75,7 +89,9 @@
         "reads": 2,
         "writes": 1,
         "ops": 15,
-        "bytesRead": 2095
+        "bytesRead": 2095,
+        "effects": 0,
+        "calls": 0
       }
     }
   }

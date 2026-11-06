@@ -68,6 +68,8 @@ function send(
 export interface DevServerOptions {
   port?: number;
   host?: string;
+  /** How often to run due async work (cron, handlers, deliveries), in ms. Default 1000. */
+  processEveryMs?: number;
   /** Called once per request with a one-line summary. */
   log?: (line: string) => void;
 }
@@ -101,6 +103,7 @@ export async function startDevServer(
         if (key) request.idempotencyKey = key;
 
         const response = engine.handle(request);
+        processDue();
         const usage = response.usage;
         send(res, response.status, response.body, {
           "x-aleph-usage": JSON.stringify(usage),
@@ -115,9 +118,28 @@ export async function startDevServer(
       })
       .catch(() => send(res, 400, { error: "invalid_json", message: "the body isn't valid JSON" }));
   });
+  // Async work runs right after each request and on a timer, like the platform's workers.
+  function processDue(): void {
+    const report = engine.process();
+    for (const run of report.runs) {
+      log(`  ↳ ran ${run.handler} (reads ${run.usage.reads}, writes ${run.usage.writes})`);
+    }
+    for (const failure of report.failures) log(`  ↳ failed: ${failure}`);
+    if (report.retried > 0) log(`  ↳ retried ${report.retried} (with backoff)`);
+    for (const d of engine.takeDeliveries()) {
+      log(
+        `  ↳ ${d.kind} ${d.target}${d.operation ? `.${d.operation}` : ""} ${JSON.stringify(d.data)}`,
+      );
+    }
+  }
+  const timer = setInterval(processDue, options.processEveryMs ?? 1000);
+  timer.unref();
   await new Promise<void>((resolve) =>
     server.listen(options.port ?? 3000, options.host ?? "127.0.0.1", resolve),
   );
-  server.on("close", () => engine.dispose());
+  server.on("close", () => {
+    clearInterval(timer);
+    engine.dispose();
+  });
   return server;
 }

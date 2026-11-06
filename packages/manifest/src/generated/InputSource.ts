@@ -2,4 +2,4 @@
 /**
  * Where an input value comes from.
  */
-export type InputSource = "params" | "query" | "body";
+export type InputSource = "params" | "query" | "body" | "payload";

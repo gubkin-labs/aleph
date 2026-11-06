@@ -27,7 +27,7 @@ pub use effects::{
 pub use env::SystemEnv;
 pub use env::{Env, FixedEnv};
 pub use input::InputProblem;
-pub use process::ProcessReport;
+pub use process::{HandlerRun, ProcessReport};
 
 use exec::{Exec, ExecError};
 use input::Inputs;

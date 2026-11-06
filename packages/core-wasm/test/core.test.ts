@@ -11,7 +11,7 @@ import {
 const textField = { type: { kind: "string" as const, min: 1, max: 100 } };
 
 const manifest: Manifest = {
-  formatVersion: "0.1",
+  formatVersion: "0.2",
   app: { name: "notes" },
   entities: {
     Note: {
@@ -52,7 +52,7 @@ const manifest: Manifest = {
 
 describe("@aleph/core", () => {
   it("reports the format version and limits", () => {
-    expect(formatVersion()).toBe("0.1");
+    expect(formatVersion()).toBe("0.2");
     expect(defaultLimits().writes).toBe(50);
   });
 

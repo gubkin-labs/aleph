@@ -1,7 +1,7 @@
 {
   "expect": ["invalid_auth", "unknown_role", "unknown_scope"],
   "manifest": {
-    "formatVersion": "0.1",
+    "formatVersion": "0.2",
     "app": {
       "name": "bad"
     },

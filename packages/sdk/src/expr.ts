@@ -103,6 +103,43 @@ export class Expr<T> {
     return new Expr({ kind: "neg", arg: this["~node"] });
   }
 
+  /** Absolute value. */
+  abs(this: Expr<number>): Expr<number> {
+    return new Expr({ kind: "abs", arg: this["~node"] });
+  }
+
+  /** Lowercase. */
+  lower(this: Expr<string>): Expr<string> {
+    return new Expr({ kind: "str", op: "lower", of: this["~node"] });
+  }
+
+  /** Uppercase. */
+  upper(this: Expr<string>): Expr<string> {
+    return new Expr({ kind: "str", op: "upper", of: this["~node"] });
+  }
+
+  /** Without leading and trailing whitespace. */
+  trim(this: Expr<string>): Expr<string> {
+    return new Expr({ kind: "str", op: "trim", of: this["~node"] });
+  }
+
+  /** The first `max` characters. */
+  truncate(this: Expr<string>, max: number): Expr<string> {
+    return new Expr({ kind: "truncate", of: this["~node"], max });
+  }
+
+  startsWith(this: Expr<string>, other: ExprLike<string>): Expr<boolean> {
+    return new Expr({ kind: "strTest", op: "startsWith", of: this["~node"], arg: toNode(other) });
+  }
+
+  endsWith(this: Expr<string>, other: ExprLike<string>): Expr<boolean> {
+    return new Expr({ kind: "strTest", op: "endsWith", of: this["~node"], arg: toNode(other) });
+  }
+
+  contains(this: Expr<string>, other: ExprLike<string>): Expr<boolean> {
+    return new Expr({ kind: "strTest", op: "contains", of: this["~node"], arg: toNode(other) });
+  }
+
   /** Length of a string, in characters. */
   length(this: Expr<string>): Expr<number> {
     return new Expr({ kind: "length", of: this["~node"] });

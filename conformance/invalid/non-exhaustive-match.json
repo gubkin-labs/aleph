@@ -1,7 +1,7 @@
 {
   "expect": ["non_exhaustive_match", "unknown_match_case"],
   "manifest": {
-    "formatVersion": "0.1",
+    "formatVersion": "0.2",
     "app": {
       "name": "bad"
     },

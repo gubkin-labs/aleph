@@ -16,4 +16,8 @@ message: string,
 /**
  * Location in the manifest, for example `routes[0].plan.body[2].op`.
  */
-path: string, };
+path: string, 
+/**
+ * Location in the source, for example `app.ts:41:5`, when the manifest has a source map.
+ */
+location?: string, };

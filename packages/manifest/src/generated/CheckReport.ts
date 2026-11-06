@@ -13,4 +13,8 @@ entities: { [key in string]: EntityReport },
 /**
  * Per-route facts, by route id.
  */
-routes: { [key in string]: RouteReport }, };
+routes: { [key in string]: RouteReport }, 
+/**
+ * Per-handler facts, by handler id. Handlers are checked against the job limits.
+ */
+handlers?: { [key in string]: RouteReport }, };

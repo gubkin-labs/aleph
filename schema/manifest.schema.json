@@ -16,6 +16,13 @@
         "roles": []
       }
     },
+    "channels": {
+      "description": "Declared realtime channels, by name.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ChannelDecl"
+      }
+    },
     "counters": {
       "description": "Declared counters, by name. Counters are maintained on write and read in O(1).",
       "type": "object",
@@ -32,9 +39,37 @@
       },
       "default": {}
     },
+    "events": {
+      "description": "Declared events, by name.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/EventDecl"
+      }
+    },
     "formatVersion": {
       "description": "Manifest format version, for example `\"0.1\"`.",
       "type": "string"
+    },
+    "handlers": {
+      "description": "Asynchronous handlers: triggers, jobs, and schedules.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Handler"
+      }
+    },
+    "integrations": {
+      "description": "Declared integrations, by name.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/Integration"
+      }
+    },
+    "queues": {
+      "description": "Declared queues, by name.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/QueueDecl"
+      }
     },
     "routes": {
       "description": "Declared HTTP routes.",
@@ -42,6 +77,13 @@
       "default": [],
       "items": {
         "$ref": "#/$defs/Route"
+      }
+    },
+    "sourceMap": {
+      "description": "Manifest paths (`routes[2].plan.body[1]`) to source locations (`app.ts:41:5`), for\ndiagnostics. Never affects execution.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
       }
     }
   },
@@ -176,6 +218,40 @@
         "max"
       ]
     },
+    "Change": {
+      "description": "A change to a row.",
+      "type": "string",
+      "enum": [
+        "inserted",
+        "updated",
+        "deleted"
+      ]
+    },
+    "ChannelDecl": {
+      "description": "A realtime channel: clients subscribe by key, plans publish messages to it.",
+      "type": "object",
+      "properties": {
+        "key": {
+          "description": "Fields that identify one stream of the channel, for example `{ roomId }`.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Field"
+          }
+        },
+        "message": {
+          "description": "Message fields.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Field"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "message"
+      ]
+    },
     "Counter": {
       "description": "A counter over the rows of an entity, grouped by some of its fields.",
       "type": "object",
@@ -190,6 +266,17 @@
         "of": {
           "description": "The counted entity.",
           "type": "string"
+        },
+        "sum": {
+          "description": "Sum this integer expression over the rows instead of counting them.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RowPredicate"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "where": {
           "description": "Only rows matching this predicate are counted.",
@@ -207,6 +294,42 @@
       "required": [
         "of",
         "groupBy"
+      ]
+    },
+    "CronScan": {
+      "description": "The rows a scanning cron walks through.",
+      "type": "object",
+      "properties": {
+        "batch": {
+          "description": "Rows per batch (1-500).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "entity": {
+          "description": "The entity.",
+          "type": "string"
+        },
+        "index": {
+          "description": "Scan this index instead of the primary key.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prefix": {
+          "description": "Constant values for a prefix of the scanned fields.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Literal"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "entity",
+        "batch"
       ]
     },
     "DefaultValue": {
@@ -280,12 +403,23 @@
           },
           "default": {}
         },
+        "invariants": {
+          "description": "Rules every row must satisfy, by name. Checked on every write; a write that breaks one\nfails the request and rolls back.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/RowPredicate"
+          }
+        },
         "key": {
           "description": "Primary key fields, in order. Rows are stored sorted by this key, so a prefix of the key\nselects a contiguous range.",
           "type": "array",
           "items": {
             "type": "string"
           }
+        },
+        "mutable": {
+          "description": "`false` for append-only entities: rows can be inserted but never updated or deleted.",
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -314,6 +448,23 @@
       "required": [
         "status",
         "message"
+      ]
+    },
+    "EventDecl": {
+      "description": "A declared event with a typed payload.",
+      "type": "object",
+      "properties": {
+        "payload": {
+          "description": "Payload fields.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Field"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "payload"
       ]
     },
     "Expr": {
@@ -687,6 +838,104 @@
           ]
         },
         {
+          "description": "A string transformation.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "str"
+            },
+            "of": {
+              "description": "The string.",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "description": "The transformation.",
+              "$ref": "#/$defs/StrOp"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "op",
+            "of"
+          ]
+        },
+        {
+          "description": "A string test, such as `startsWith`.",
+          "type": "object",
+          "properties": {
+            "arg": {
+              "description": "The other string.",
+              "$ref": "#/$defs/Expr"
+            },
+            "kind": {
+              "type": "string",
+              "const": "strTest"
+            },
+            "of": {
+              "description": "The string tested.",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "description": "The test.",
+              "$ref": "#/$defs/StrTest"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "op",
+            "of",
+            "arg"
+          ]
+        },
+        {
+          "description": "The first `max` characters of a string.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "truncate"
+            },
+            "max": {
+              "description": "Maximum length in characters.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "of": {
+              "description": "The string.",
+              "$ref": "#/$defs/Expr"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "of",
+            "max"
+          ]
+        },
+        {
+          "description": "Absolute value of an integer.",
+          "type": "object",
+          "properties": {
+            "arg": {
+              "description": "The operand.",
+              "$ref": "#/$defs/Expr"
+            },
+            "kind": {
+              "type": "string",
+              "const": "abs"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "arg"
+          ]
+        },
+        {
           "description": "String concatenation. Non-string parts are formatted.",
           "type": "object",
           "properties": {
@@ -892,6 +1141,38 @@
         }
       ]
     },
+    "Handler": {
+      "description": "A handler: a plan run asynchronously when something happens.",
+      "type": "object",
+      "properties": {
+        "errors": {
+          "description": "Declared errors. Failing with one counts as a failed attempt, which is retried.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ErrorDecl"
+          },
+          "default": {}
+        },
+        "id": {
+          "description": "Stable identifier, unique among handlers.",
+          "type": "string"
+        },
+        "plan": {
+          "description": "The handler's logic. Its output is ignored.",
+          "$ref": "#/$defs/Plan"
+        },
+        "trigger": {
+          "description": "What runs it.",
+          "$ref": "#/$defs/Trigger"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "trigger",
+        "plan"
+      ]
+    },
     "Idempotency": {
       "description": "Idempotency settings for a route. A successful response is stored with the request's key in\nthe same transaction as the route's writes, and replayed for the same key within `ttl_ms`.",
       "type": "object",
@@ -962,11 +1243,80 @@
     },
     "InputSource": {
       "description": "Where an input value comes from.",
-      "type": "string",
-      "enum": [
-        "params",
-        "query",
-        "body"
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "params",
+            "query",
+            "body"
+          ]
+        },
+        {
+          "description": "A handler's payload.",
+          "type": "string",
+          "const": "payload"
+        }
+      ]
+    },
+    "Integration": {
+      "description": "A declared integration: the only way plans reach the outside world.",
+      "type": "object",
+      "properties": {
+        "config": {
+          "description": "Provider configuration (base URL, secret names, ...), interpreted by the platform.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "operations": {
+          "description": "Operations, by name.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/IntegrationOp"
+          }
+        },
+        "provider": {
+          "description": "Which provider implements it, for example `\"http\"`, `\"email\"`, `\"stripe\"`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "operations"
+      ]
+    },
+    "IntegrationOp": {
+      "description": "One integration operation.",
+      "type": "object",
+      "properties": {
+        "input": {
+          "description": "Input fields.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Field"
+          }
+        },
+        "mode": {
+          "description": "Call or effect.",
+          "$ref": "#/$defs/OpMode"
+        },
+        "output": {
+          "description": "Output fields (calls only). The response is validated against them.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Field"
+          },
+          "default": {}
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "input"
       ]
     },
     "Literal": {
@@ -989,6 +1339,20 @@
           "description": "A string.",
           "type": "string"
         }
+      ]
+    },
+    "McpTool": {
+      "description": "An MCP tool backed by a route.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Tool name, unique within the app.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
       ]
     },
     "Method": {
@@ -1339,6 +1703,170 @@
           ]
         },
         {
+          "description": "Emit an event. Released after commit.",
+          "type": "object",
+          "properties": {
+            "event": {
+              "description": "The event.",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "const": "emit"
+            },
+            "payload": {
+              "description": "Payload values.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "event",
+            "payload"
+          ]
+        },
+        {
+          "description": "Put a job on a queue, optionally delayed (at most 30 days). Released after commit.",
+          "type": "object",
+          "properties": {
+            "delayMs": {
+              "description": "Delay in milliseconds.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Expr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "op": {
+              "type": "string",
+              "const": "enqueue"
+            },
+            "payload": {
+              "description": "Payload values.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "queue": {
+              "description": "The queue.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "queue",
+            "payload"
+          ]
+        },
+        {
+          "description": "Publish a message to a realtime channel. Released after commit.",
+          "type": "object",
+          "properties": {
+            "channel": {
+              "description": "The channel.",
+              "type": "string"
+            },
+            "key": {
+              "description": "Values for the channel's key fields.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "message": {
+              "description": "Message values.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "op": {
+              "type": "string",
+              "const": "publish"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "channel",
+            "key",
+            "message"
+          ]
+        },
+        {
+          "description": "Run an integration call and evaluate to its (validated) output. Journaled.",
+          "type": "object",
+          "properties": {
+            "input": {
+              "description": "Input values.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "integration": {
+              "description": "The integration.",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "const": "call"
+            },
+            "operation": {
+              "description": "The operation (mode `call`).",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "integration",
+            "operation",
+            "input"
+          ]
+        },
+        {
+          "description": "Send an integration effect. Released after commit.",
+          "type": "object",
+          "properties": {
+            "input": {
+              "description": "Input values.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "integration": {
+              "description": "The integration.",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "const": "send"
+            },
+            "operation": {
+              "description": "The operation (mode `effect`).",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "integration",
+            "operation",
+            "input"
+          ]
+        },
+        {
           "description": "Evaluate a pure expression.",
           "type": "object",
           "properties": {
@@ -1356,6 +1884,21 @@
             "op",
             "expr"
           ]
+        }
+      ]
+    },
+    "OpMode": {
+      "description": "How an integration operation runs.",
+      "oneOf": [
+        {
+          "description": "Runs during the plan and returns data. Journaled: a retried attempt reuses the result.",
+          "type": "string",
+          "const": "call"
+        },
+        {
+          "description": "Fire-and-forget, delivered through the outbox after commit.",
+          "type": "string",
+          "const": "effect"
         }
       ]
     },
@@ -1396,6 +1939,97 @@
         "output"
       ]
     },
+    "QueueDecl": {
+      "description": "A declared queue: jobs with a typed payload, retried with exponential backoff.",
+      "type": "object",
+      "properties": {
+        "backoffMs": {
+          "description": "Delay before the first retry, in milliseconds. Doubles on each retry.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 1000,
+          "minimum": 0
+        },
+        "maxBackoffMs": {
+          "description": "The longest delay between retries, in milliseconds.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 60000,
+          "minimum": 0
+        },
+        "payload": {
+          "description": "Payload fields.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Field"
+          }
+        },
+        "retries": {
+          "description": "How many times a failed job is retried (at most 10).",
+          "type": "integer",
+          "format": "uint32",
+          "default": 3,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "payload"
+      ]
+    },
+    "RateLimit": {
+      "description": "At most `max` calls per subject in each `window_ms` window.",
+      "type": "object",
+      "properties": {
+        "max": {
+          "description": "Calls allowed per window.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "per": {
+          "description": "Who calls are counted for.",
+          "$ref": "#/$defs/RateSubject"
+        },
+        "windowMs": {
+          "description": "Window length in milliseconds (1 second to 1 day).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "per",
+        "max",
+        "windowMs"
+      ]
+    },
+    "RateSubject": {
+      "description": "Who a rate limit counts calls for.",
+      "oneOf": [
+        {
+          "description": "Each signed-in user (anonymous callers count by IP).",
+          "type": "string",
+          "const": "user"
+        },
+        {
+          "description": "Each client IP.",
+          "type": "string",
+          "const": "ip"
+        },
+        {
+          "description": "Each API key's org.",
+          "type": "string",
+          "const": "apiKey"
+        },
+        {
+          "description": "Everyone together.",
+          "type": "string",
+          "const": "global"
+        }
+      ]
+    },
     "Route": {
       "description": "An HTTP route.",
       "type": "object",
@@ -1403,6 +2037,13 @@
         "auth": {
           "description": "Who may call the route.",
           "$ref": "#/$defs/Auth"
+        },
+        "description": {
+          "description": "What the route does, for generated API docs and MCP tools.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "errors": {
           "description": "Declared business errors the plan may fail with, by name.",
@@ -1436,6 +2077,17 @@
             "query": {}
           }
         },
+        "mcp": {
+          "description": "Exposes the route as an MCP tool with the same inputs, auth, and limits.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/McpTool"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "method": {
           "description": "HTTP method.",
           "$ref": "#/$defs/Method"
@@ -1447,6 +2099,17 @@
         "plan": {
           "description": "The route's logic.",
           "$ref": "#/$defs/Plan"
+        },
+        "rateLimit": {
+          "description": "Limits how often the route may be called.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RateLimit"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -1459,7 +2122,7 @@
       ]
     },
     "RowPredicate": {
-      "description": "A boolean expression over one row, bound to `var`.",
+      "description": "An expression over one row, bound to `var`: a boolean predicate (`where`, invariants) or an\ninteger (counter `sum`).",
       "type": "object",
       "properties": {
         "expr": {
@@ -1618,6 +2281,149 @@
             "list",
             "item",
             "body"
+          ]
+        }
+      ]
+    },
+    "StrOp": {
+      "description": "String transformations.",
+      "type": "string",
+      "enum": [
+        "lower",
+        "upper",
+        "trim"
+      ]
+    },
+    "StrTest": {
+      "description": "String tests.",
+      "type": "string",
+      "enum": [
+        "startsWith",
+        "endsWith",
+        "contains"
+      ]
+    },
+    "Trigger": {
+      "description": "What runs a handler. The handler reads its payload with `input` expressions of source\n`payload`:\n- `event`, `queue`: the declared payload fields\n- `deadLetter`: the job's payload fields, plus `error` and `attempts`\n- `entity`: `before` and `after` (rows, `null` when absent)\n- `cron`: `firedAt`, plus `batch` (a list of rows) when it scans",
+      "oneOf": [
+        {
+          "description": "An emitted event.",
+          "type": "object",
+          "properties": {
+            "event": {
+              "description": "The event.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "event"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "event"
+          ]
+        },
+        {
+          "description": "A committed change to a row.",
+          "type": "object",
+          "properties": {
+            "change": {
+              "description": "Which change.",
+              "$ref": "#/$defs/Change"
+            },
+            "entity": {
+              "description": "The entity.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "entity"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "entity",
+            "change"
+          ]
+        },
+        {
+          "description": "A job on a queue. At most one handler per queue.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "queue"
+            },
+            "queue": {
+              "description": "The queue.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "queue"
+          ]
+        },
+        {
+          "description": "A job that failed every retry.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "deadLetter"
+            },
+            "queue": {
+              "description": "The queue.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "queue"
+          ]
+        },
+        {
+          "description": "A schedule: runs at every multiple of `every_ms` (plus `offset_ms`) since the epoch.",
+          "type": "object",
+          "properties": {
+            "everyMs": {
+              "description": "Interval, in milliseconds (1 second to 30 days).",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "kind": {
+              "type": "string",
+              "const": "cron"
+            },
+            "offsetMs": {
+              "description": "Offset into each interval, in milliseconds.",
+              "type": "integer",
+              "format": "uint32",
+              "default": 0,
+              "minimum": 0
+            },
+            "scan": {
+              "description": "Run once per batch of an entity's rows instead of once per tick. The platform\npaginates: each batch is a separate, separately-bounded execution.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CronScan"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "everyMs"
           ]
         }
       ]

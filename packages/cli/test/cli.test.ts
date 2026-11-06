@@ -57,6 +57,56 @@ describe("aleph check", () => {
   });
 });
 
+describe("aleph check with source maps", () => {
+  it("points diagnostics at the line in the app", async () => {
+    const { io, err } = capture();
+    expect(await main(["check", join(import.meta.dirname, "fixtures", "over-budget.ts")], io)).toBe(
+      1,
+    );
+    expect(err.join("\n")).toMatch(/✖ over_budget at test\/fixtures\/over-budget\.ts:\d+:\d+/);
+  });
+
+  it("prints handler bounds against the job limits", async () => {
+    const { io, out } = capture();
+    expect(await main(["check", join(cases, "pipeline", "app.ts")], io)).toBe(0);
+    expect(out.join("\n")).toMatch(/handler\s+reads[\s\S]*processDoc\s+3 \(1%\)/);
+  });
+});
+
+describe("aleph openapi / mcp", () => {
+  it("describes routes as OpenAPI 3.1", async () => {
+    const { io, out } = capture();
+    expect(await main(["openapi", join(cases, "pipeline", "manifest.json")], io)).toBe(0);
+    const doc = JSON.parse(out.join("")) as {
+      openapi: string;
+      paths: Record<
+        string,
+        Record<string, { operationId: string; responses: Record<string, unknown> }>
+      >;
+    };
+    expect(doc.openapi).toBe("3.1.0");
+    const upload = doc.paths["/orgs/{orgId}/docs"]?.["post"];
+    expect(upload?.operationId).toBe("uploadDoc");
+    expect(Object.keys(upload?.responses ?? {})).toEqual(
+      expect.arrayContaining(["200", "401", "403", "429"]),
+    );
+  });
+
+  it("lists MCP tools with JSON Schema inputs", async () => {
+    const { io, out } = capture();
+    expect(await main(["mcp", join(cases, "pipeline", "manifest.json")], io)).toBe(0);
+    expect(JSON.parse(out.join(""))).toEqual({
+      tools: [
+        expect.objectContaining({
+          name: "upload_doc",
+          description: "Upload a document for processing",
+          inputSchema: expect.objectContaining({ required: ["orgId", "title"] }),
+        }),
+      ],
+    });
+  });
+});
+
 describe("aleph dev", () => {
   it("serves the app over HTTP with dev auth headers", async () => {
     const manifest = readFileSync(join(cases, "projects", "manifest.json"), "utf8");

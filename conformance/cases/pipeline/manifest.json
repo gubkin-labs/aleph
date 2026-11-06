@@ -1,0 +1,1111 @@
+{
+  "app": {
+    "name": "pipeline"
+  },
+  "auth": {
+    "apiKeyScopes": [],
+    "roles": [
+      "owner",
+      "member"
+    ]
+  },
+  "channels": {
+    "orgFeed": {
+      "key": {
+        "orgId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 1
+          }
+        }
+      },
+      "message": {
+        "docId": {
+          "type": {
+            "kind": "id"
+          }
+        },
+        "status": {
+          "type": {
+            "kind": "string",
+            "max": 20,
+            "min": 0
+          }
+        }
+      }
+    }
+  },
+  "counters": {
+    "pagesPerOrg": {
+      "groupBy": [
+        "orgId"
+      ],
+      "of": "Doc",
+      "sum": {
+        "expr": {
+          "kind": "field",
+          "name": "pages",
+          "of": {
+            "id": 0,
+            "kind": "var"
+          }
+        },
+        "var": 0
+      }
+    }
+  },
+  "entities": {
+    "AuditLog": {
+      "fields": {
+        "entryId": {
+          "default": {
+            "kind": "newId"
+          },
+          "type": {
+            "kind": "id"
+          }
+        },
+        "message": {
+          "type": {
+            "kind": "string",
+            "max": 300,
+            "min": 0
+          }
+        },
+        "orgId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 1
+          }
+        }
+      },
+      "indexes": {},
+      "key": [
+        "orgId",
+        "entryId"
+      ],
+      "mutable": false
+    },
+    "Doc": {
+      "fields": {
+        "docId": {
+          "default": {
+            "kind": "newId"
+          },
+          "type": {
+            "kind": "id"
+          }
+        },
+        "orgId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 1
+          }
+        },
+        "pages": {
+          "default": {
+            "kind": "literal",
+            "value": 0
+          },
+          "type": {
+            "kind": "int",
+            "max": 10000
+          }
+        },
+        "status": {
+          "default": {
+            "kind": "literal",
+            "value": "queued"
+          },
+          "type": {
+            "kind": "enum",
+            "values": [
+              "queued",
+              "done",
+              "failed"
+            ]
+          }
+        },
+        "summary": {
+          "optional": true,
+          "type": {
+            "kind": "string",
+            "max": 200,
+            "min": 0
+          }
+        },
+        "title": {
+          "type": {
+            "kind": "string",
+            "max": 120,
+            "min": 1
+          }
+        },
+        "updatedAt": {
+          "default": {
+            "kind": "now"
+          },
+          "type": {
+            "kind": "timestamp"
+          }
+        }
+      },
+      "indexes": {
+        "byStatus": {
+          "fields": [
+            "status",
+            "updatedAt"
+          ]
+        }
+      },
+      "invariants": {
+        "pagesNotNegative": {
+          "expr": {
+            "kind": "binary",
+            "lhs": {
+              "kind": "field",
+              "name": "pages",
+              "of": {
+                "id": 0,
+                "kind": "var"
+              }
+            },
+            "op": "gte",
+            "rhs": {
+              "kind": "lit",
+              "value": 0
+            }
+          },
+          "var": 0
+        }
+      },
+      "key": [
+        "orgId",
+        "docId"
+      ]
+    }
+  },
+  "events": {
+    "docDone": {
+      "payload": {
+        "docId": {
+          "type": {
+            "kind": "id"
+          }
+        },
+        "orgId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 1
+          }
+        },
+        "title": {
+          "type": {
+            "kind": "string",
+            "max": 120,
+            "min": 0
+          }
+        }
+      }
+    }
+  },
+  "formatVersion": "0.2",
+  "handlers": [
+    {
+      "errors": {},
+      "id": "enqueueProcessing",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "op": "enqueue",
+              "payload": {
+                "docId": {
+                  "kind": "field",
+                  "name": "docId",
+                  "of": {
+                    "kind": "input",
+                    "name": "after",
+                    "source": "payload"
+                  }
+                },
+                "orgId": {
+                  "kind": "field",
+                  "name": "orgId",
+                  "of": {
+                    "kind": "input",
+                    "name": "after",
+                    "source": "payload"
+                  }
+                }
+              },
+              "queue": "process"
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      },
+      "trigger": {
+        "change": "inserted",
+        "entity": "Doc",
+        "kind": "entity"
+      }
+    },
+    {
+      "errors": {
+        "missing": {
+          "message": "Document was deleted",
+          "status": 404
+        }
+      },
+      "id": "processDoc",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Doc",
+              "key": {
+                "docId": {
+                  "kind": "input",
+                  "name": "docId",
+                  "source": "payload"
+                },
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "payload"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "missing",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "input": {
+                "docId": {
+                  "kind": "input",
+                  "name": "docId",
+                  "source": "payload"
+                }
+              },
+              "integration": "ocr",
+              "op": "call",
+              "operation": "extract"
+            },
+            "var": 1
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Doc",
+              "key": {
+                "docId": {
+                  "kind": "field",
+                  "name": "docId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                },
+                "orgId": {
+                  "kind": "field",
+                  "name": "orgId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              },
+              "op": "update",
+              "set": {
+                "pages": {
+                  "kind": "field",
+                  "name": "pages",
+                  "of": {
+                    "id": 1,
+                    "kind": "var"
+                  }
+                },
+                "status": {
+                  "kind": "lit",
+                  "value": "done"
+                },
+                "summary": {
+                  "kind": "truncate",
+                  "max": 200,
+                  "of": {
+                    "kind": "field",
+                    "name": "summary",
+                    "of": {
+                      "id": 1,
+                      "kind": "var"
+                    }
+                  }
+                }
+              }
+            },
+            "var": 2
+          },
+          {
+            "kind": "let",
+            "op": {
+              "channel": "orgFeed",
+              "key": {
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "payload"
+                }
+              },
+              "message": {
+                "docId": {
+                  "kind": "input",
+                  "name": "docId",
+                  "source": "payload"
+                },
+                "status": {
+                  "kind": "lit",
+                  "value": "done"
+                }
+              },
+              "op": "publish"
+            },
+            "var": 3
+          },
+          {
+            "kind": "let",
+            "op": {
+              "event": "docDone",
+              "op": "emit",
+              "payload": {
+                "docId": {
+                  "kind": "input",
+                  "name": "docId",
+                  "source": "payload"
+                },
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "payload"
+                },
+                "title": {
+                  "kind": "field",
+                  "name": "title",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              }
+            },
+            "var": 4
+          },
+          {
+            "cond": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "field",
+                "name": "pages",
+                "of": {
+                  "id": 1,
+                  "kind": "var"
+                }
+              },
+              "op": "gt",
+              "rhs": {
+                "kind": "lit",
+                "value": 1000
+              }
+            },
+            "else": [],
+            "kind": "if",
+            "then": [
+              {
+                "kind": "let",
+                "op": {
+                  "entity": "AuditLog",
+                  "op": "insert",
+                  "values": {
+                    "message": {
+                      "kind": "concat",
+                      "parts": [
+                        {
+                          "kind": "lit",
+                          "value": "large document "
+                        },
+                        {
+                          "kind": "input",
+                          "name": "docId",
+                          "source": "payload"
+                        }
+                      ]
+                    },
+                    "orgId": {
+                      "kind": "input",
+                      "name": "orgId",
+                      "source": "payload"
+                    }
+                  }
+                },
+                "var": 5
+              }
+            ]
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      },
+      "trigger": {
+        "kind": "queue",
+        "queue": "process"
+      }
+    },
+    {
+      "errors": {},
+      "id": "processFailed",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Doc",
+              "key": {
+                "docId": {
+                  "kind": "input",
+                  "name": "docId",
+                  "source": "payload"
+                },
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "payload"
+                }
+              },
+              "op": "update",
+              "set": {
+                "status": {
+                  "kind": "lit",
+                  "value": "failed"
+                }
+              }
+            },
+            "var": 0
+          },
+          {
+            "kind": "let",
+            "op": {
+              "channel": "orgFeed",
+              "key": {
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "payload"
+                }
+              },
+              "message": {
+                "docId": {
+                  "kind": "input",
+                  "name": "docId",
+                  "source": "payload"
+                },
+                "status": {
+                  "kind": "lit",
+                  "value": "failed"
+                }
+              },
+              "op": "publish"
+            },
+            "var": 1
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "AuditLog",
+              "op": "insert",
+              "values": {
+                "message": {
+                  "kind": "truncate",
+                  "max": 300,
+                  "of": {
+                    "kind": "input",
+                    "name": "error",
+                    "source": "payload"
+                  }
+                },
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "payload"
+                }
+              }
+            },
+            "var": 2
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      },
+      "trigger": {
+        "kind": "deadLetter",
+        "queue": "process"
+      }
+    },
+    {
+      "errors": {},
+      "id": "notify",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "input": {
+                "subject": {
+                  "kind": "concat",
+                  "parts": [
+                    {
+                      "kind": "lit",
+                      "value": "Processed: "
+                    },
+                    {
+                      "kind": "input",
+                      "name": "title",
+                      "source": "payload"
+                    }
+                  ]
+                },
+                "to": {
+                  "kind": "lit",
+                  "value": "team@acme.dev"
+                }
+              },
+              "integration": "email",
+              "op": "send",
+              "operation": "send"
+            },
+            "var": 0
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "AuditLog",
+              "op": "insert",
+              "values": {
+                "message": {
+                  "kind": "concat",
+                  "parts": [
+                    {
+                      "kind": "lit",
+                      "value": "processed "
+                    },
+                    {
+                      "kind": "input",
+                      "name": "docId",
+                      "source": "payload"
+                    }
+                  ]
+                },
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "payload"
+                }
+              }
+            },
+            "var": 1
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      },
+      "trigger": {
+        "event": "docDone",
+        "kind": "event"
+      }
+    },
+    {
+      "errors": {},
+      "id": "purgeFailed",
+      "plan": {
+        "body": [
+          {
+            "body": [
+              {
+                "kind": "let",
+                "op": {
+                  "entity": "Doc",
+                  "key": {
+                    "docId": {
+                      "kind": "field",
+                      "name": "docId",
+                      "of": {
+                        "id": 0,
+                        "kind": "var"
+                      }
+                    },
+                    "orgId": {
+                      "kind": "field",
+                      "name": "orgId",
+                      "of": {
+                        "id": 0,
+                        "kind": "var"
+                      }
+                    }
+                  },
+                  "op": "delete"
+                },
+                "var": 1
+              }
+            ],
+            "item": 0,
+            "kind": "forEach",
+            "list": {
+              "kind": "input",
+              "name": "batch",
+              "source": "payload"
+            }
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      },
+      "trigger": {
+        "everyMs": 86400000,
+        "kind": "cron",
+        "offsetMs": 0,
+        "scan": {
+          "batch": 50,
+          "entity": "Doc",
+          "index": "byStatus",
+          "prefix": [
+            "failed"
+          ]
+        }
+      }
+    }
+  ],
+  "integrations": {
+    "email": {
+      "config": {},
+      "operations": {
+        "send": {
+          "input": {
+            "subject": {
+              "type": {
+                "kind": "string",
+                "max": 200,
+                "min": 0
+              }
+            },
+            "to": {
+              "type": {
+                "kind": "string",
+                "max": 200,
+                "min": 0
+              }
+            }
+          },
+          "mode": "effect"
+        }
+      },
+      "provider": "email"
+    },
+    "ocr": {
+      "config": {
+        "baseUrl": "https://ocr.example"
+      },
+      "operations": {
+        "extract": {
+          "input": {
+            "docId": {
+              "type": {
+                "kind": "id"
+              }
+            }
+          },
+          "mode": "call",
+          "output": {
+            "pages": {
+              "type": {
+                "kind": "int",
+                "max": 10000,
+                "min": 0
+              }
+            },
+            "summary": {
+              "type": {
+                "kind": "string",
+                "max": 2000,
+                "min": 0
+              }
+            }
+          }
+        }
+      },
+      "provider": "http"
+    }
+  },
+  "queues": {
+    "process": {
+      "backoffMs": 1000,
+      "maxBackoffMs": 10000,
+      "payload": {
+        "docId": {
+          "type": {
+            "kind": "id"
+          }
+        },
+        "orgId": {
+          "type": {
+            "kind": "string",
+            "max": 64,
+            "min": 1
+          }
+        }
+      },
+      "retries": 2
+    }
+  },
+  "routes": [
+    {
+      "auth": {
+        "apiKeyScopes": [],
+        "kind": "member",
+        "org": "orgId",
+        "roles": []
+      },
+      "description": "Upload a document for processing",
+      "errors": {},
+      "id": "uploadDoc",
+      "input": {
+        "body": {
+          "title": {
+            "type": {
+              "kind": "string",
+              "max": 120,
+              "min": 1
+            }
+          }
+        },
+        "params": {
+          "orgId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 1
+            }
+          }
+        },
+        "query": {}
+      },
+      "mcp": {
+        "name": "upload_doc"
+      },
+      "method": "POST",
+      "path": "/orgs/:orgId/docs",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Doc",
+              "op": "insert",
+              "values": {
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                },
+                "title": {
+                  "kind": "str",
+                  "of": {
+                    "kind": "input",
+                    "name": "title",
+                    "source": "body"
+                  },
+                  "op": "trim"
+                }
+              }
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "id": 0,
+          "kind": "var"
+        }
+      },
+      "rateLimit": {
+        "max": 3,
+        "per": "user",
+        "windowMs": 60000
+      }
+    },
+    {
+      "auth": {
+        "apiKeyScopes": [],
+        "kind": "member",
+        "org": "orgId",
+        "roles": []
+      },
+      "errors": {
+        "notFound": {
+          "message": "Document not found",
+          "status": 404
+        }
+      },
+      "id": "getDoc",
+      "input": {
+        "body": {},
+        "params": {
+          "docId": {
+            "type": {
+              "kind": "id"
+            }
+          },
+          "orgId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 1
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "GET",
+      "path": "/orgs/:orgId/docs/:docId",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Doc",
+              "key": {
+                "docId": {
+                  "kind": "input",
+                  "name": "docId",
+                  "source": "params"
+                },
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "counter": "pagesPerOrg",
+              "key": [
+                {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                }
+              ],
+              "op": "counterGet"
+            },
+            "var": 1
+          }
+        ],
+        "output": {
+          "fields": {
+            "doc": {
+              "id": 0,
+              "kind": "var"
+            },
+            "orgPages": {
+              "id": 1,
+              "kind": "var"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "apiKeyScopes": [],
+        "kind": "member",
+        "org": "orgId",
+        "roles": [
+          "owner"
+        ]
+      },
+      "errors": {
+        "notFound": {
+          "message": "Document not found",
+          "status": 404
+        }
+      },
+      "id": "adjustPages",
+      "input": {
+        "body": {
+          "delta": {
+            "type": {
+              "kind": "int",
+              "max": 10000,
+              "min": -10000
+            }
+          }
+        },
+        "params": {
+          "docId": {
+            "type": {
+              "kind": "id"
+            }
+          },
+          "orgId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 1
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/orgs/:orgId/docs/:docId/adjust",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Doc",
+              "key": {
+                "docId": {
+                  "kind": "input",
+                  "name": "docId",
+                  "source": "params"
+                },
+                "orgId": {
+                  "kind": "input",
+                  "name": "orgId",
+                  "source": "params"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Doc",
+              "key": {
+                "docId": {
+                  "kind": "field",
+                  "name": "docId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                },
+                "orgId": {
+                  "kind": "field",
+                  "name": "orgId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              },
+              "op": "update",
+              "set": {
+                "pages": {
+                  "kind": "binary",
+                  "lhs": {
+                    "kind": "field",
+                    "name": "pages",
+                    "of": {
+                      "id": 0,
+                      "kind": "var"
+                    }
+                  },
+                  "op": "add",
+                  "rhs": {
+                    "kind": "input",
+                    "name": "delta",
+                    "source": "body"
+                  }
+                }
+              }
+            },
+            "var": 1
+          }
+        ],
+        "output": {
+          "id": 1,
+          "kind": "var"
+        }
+      }
+    }
+  ]
+}

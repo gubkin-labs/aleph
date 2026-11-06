@@ -8,6 +8,7 @@ import type {
   Idempotency,
   InputSource,
   Method,
+  RateLimit,
   Route,
 } from "@aleph/manifest";
 import { ErrorRef, List } from "./data.js";
@@ -15,7 +16,7 @@ import { $ } from "./dsl.js";
 import { Expr } from "./expr.js";
 import { type FieldBuilder, type Fields, type FieldValue, fieldSpecs, t } from "./fields.js";
 import { toNode } from "./node.js";
-import { AlephBuildError, Recorder, recording } from "./recorder.js";
+import { AlephBuildError, callSite, Recorder, recording } from "./recorder.js";
 
 const METHODS = new Set<Method>(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 
@@ -75,9 +76,14 @@ export function durationMs(duration: Duration): number {
 }
 
 /** @internal What a route builder hands back to its app. */
-export type RouteSink = (route: Route) => void;
+export interface RouteSink {
+  /** The index the next route will have. */
+  next(): number;
+  add(route: Route, sourceMap: Record<string, string>): void;
+}
 
-function inputs<F extends Fields>(source: InputSource, fields: F): InputValues<F> {
+/** @internal Input expressions for declared fields. */
+export function inputs<F extends Fields>(source: InputSource, fields: F): InputValues<F> {
   const out: Record<string, unknown> = {};
   for (const [name, field] of Object.entries(fields)) {
     const node = { kind: "input" as const, source, name };
@@ -114,6 +120,9 @@ export class RouteBuilder<
   #body: Fields = {};
   #errors: Record<string, ErrorDecl> = {};
   #idempotency: Idempotency | undefined;
+  #description: string | undefined;
+  #mcp: string | undefined;
+  #rateLimit: RateLimit | undefined;
 
   /** @internal */
   constructor(sink: RouteSink, spec: string) {
@@ -166,6 +175,24 @@ export class RouteBuilder<
    * Replays the stored response when a request repeats its `Idempotency-Key` within `ttl`
    * (`"30s"`, `"15m"`, `"24h"`, `"7d"`, or milliseconds).
    */
+  /** What the route does, for generated API docs and MCP tools. */
+  describe(description: string): this {
+    this.#description = description;
+    return this;
+  }
+
+  /** Also exposes the route as an MCP tool, with the same inputs, auth, and limits. */
+  mcp(tool: string): this {
+    this.#mcp = tool;
+    return this;
+  }
+
+  /** At most `max` calls per `per` (user, IP, API key, or everyone) in each `window`. */
+  rateLimit(options: { per: RateLimit["per"]; max: number; window: Duration }): this {
+    this.#rateLimit = { per: options.per, max: options.max, windowMs: durationMs(options.window) };
+    return this;
+  }
+
   idempotent(options: { ttl: Duration; required?: boolean }): this {
     this.#idempotency = {
       ttlMs: durationMs(options.ttl),
@@ -223,9 +250,12 @@ export class RouteBuilder<
       body: inputs("body", this.#body as B),
       errors: errors as HandlerContext<P, Q, B, E>["errors"],
     };
-    const rec = new Recorder();
+    const index = this.#sink.next();
+    const rec = new Recorder(`routes[${index}].plan.body`);
+    const site = callSite();
+    if (site) rec.sourceMap[`routes[${index}]`] = site;
     const output = recording(rec, () => toNode(handler($, ctx)));
-    this.#sink({
+    const route: Route = {
       id: this.#id,
       method: this.#method,
       path: this.#path,
@@ -233,8 +263,12 @@ export class RouteBuilder<
       input: { params: specs(this.#params), query: specs(this.#query), body: specs(this.#body) },
       errors: { ...this.#errors },
       ...(this.#idempotency ? { idempotency: this.#idempotency } : {}),
+      ...(this.#description ? { description: this.#description } : {}),
+      ...(this.#mcp ? { mcp: { name: this.#mcp } } : {}),
+      ...(this.#rateLimit ? { rateLimit: this.#rateLimit } : {}),
       plan: { body: rec.body, output },
-    });
+    };
+    this.#sink.add(route, rec.sourceMap);
   }
 }
 
