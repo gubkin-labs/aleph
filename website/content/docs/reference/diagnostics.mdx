@@ -62,3 +62,4 @@ Codes are stable: tools and agents can match on them.
 | `invalid_range` | A query range has two lower or two upper bounds, or no field to bound. |
 | `invalid_expression` | An expression's static arguments are invalid: a bad regex, an unknown time zone, a bad pattern or scale. |
 | `over_budget` | The worst case of a route or handler is over a limit. Lower the bounds that drive it, or move the work to a job. |
+| `trigger_cycle` | Handlers set each other off in a loop (a trigger that writes its own entity, events that emit each other, a queue job that enqueues itself), so a chain would never end. Break the cycle, or declare `maxDepth` on every handler in it. |

@@ -127,6 +127,13 @@ pub struct Handler {
         ts(as = "Option<BTreeMap<String, ErrorDecl>>", optional)
     )]
     pub errors: BTreeMap<String, ErrorDecl>,
+    /// Allows the handler to be part of a trigger cycle (it writes, emits, or enqueues what
+    /// eventually triggers it again), running at most this many handler hops after the request
+    /// or schedule that started the chain (1 to `MAX_CHAIN_DEPTH`). Without it, a cycle is a
+    /// validation error.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "codegen", ts(optional))]
+    pub max_depth: Option<u32>,
     /// The handler's logic. Its output is ignored.
     pub plan: Plan,
 }

@@ -1,0 +1,154 @@
+{
+  "expect": ["invalid_handler", "trigger_cycle"],
+  "manifest": {
+    "app": {
+      "name": "blog"
+    },
+    "auth": {
+      "apiKeyScopes": [],
+      "roles": []
+    },
+    "counters": {},
+    "entities": {},
+    "events": {
+      "ping": {
+        "payload": {
+          "n": {
+            "type": {
+              "kind": "int"
+            }
+          }
+        }
+      },
+      "pong": {
+        "payload": {
+          "n": {
+            "type": {
+              "kind": "int"
+            }
+          }
+        }
+      }
+    },
+    "formatVersion": "0.2",
+    "handlers": [
+      {
+        "errors": {},
+        "id": "onPing",
+        "maxDepth": 0,
+        "plan": {
+          "body": [
+            {
+              "kind": "let",
+              "op": {
+                "event": "pong",
+                "op": "emit",
+                "payload": {
+                  "n": {
+                    "kind": "binary",
+                    "lhs": {
+                      "kind": "input",
+                      "name": "n",
+                      "source": "payload"
+                    },
+                    "op": "add",
+                    "rhs": {
+                      "kind": "lit",
+                      "value": 1
+                    }
+                  }
+                }
+              },
+              "var": 0
+            }
+          ],
+          "output": {
+            "kind": "lit",
+            "value": null
+          }
+        },
+        "trigger": {
+          "event": "ping",
+          "kind": "event"
+        }
+      },
+      {
+        "errors": {},
+        "id": "onPong",
+        "plan": {
+          "body": [
+            {
+              "kind": "let",
+              "op": {
+                "event": "ping",
+                "op": "emit",
+                "payload": {
+                  "n": {
+                    "kind": "binary",
+                    "lhs": {
+                      "kind": "input",
+                      "name": "n",
+                      "source": "payload"
+                    },
+                    "op": "add",
+                    "rhs": {
+                      "kind": "lit",
+                      "value": 1
+                    }
+                  }
+                }
+              },
+              "var": 0
+            }
+          ],
+          "output": {
+            "kind": "lit",
+            "value": null
+          }
+        },
+        "trigger": {
+          "event": "pong",
+          "kind": "event"
+        }
+      }
+    ],
+    "routes": [
+      {
+        "auth": {
+          "kind": "signedIn"
+        },
+        "errors": {},
+        "id": "post_go",
+        "input": {
+          "body": {},
+          "params": {},
+          "query": {}
+        },
+        "method": "POST",
+        "path": "/go",
+        "plan": {
+          "body": [
+            {
+              "kind": "let",
+              "op": {
+                "event": "ping",
+                "op": "emit",
+                "payload": {
+                  "n": {
+                    "kind": "lit",
+                    "value": 0
+                  }
+                }
+              },
+              "var": 0
+            }
+          ],
+          "output": {
+            "kind": "lit",
+            "value": null
+          }
+        }
+      }
+    ]
+  }
+}

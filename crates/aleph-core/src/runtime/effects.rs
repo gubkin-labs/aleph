@@ -30,6 +30,14 @@ pub(crate) enum OutboxItem {
         /// The job's key, for keyed jobs (which can be replaced and cancelled).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         job: Option<JobRef>,
+        /// How many handler hops led here from the request or schedule that started the chain
+        /// (1 for a handler a route set off). Bounded by `MAX_CHAIN_DEPTH` and `maxDepth`.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        chain: u32,
+        /// How many times in a row this queue's job re-enqueued itself (a continuation, which
+        /// stays on the same hop). Bounded by `MAX_CONTINUATIONS`.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        turns: u32,
     },
     /// Cancel a keyed job. Only ever pending: it's applied when the outbox is written.
     Cancel { job: JobRef },
@@ -70,6 +78,11 @@ pub(crate) enum OutboxItem {
     },
     /// Hand a message to the platform's sink.
     Deliver { delivery: Delivery, attempt: u32 },
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde passes by reference
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 /// A keyed job: its queue and the key the plan gave it.

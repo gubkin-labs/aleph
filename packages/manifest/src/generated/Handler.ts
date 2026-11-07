@@ -20,6 +20,13 @@ trigger: Trigger,
  */
 errors?: { [key in string]: ErrorDecl }, 
 /**
+ * Allows the handler to be part of a trigger cycle (it writes, emits, or enqueues what
+ * eventually triggers it again), running at most this many handler hops after the request
+ * or schedule that started the chain (1 to `MAX_CHAIN_DEPTH`). Without it, a cycle is a
+ * validation error.
+ */
+maxDepth?: number, 
+/**
  * The handler's logic. Its output is ignored.
  */
 plan: Plan, };

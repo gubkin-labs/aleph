@@ -108,6 +108,19 @@ pub(crate) struct Exec<'a> {
     pub(crate) workflow: Option<&'a crate::manifest::WorkflowDecl>,
     /// State fields a workflow step set.
     pub(crate) state_updates: BTreeMap<String, Value>,
+    /// Where this execution sits in a chain of handlers.
+    pub(crate) chain: Chain<'a>,
+}
+
+/// Where an execution sits in a chain of handlers set off by one request or schedule.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct Chain<'a> {
+    /// Handler hops that led here (0 for a request, a schedule, or a workflow step). Handler
+    /// runs this execution releases are one hop further.
+    pub(crate) hops: u32,
+    /// For a queue job: its handler and how many times in a row it re-enqueued itself.
+    /// Enqueueing the same queue again is a continuation: the same hop, one more turn.
+    pub(crate) continuing: Option<(&'a str, u32)>,
 }
 
 /// What a plan set about its response besides the body.
@@ -423,6 +436,8 @@ impl<'a> Exec<'a> {
                             payload: payload.clone(),
                             attempt: 0,
                             job: None,
+                            chain: 0,
+                            turns: 0,
                         },
                     )?;
                 }
@@ -466,6 +481,8 @@ impl<'a> Exec<'a> {
                         payload,
                         attempt: 0,
                         job,
+                        chain: 0,
+                        turns: 0,
                     },
                 )?;
                 Ok(Value::Null)
@@ -711,7 +728,22 @@ impl<'a> Exec<'a> {
     }
 
     /// Buffers an effect until commit.
-    fn release(&mut self, delay_ms: i64, item: OutboxItem) -> R<()> {
+    fn release(&mut self, delay_ms: i64, mut item: OutboxItem) -> R<()> {
+        if let OutboxItem::Run {
+            handler,
+            chain,
+            turns,
+            ..
+        } = &mut item
+        {
+            match self.chain.continuing {
+                Some((own, done)) if own == handler.as_str() => {
+                    *chain = self.chain.hops;
+                    *turns = done + 1;
+                }
+                _ => *chain = self.chain.hops + 1,
+            }
+        }
         self.meter.effect()?;
         self.effects.push(Pending { delay_ms, item });
         Ok(())
@@ -764,7 +796,7 @@ impl<'a> Exec<'a> {
         }) {
             let row = |r: Option<&Row>| r.map_or(Value::Null, |r| Value::Object(r.clone()));
             let payload = BTreeMap::from([("before".to_owned(), row(before)), ("after".to_owned(), row(after))]);
-            self.release(0, OutboxItem::Run { handler: handler.id.clone(), payload, attempt: 0, job: None })?;
+            self.release(0, OutboxItem::Run { handler: handler.id.clone(), payload, attempt: 0, job: None, chain: 0, turns: 0 })?;
         }
         Ok(())
     }

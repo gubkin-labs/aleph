@@ -205,6 +205,35 @@ fn concurrent_retries_of_one_idempotent_transfer_apply_once() {
 }
 
 #[test]
+fn a_trigger_cycle_stops_at_its_declared_depth() {
+    // An insert trigger that inserts another row of its own entity, with `maxDepth: 5` and a
+    // guard that would only stop it after 20 hops. The runtime runs it 5 times, then refuses.
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/trigger-chain.json");
+    let manifest =
+        parse_and_validate(&std::fs::read_to_string(path).unwrap(), &Limits::ROUTE).unwrap();
+    let engine = Engine::new(
+        manifest,
+        Arc::new(MemoryStore::new()),
+        Arc::new(FixedEnv::new(1_000, 9)),
+    );
+    let t = tenant("chain");
+    let r = engine.handle(&t, &request(Method::Post, "/comments", None));
+    assert_eq!(r.status, 200, "{:?}", r.body);
+    let report = engine.process(&t, 10_000);
+    let runs = report.runs.iter().filter(|r| r.handler == "echo").count();
+    assert_eq!(runs, 5, "{report:#?}");
+    assert!(
+        report
+            .failures
+            .iter()
+            .any(|f| f.contains("trigger chain too deep")),
+        "{report:#?}"
+    );
+    let rows = engine.handle(&t, &request(Method::Get, "/comments", None));
+    assert_eq!(rows.body.as_array().map(Vec::len), Some(6));
+}
+
+#[test]
 fn effects_are_released_exactly_once_under_conflict_retries() {
     let engine = Arc::new(Engine::new(
         load("pipeline"),

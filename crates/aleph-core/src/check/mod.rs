@@ -15,6 +15,7 @@ use crate::manifest::{
     IndexPart, Literal, Manifest, Route, RowPredicate,
 };
 
+mod cycles;
 mod handlers;
 mod plan;
 mod schema;
@@ -282,6 +283,7 @@ fn check_manifest(m: &Manifest, limits: &Limits, diags: &mut Vec<Diagnostic>) ->
         );
     }
     handlers::check_all(m, &infos, &mut report.handlers, diags);
+    cycles::check(m, diags);
     report
 }
 

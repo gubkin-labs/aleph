@@ -2,6 +2,16 @@
 
 use serde::{Deserialize, Serialize};
 
+/// The most handler hops one chain may take: a request or schedule runs a handler, whose
+/// effects run another, and so on. Each hop is bounded by [`Limits::JOB`]; this bounds how many
+/// there are. The runtime refuses a run past it, and past the handler's own `maxDepth`.
+pub const MAX_CHAIN_DEPTH: u32 = 16;
+
+/// The most times in a row a queue job may re-enqueue its own queue, to work through data in
+/// batches (a cascade delete does this). A continuation stays on the same hop of its chain, and
+/// this bounds how many there are.
+pub const MAX_CONTINUATIONS: u32 = 10_000;
+
 /// Per-execution limits. Static analysis rejects plans whose worst case exceeds them, and the
 /// runtime meter stops any execution that exceeds them anyway.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

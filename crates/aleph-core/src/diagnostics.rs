@@ -59,6 +59,7 @@ pub enum DiagnosticCode {
     InvalidRange,
     InvalidExpression,
     OverBudget,
+    TriggerCycle,
 }
 
 /// A problem found in a manifest.

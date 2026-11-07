@@ -2179,6 +2179,15 @@
           "description": "Stable identifier, unique among handlers.",
           "type": "string"
         },
+        "maxDepth": {
+          "description": "Allows the handler to be part of a trigger cycle (it writes, emits, or enqueues what\neventually triggers it again), running at most this many handler hops after the request\nor schedule that started the chain (1 to `MAX_CHAIN_DEPTH`). Without it, a cycle is a\nvalidation error.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
         "plan": {
           "description": "The handler's logic. Its output is ignored.",
           "$ref": "#/$defs/Plan"

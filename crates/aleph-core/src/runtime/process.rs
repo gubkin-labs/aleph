@@ -17,7 +17,7 @@ use super::meter::Meter;
 use super::workflow::{Instance, Status, Transition, Waiting};
 use super::{Engine, Env};
 use crate::keys::{Key, KeyPart, Keyspace, TenantId};
-use crate::limits::Limits;
+use crate::limits::{Limits, MAX_CHAIN_DEPTH, MAX_CONTINUATIONS};
 use crate::manifest::{CronScan, Handler, QueueDecl, Trigger, WorkflowDecl};
 use crate::store::{CommitError, Direction, Transaction};
 use crate::value::Value;
@@ -267,6 +267,8 @@ impl Engine {
                     payload: BTreeMap::from([("firedAt".to_owned(), Value::Int(tick))]),
                     attempt: 0,
                     job: None,
+                    chain: 0,
+                    turns: 0,
                 },
             };
             let pending = vec![Pending { delay_ms: 0, item }];
@@ -428,13 +430,36 @@ impl Engine {
                 payload,
                 attempt,
                 job,
+                chain,
+                turns,
             } => {
                 let Some(handler) = self.handler(&id) else {
                     self.remove(key);
                     report.failures.push(format!("unknown handler {id}"));
                     return;
                 };
-                match self.run_handler(keys, now, key, handler, &payload, None) {
+                let limit = handler
+                    .max_depth
+                    .map_or(MAX_CHAIN_DEPTH, |d| d.min(MAX_CHAIN_DEPTH));
+                if chain > limit {
+                    // A trigger cycle: refuse the run, which ends the chain. Retrying can't help.
+                    self.remove(key);
+                    report.failures.push(format!(
+                        "{id}: trigger chain too deep: this run would be {chain} handler hops \
+                         after the request or schedule that started the chain, over the limit \
+                         of {limit}, so it didn't run"
+                    ));
+                    return;
+                }
+                if turns > MAX_CONTINUATIONS {
+                    self.remove(key);
+                    report.failures.push(format!(
+                        "{id}: the job re-enqueued itself {turns} times in a row, over the limit \
+                         of {MAX_CONTINUATIONS}, so it didn't run"
+                    ));
+                    return;
+                }
+                match self.run_handler(keys, now, key, handler, &payload, None, (chain, turns)) {
                     Ok(usage) => report.record(&id, usage),
                     Err(error) => {
                         let (retries, base, max) = retry_policy(self, handler);
@@ -444,6 +469,8 @@ impl Engine {
                                 payload,
                                 attempt: attempt + 1,
                                 job,
+                                chain,
+                                turns,
                             };
                             self.reschedule(keys, key, now + backoff_ms(attempt, base, max), &next);
                             report.retried += 1;
@@ -466,6 +493,8 @@ impl Engine {
                                     payload,
                                     attempt: 0,
                                     job: None,
+                                    chain,
+                                    turns: 0,
                                 };
                                 self.reschedule(keys, key, now, &next);
                                 report.dead_lettered += 1;
@@ -505,6 +534,7 @@ impl Engine {
                     handler,
                     &payload,
                     Some((scan, cursor.as_deref(), fired_at)),
+                    (0, 0),
                 ) {
                     Ok(usage) => report.record(&id, usage),
                     Err(error) => {
@@ -530,6 +560,7 @@ impl Engine {
 
     /// Runs a handler for one outbox entry: its writes, its new effects, and the entry's removal
     /// commit together. Conflicts are retried; anything else is returned as a failed attempt.
+    #[allow(clippy::too_many_arguments)]
     fn run_handler(
         &self,
         keys: &Keyspace,
@@ -538,6 +569,7 @@ impl Engine {
         handler: &Handler,
         payload: &BTreeMap<String, Value>,
         scan: Option<(&CronScan, Option<&str>, i64)>,
+        (chain, turns): (u32, u32),
     ) -> Result<Option<crate::limits::Cost>, ExecError> {
         let env = self.env.as_ref();
         let mut journal = Journal::default();
@@ -589,6 +621,13 @@ impl Engine {
                     meta: super::exec::ResponseMeta::default(),
                     workflow: None,
                     state_updates: BTreeMap::new(),
+                    chain: super::exec::Chain {
+                        hops: chain,
+                        continuing: match &handler.trigger {
+                            Trigger::Queue { .. } => Some((handler.id.as_str(), turns)),
+                            _ => None,
+                        },
+                    },
                 };
                 match exec.run() {
                     Ok(_) => std::mem::take(&mut exec.effects),
@@ -792,6 +831,7 @@ impl Engine {
                     meta: super::exec::ResponseMeta::default(),
                     workflow: Some(decl),
                     state_updates: BTreeMap::new(),
+                    chain: super::exec::Chain::default(),
                 };
                 match exec.run() {
                     Ok(_) => (

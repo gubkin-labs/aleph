@@ -533,6 +533,7 @@ impl Engine {
             meta: exec::ResponseMeta::default(),
             workflow: None,
             state_updates: BTreeMap::new(),
+            chain: exec::Chain::default(),
         };
         let mut inserted = 0;
         for (i, row) in rows.iter().enumerate() {
@@ -865,6 +866,7 @@ impl Engine {
                     meta: exec::ResponseMeta::default(),
                     workflow: None,
                     state_updates: BTreeMap::new(),
+                    chain: exec::Chain::default(),
                 };
                 let result = exec.run();
                 logs = std::mem::take(&mut exec.meta.logs);

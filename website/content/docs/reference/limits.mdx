@@ -32,6 +32,8 @@ Plans are checked against these statically, and metered at runtime. A route that
 | Queue and workflow step retries | 10 |
 | Interval schedules | 1 second to 30 days |
 | Workflow `maxSteps` | 1-1000 (default 100) |
+| Handler chain depth | 16 hops from the request or schedule that started it (a handler's `maxDepth` can lower it) |
+| Job continuations | 10,000 times in a row that a queue job re-enqueues its own queue |
 | Idempotency and webhook dedupe window | 7 days |
 | Job and workflow keys | 1-256 bytes |
 

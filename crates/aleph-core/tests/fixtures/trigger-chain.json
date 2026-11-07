@@ -1,0 +1,234 @@
+{
+  "app": {
+    "name": "blog"
+  },
+  "auth": {
+    "apiKeyScopes": [],
+    "roles": []
+  },
+  "counters": {},
+  "entities": {
+    "Comment": {
+      "fields": {
+        "commentId": {
+          "default": {
+            "kind": "newId"
+          },
+          "type": {
+            "kind": "id"
+          }
+        },
+        "hops": {
+          "default": {
+            "kind": "literal",
+            "value": 0
+          },
+          "type": {
+            "kind": "int",
+            "min": 0
+          }
+        },
+        "postId": {
+          "type": {
+            "kind": "string",
+            "max": 26,
+            "min": 0
+          }
+        }
+      },
+      "indexes": {},
+      "key": ["postId", "commentId"]
+    }
+  },
+  "formatVersion": "0.2",
+  "handlers": [
+    {
+      "errors": {},
+      "id": "echo",
+      "maxDepth": 5,
+      "plan": {
+        "body": [
+          {
+            "cond": {
+              "kind": "binary",
+              "lhs": {
+                "cond": {
+                  "kind": "isNull",
+                  "of": {
+                    "kind": "field",
+                    "name": "hops",
+                    "of": {
+                      "kind": "input",
+                      "name": "after",
+                      "source": "payload"
+                    }
+                  }
+                },
+                "else": {
+                  "kind": "field",
+                  "name": "hops",
+                  "of": {
+                    "kind": "input",
+                    "name": "after",
+                    "source": "payload"
+                  }
+                },
+                "kind": "select",
+                "then": {
+                  "kind": "lit",
+                  "value": 0
+                }
+              },
+              "op": "lt",
+              "rhs": {
+                "kind": "lit",
+                "value": 20
+              }
+            },
+            "else": [],
+            "kind": "if",
+            "then": [
+              {
+                "kind": "let",
+                "op": {
+                  "entity": "Comment",
+                  "op": "insert",
+                  "values": {
+                    "hops": {
+                      "kind": "binary",
+                      "lhs": {
+                        "cond": {
+                          "kind": "isNull",
+                          "of": {
+                            "kind": "field",
+                            "name": "hops",
+                            "of": {
+                              "kind": "input",
+                              "name": "after",
+                              "source": "payload"
+                            }
+                          }
+                        },
+                        "else": {
+                          "kind": "field",
+                          "name": "hops",
+                          "of": {
+                            "kind": "input",
+                            "name": "after",
+                            "source": "payload"
+                          }
+                        },
+                        "kind": "select",
+                        "then": {
+                          "kind": "lit",
+                          "value": 0
+                        }
+                      },
+                      "op": "add",
+                      "rhs": {
+                        "kind": "lit",
+                        "value": 1
+                      }
+                    },
+                    "postId": {
+                      "kind": "lit",
+                      "value": "p1"
+                    }
+                  }
+                },
+                "var": 0
+              }
+            ]
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      },
+      "trigger": {
+        "change": "inserted",
+        "entity": "Comment",
+        "kind": "entity"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {},
+      "id": "post_comments",
+      "input": {
+        "body": {},
+        "params": {},
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/comments",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Comment",
+              "op": "insert",
+              "values": {
+                "postId": {
+                  "kind": "lit",
+                  "value": "p1"
+                }
+              }
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "id": 0,
+          "kind": "var"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {},
+      "id": "get_comments",
+      "input": {
+        "body": {},
+        "params": {},
+        "query": {}
+      },
+      "method": "GET",
+      "path": "/comments",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Comment",
+              "limit": {
+                "kind": "lit",
+                "value": 200
+              },
+              "op": "query",
+              "prefix": [
+                {
+                  "kind": "lit",
+                  "value": "p1"
+                }
+              ]
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "id": 0,
+          "kind": "var"
+        }
+      }
+    }
+  ]
+}

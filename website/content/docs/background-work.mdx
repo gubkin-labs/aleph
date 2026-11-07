@@ -21,6 +21,34 @@ a.onUpdate("audit", Task, ($, { payload }) => { /* payload.before, payload.after
 a.onDelete("cleanup", Project, ($, { payload }) => { /* payload.before */ });
 ```
 
+### Trigger cycles
+
+Each handler run is bounded by the job limits, but a handler can set off another one: by writing a row, emitting an event, enqueueing a job, or starting a workflow. If that leads back to the first handler, the chain would never end. The checker builds the graph of which handler can set off which, and rejects every cycle:
+
+```text
+✖ trigger_cycle at app.ts:31:3 (handlers[0])
+  handlers "onPing" → "onPong" → "onPing" form a trigger cycle: each run can set off the next,
+  without end. Break it (write a different entity, emit a different event, or use a different
+  queue), or, if a guard stops the chain on its own, declare maxDepth on every handler in it.
+```
+
+When a cycle is intended and a guard ends it, declare `maxDepth` on every handler in it:
+
+```ts
+// Closing a task also marks it done. That update triggers this handler once more, and the
+// guard stops it there.
+a.onUpdate("closeMeansDone", Task, ($, { payload }) => {
+  const task = payload.after;
+  $.when(task.status.eq("closed").and(task.done.not()), () => {
+    task.update({ done: true });
+  });
+}, { maxDepth: 2 });
+```
+
+The runtime counts hops: a handler a route sets off is hop 1, the handler that one sets off is hop 2, and so on. A run past its handler's `maxDepth`, or past 16 for any handler, is refused and reported as a failure, which ends the chain. A cycle that starts a new workflow instance on every turn can't be allowed with `maxDepth`.
+
+One loop is allowed without `maxDepth`: a queue job that re-enqueues **its own** queue to work through data in batches (cascade deletes do this). That's a continuation, not a new hop, and it may continue up to 10,000 times in a row.
+
 ## Queues
 
 ```ts

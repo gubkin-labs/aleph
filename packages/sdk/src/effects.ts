@@ -247,6 +247,13 @@ export interface CronPayload {
 export interface HandlerOptions<E extends string> {
   /** Errors the handler may fail with. A failure is retried with backoff. */
   errors?: Record<E, ErrorDecl>;
+  /**
+   * Allows the handler to be part of a trigger cycle: it writes, emits, or enqueues what
+   * eventually triggers it again, and a guard stops the chain. It then runs at most this many
+   * handler hops after the request or schedule that started the chain (1-16). Without it, a
+   * cycle is a `trigger_cycle` validation error.
+   */
+  maxDepth?: number;
 }
 
 /** @internal Registers handlers with an app. */
@@ -285,7 +292,13 @@ export function recordHandler<P, E extends string>(
   if (site) rec.sourceMap[`handlers[${index}]`] = site;
   const output = recording(rec, () => toNode(fn($, { payload, errors })));
   sink.add(
-    { id, trigger, errors: { ...declared }, plan: { body: rec.body, output } },
+    {
+      id,
+      trigger,
+      errors: { ...declared },
+      ...(options.maxDepth === undefined ? {} : { maxDepth: options.maxDepth }),
+      plan: { body: rec.body, output },
+    },
     rec.sourceMap,
   );
 }
