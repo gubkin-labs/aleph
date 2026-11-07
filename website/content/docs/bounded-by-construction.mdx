@@ -33,7 +33,7 @@ Everything traces back to a declaration: `.max(...)` on strings, ints, and array
 
 The fix is always one of:
 - **Lower a bound**, such as a smaller `limit` or a smaller `max` on a list input.
-- **Move the work to a job**: a queue job, a scanning schedule, or a [workflow](/docs/compute/workflows/). Each run is bounded against the larger job limits.
+- **Move the work to a job**: a queue job, a scanning schedule, or a [workflow](/docs/background-work/#durable-workflows). Each run is bounded against the larger job limits.
 - **Remove amplification**: an index or counter you don't need costs writes on every change.
 
 ## The meter

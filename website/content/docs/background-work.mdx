@@ -1,8 +1,85 @@
-# Durable workflows
+# Background work and workflows
+
+Anything that doesn't need to happen inside the request goes through the outbox and runs as its own bounded **job**. Job limits are larger than route limits: 500 reads, 200 writes, 5,000 ops.
+
+## Events
+
+```ts
+const OrderPaid = a.event("orderPaid", { payload: { orderId: t.id() } });
+
+OrderPaid.emit({ orderId });                         // in a route or handler, after commit
+a.onEvent("receipt", OrderPaid, ($, { payload }) => { /* ... */ });
+```
+
+Every handler of an event runs once per emit.
+
+## Entity triggers
+
+```ts
+a.onInsert("welcome", User, ($, { payload }) => { /* payload.after is the new row */ });
+a.onUpdate("audit", Task, ($, { payload }) => { /* payload.before, payload.after */ });
+a.onDelete("cleanup", Project, ($, { payload }) => { /* payload.before */ });
+```
+
+## Queues
+
+```ts
+const Charge = a.queue("charge", { payload: { orderId: t.id() }, retries: 3, backoff: "2s", maxBackoff: "1m" });
+
+Charge.enqueue({ orderId });                             // now
+Charge.enqueue({ orderId }, { delay: "1h" });            // later (at most 30 days)
+Charge.enqueue({ orderId }, { delay: "1h", key: orderId });  // keyed: replaces a pending job with this key
+Charge.cancel(orderId);                                  // cancels the pending keyed job
+
+a.onQueue("chargeOrder", Charge, ($, { payload, errors }) => { /* ... */ }, { errors: { gone: err.notFound() } });
+a.onDeadLetter("chargeFailed", Charge, ($, { payload }) => { /* payload.error, payload.attempts */ });
+```
+
+A failed job, whether from a declared error, an integration failure, or a broken invariant, is retried with exponential backoff, then handed to the dead-letter handler.
+
+## Schedules
+
+```ts
+a.every("cleanup", "1h", ($, { payload }) => { /* payload.firedAt */ });
+a.every("digest", "mon 09:00", ($) => { /* ... */ }, { tz: "Europe/Berlin" });
+a.every("standup", "weekdays 08:30", ($) => { /* ... */ }, { tz: "America/New_York" });
+a.cron("report", "0 6 1 * *", ($) => { /* 06:00 on the 1st */ }, { tz: "UTC" });
+```
+
+Calendar schedules follow the time zone across daylight-saving changes. Missed ticks aren't back-filled: a schedule runs at most once per due time.
+
+## Walking all rows
+
+A job can't scan an unbounded table, but a schedule can walk it in batches:
+
+```ts
+a.every("expireTrials", "1d", ($, { payload }) => {
+  $.forEach(payload.batch, (org) => {
+    $.when(org.trialEndsAt.lt(payload.firedAt), () => org.update({ plan: "free" }));
+  });
+}, { scan: { entity: Org, index: "byPlan", prefix: ["trial"], batch: 100 } });
+```
+
+Each batch is a separately bounded run, chained through the outbox.
+
+## Realtime channels
+
+```ts
+const Feed = a.channel("feed", { key: { orgId: t.string().max(64) }, message: { text: t.string().max(200) } });
+Feed.publish({ orgId: "acme" }, { text: "deployed" });     // in a route or handler, after commit
+```
+
+<Tbd>
+Delivering channel messages to subscribers (WebSockets or server-sent events) is the runtime's job. In `aleph dev`, published messages show up in the inspector's activity feed.
+</Tbd>
+
+{/* scope */}
+
+## Durable workflows
 
 A **workflow** is a process that spans many steps and possibly days: charge, reserve stock, wait for approval, ship, and refund if anything fails. Each **step** is its own bounded transaction. **State** is carried between steps, steps can **wait for signals** with timeouts, failed steps are **retried** and then **compensated**, and every instance is guaranteed to finish.
 
-## Declare it
+### Declare it
 
 ```ts
 const Fulfill = a.workflow("fulfill", {
@@ -15,7 +92,7 @@ const Fulfill = a.workflow("fulfill", {
 });
 ```
 
-## Add steps
+### Add steps
 
 A step ends by choosing what's next:
 - `w.next(step, { delay?, state? })`
@@ -59,7 +136,7 @@ Inside a step, `w` gives you:
 - `w.error`, the failure that triggered a compensation step
 - `w.instanceId`
 
-## Use it from routes
+### Use it from routes
 
 ```ts
 a.route("POST /orders")
@@ -83,7 +160,7 @@ a.route("DELETE /orders/:orderId/fulfillment").handle((_, { params }) => Fulfill
 
 The key you start an instance with (an order id, a user id) is how you find, signal, and cancel it later. Starting is idempotent: a second `start` with the same key returns `false`.
 
-## Guarantees
+### Guarantees
 
 - **Atomic steps.** A step's writes, its state changes, and scheduling the next step commit together. A crash between steps loses nothing, and a step never half-runs.
 - **Exactly-once transitions.** Every scheduled step is numbered. A stale entry, like a timeout after the signal already came or a step of a cancelled instance, is recognized and dropped.
@@ -93,6 +170,6 @@ The key you start an instance with (an order id, a user id) is how you find, sig
 
 Instance statuses are `running`, `waiting`, `completed`, `failed` (a step failed with no `onFail`, or `maxSteps` ran out), and `cancelled`.
 
-## How it compares
+### How it compares
 
 Code-replay workflow engines require deterministic workflow code and re-run it to rebuild state. Aleph workflows are declared steps with explicit, typed state, so nothing is replayed and determinism isn't something you have to maintain.

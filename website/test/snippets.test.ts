@@ -1,7 +1,8 @@
 /**
  * Type-checks every TypeScript snippet in the docs against the real SDK. Each snippet becomes a
  * function in a generated module that imports the prelude (the names fragments refer to), and
- * `tsc` must accept the result. A snippet whose fence says ```ts nocheck is skipped.
+ * `tsc` must accept the result. A snippet whose fence says ```ts nocheck is skipped. A
+ * "scope" MDX comment starts a fresh scope, for a page made of sections that stand alone.
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -49,11 +50,16 @@ const LOOSE =
  */
 function moduleFor(page: string): { file: string; count: number } {
   const source = readFileSync(page, "utf8");
-  const blocks = [...source.matchAll(/```ts( nocheck)?\n([\s\S]*?)```/g)].filter((m) => !m[1]);
+  const blocks = [
+    ...source.matchAll(/```ts( nocheck)?\n([\s\S]*?)```|\{\/\* scope \*\/\}/g),
+  ].filter((m) => !m[1]);
   const name = relative(docs, page).replace(/[/.]/g, "_");
   const imports = new Set<string>();
+  let count = 0;
   const body = blocks
     .map((m, i) => {
+      if (m[0].startsWith("{/*")) return `}\n\nexport async function scope${i}() {`;
+      count += 1;
       const code = (m[2] ?? "")
         .split("\n")
         .map((line) => {
@@ -79,7 +85,7 @@ function moduleFor(page: string): { file: string; count: number } {
   ].join("\n");
   const file = join(out, `${name}.ts`);
   writeFileSync(file, `${header}\n\nexport async function page() {\n${body}\n}\n`);
-  return { file, count: blocks.length };
+  return { file, count };
 }
 
 describe("docs snippets", () => {
@@ -120,7 +126,7 @@ describe("docs snippets", () => {
     } catch (error) {
       output = String((error as { stdout?: string }).stdout ?? error);
     }
-    expect(files.length).toBeGreaterThan(10);
+    expect(files.length).toBeGreaterThan(8);
     expect(output, output).toBe("");
   }, 120_000);
 });

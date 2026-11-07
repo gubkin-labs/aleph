@@ -1,0 +1,236 @@
+# Data
+
+Aleph's storage is an **ordered key-value store** with transactions. Entities, indexes, and counters map onto it, and every access is a key lookup or a bounded range scan.
+
+## Entities and keys
+
+```ts
+const Task = a.entity("Task", {
+  key: ["orgId", "taskId"],
+  fields: {
+    orgId: t.string().max(64),
+    taskId: t.id().generated(),
+    title: t.string().max(200),
+    done: t.bool().default(false),
+  },
+});
+```
+
+Rows are stored sorted by their key tuple. A **prefix** of the key selects a contiguous range: `prefix: [orgId]` is every task of one org, in `taskId` order. Generated ids are ULIDs, which sort by creation time, so the newest come last (or first with `order: "desc"`).
+
+Choose keys by how you read: put the field you'll filter by first.
+
+## Field types
+
+| Builder | Notes |
+|---|---|
+| `t.string().max(n)` | A maximum is required; it bounds the row size |
+| `t.int()` | 64-bit; `.min()` and `.max()` bound it, and a max makes it usable as a query limit |
+| `t.decimal(scale)` | Exact decimal, sent as a string like `"12.50"` |
+| `t.bool()`, `t.enum(...)` | |
+| `t.id()` | A ULID; `.generated()` creates one on insert |
+| `t.timestamp()` | Milliseconds; `.defaultNow()` |
+| `t.timeZone()` | An IANA name like `"Europe/Berlin"` |
+| `t.array(item, max)` | A list of at most `max` items |
+| `t.object({...})` | Nested fields, at most 4 deep |
+
+Fields can be `.optional()` (stored as `null`), have a `.default(...)`, or be marked `.deprecated(note)`.
+
+## Indexes
+
+```ts
+const Member = a.entity("Member", {
+  key: ["orgId", "memberId"],
+  fields: {
+    orgId: t.string().max(64),
+    memberId: t.id().generated(),
+    email: t.string().max(200),
+    active: t.bool().default(true),
+    joinedAt: t.timestamp().defaultNow(),
+  },
+  indexes: {
+    byJoined: ["orgId", "joinedAt"],                                                         // plain
+    byEmail: { fields: ["orgId", { name: "email", value: (m) => m.email.lower() }], unique: true }, // computed, unique
+    activeByJoined: { fields: ["orgId", "joinedAt"], where: (m) => m.active },               // partial
+  },
+});
+```
+
+- Indexes can be **computed** (index a value derived from the row), **unique** (a conflicting write fails with 409), or **partial** (`where`).
+- Queries scan an index by prefix, optionally with a range on the next part (`range: { gte, lt }`), or with several values for it (`anyOf`, like SQL's `IN`).
+- Each index costs writes on every change, so add the ones your queries need.
+
+## Counters
+
+```ts
+a.counter("openTasks", { of: Task, groupBy: ["orgId"], where: (t) => t.done.not() });
+a.counter("revenue", { of: Order, groupBy: [], sum: (o) => o.totalCents });
+a.counter("cheapest", { of: Product, groupBy: ["category"], agg: { min: "price" } });
+a.counter("perDay", { of: Order, groupBy: [{ name: "day", value: (o) => o.placedAt.startOf("day") }], shards: 8 });
+```
+
+Counters are maintained on write, inside the same transaction, and read in O(1). They can count rows, sum a value, track a minimum, maximum, or distinct count, group by computed parts like the day, and spread a hot count over shards.
+
+## Other entity options
+
+- `appendOnly: true`: rows can be inserted, never updated or deleted.
+- `invariants`: rules every row must satisfy, checked on every write.
+- `versioned: true`: a `version` field for optimistic concurrency (`update(..., { ifVersion })`).
+- `ttl: { field, after }`: rows expire and become invisible.
+- `parent: { entity, key, onDelete: "cascade" }`: children found with `childrenOf`, and deleted with their parent.
+
+## What's deliberately missing
+
+There are no unbounded scans, no joins, and no ad-hoc queries. Joins are written as a query plus `map` with `get` inside, which keeps the cost visible. Aggregations are counters, maintained as you write.
+
+{/* scope */}
+
+## Reading and writing data
+
+### Reading
+
+```ts
+const task = Task.get({ orgId, taskId });              // a row, or null: check task.exists()
+const sure = Task.getOrFail({ orgId, taskId }, errors.missing);  // fails with 404-style declared error
+const many = Task.getMany(ids.map((id) => ({ orgId, taskId: id })));
+const member = Member.findBy("byEmail", [orgId, body.email.lower()]);  // first row of a (unique) index
+```
+
+### Queries
+
+```ts
+Task.query({ prefix: [orgId], limit: 20 });                                  // key order
+Task.query({ prefix: [orgId], limit: 20, order: "desc" });                   // newest ids first
+Task.query({ index: "byDue", prefix: [orgId, false], range: { lt: cutoff }, limit: 50 });
+Task.query({ index: "byStatus", prefix: [orgId], anyOf: ["open", "blocked"], limit: 50 });
+```
+
+- `prefix` gives values for the first key (or index) fields.
+- `range` bounds the next one. Ranges never match `null`, like SQL.
+- `anyOf` matches any of several values for the next field and merges the results in key order.
+- `limit` must have a static upper bound: a constant, an int input with a `.max()`, or `$.min(limit, 50)`.
+
+### Pagination
+
+```ts
+a.route("GET /tasks")
+  .query({ cursor: t.cursor() })
+  .handle(($, { query }) => Task.page({ prefix: [$.caller], limit: 20, after: query.cursor }));
+// → { items: [...], cursor: "..." | null }
+```
+
+Cursors are opaque, and can't be forged to escape their range.
+
+### Writing
+
+```ts
+Task.insert({ orgId, title });            // 409 already_exists if the key exists
+Task.upsert({ orgId, taskId, title });    // insert, or update the given fields
+Task.insertIfAbsent({ orgId, taskId, title });   // → bool
+task.update({ done: true });              // or Task.update(key, set)
+task.delete();                            // or Task.delete(key)
+tasks.updateAll({ done: true });          // a bounded list of rows
+```
+
+Every write validates the row against its fields and invariants, and maintains indexes and counters in the same transaction.
+
+### Optimistic concurrency
+
+```ts
+const Doc = a.entity("Doc", { key: ["docId"], fields: { docId: t.id(), body: t.string().max(5000), version: t.version() }, versioned: true });
+
+a.route("PUT /docs/:docId")
+  .params({ docId: t.id() })
+  .body({ body: t.string().max(5000), version: t.int().min(1) })
+  .handle((_, { params, body }) => Doc.update({ docId: params.docId }, { body: body.body }, { ifVersion: body.version }));
+```
+
+A stale version fails with `409 version_conflict`.
+
+### Expiry
+
+```ts
+const Session = a.entity("Session", {
+  key: ["token"],
+  fields: { token: t.string().max(64), userId: t.string().max(64), seenAt: t.timestamp().defaultNow() },
+  ttl: { field: "seenAt", after: "30d" },
+});
+```
+
+Expired rows are invisible to reads and queries, and an insert replaces them.
+
+### Parents and children
+
+```ts
+const Comment = a.entity("Comment", {
+  key: ["postId", "commentId"],
+  fields: { postId: t.id(), commentId: t.id().generated(), text: t.string().max(500) },
+  parent: { entity: Post, key: { postId: "postId" }, onDelete: "cascade" },
+});
+
+Comment.childrenOf(post, { limit: 50 });   // one range scan
+```
+
+With `onDelete: "cascade"`, deleting a post deletes its comments in the background, in bounded batches.
+
+{/* scope */}
+
+## Types and null
+
+Aleph's checker infers a type for every expression, and uses it for three things:
+- catching mistakes
+- computing size bounds
+- describing what each route returns
+
+### Inferred response types
+
+You rarely declare a route's output. The checker infers it from the plan: a row becomes an object of its fields, `page()` becomes `{ items, cursor }`, and every string carries its maximum length. Routes with several `$.return(...)` branches get a union. The inferred type shows up in:
+- `aleph check` reports
+- OpenAPI response schemas
+- the generated client, where `Routes["listTodos"]["output"]` is a precise TypeScript type
+
+To pin the contract, declare it:
+
+```ts
+a.route("GET /me")
+  .returns(t.object({ id: t.string().max(64), email: t.string().max(200).optional() }))
+  .handle(($) => {
+    const user = a.users.get($.caller);
+    return { id: $.caller, email: user.email, signedUpAt: $.now() }; // signedUpAt is dropped
+  });
+```
+
+The checker verifies every response fits the declared type. Fields the type doesn't list are dropped from the response, which is an easy way to return a narrower view of a row.
+
+### Null
+
+`null` is tracked precisely. Optional fields, a `get` that may find nothing, `first()` of a list, and a page's `cursor` all produce values that may be `null`. Operations treat `null` like SQL does:
+- Arithmetic with `null` gives `null`.
+- Ordering comparisons with `null` are `false`; equality compares it.
+- String functions pass `null` through, and list helpers treat a `null` list as empty.
+
+Writing a value that may be `null` into a required field is a **validation error**, not a runtime failure:
+
+```text
+✖ type_mismatch at routes[1].plan.body[2].op.values.ownerName
+  the value may be null, but the field is required. Check it first (getOrFail,
+  $.ensure(x.isSet())) or give a fallback with .ifNull(...); found string or null
+```
+
+### Narrowing
+
+After `$.ensure(row.exists(), ...)` (which `getOrFail` records), the checker knows the row is there, for the rest of that block:
+
+```ts
+const account = Account.getOrFail({ accountId }, errors.notFound);
+account.update({ balance: account.balance.plus(amount) }); // balance isn't null here
+```
+
+For other values, `.ifNull(fallback)` gives a non-null value.
+
+### Numbers
+
+Integers are 64-bit, and arithmetic overflow is an error. **Decimals** are exact (`t.decimal(2)`), travel as strings (`"19.99"`), and mix with ints:
+- `price.times(qty)` is a decimal.
+- `.round(scale, mode)` rounds, with six rounding modes.
+- There are no floats.

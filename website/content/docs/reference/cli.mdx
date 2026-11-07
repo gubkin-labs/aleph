@@ -13,7 +13,7 @@ Every command takes an app module (`app.ts`, whose default export is an `app(...
 | `aleph check app.ts --against deployed.json` | Also classifies every change from the deployed manifest (safe, needs backfill, breaking) and prints the migration plan. Exits 1 if not deployable |
 | `aleph test app.ts` | Runs every route example. Exits 1 on failures |
 | `aleph client app.ts [-o client.ts]` | Writes a typed fetch client |
-| `aleph dev app.ts [--port 3000] [--watch] [--seed seed.ts] [--data file] [--secret NAME=value]` | Serves the app locally; see [Local development](/docs/verifying/local-development/) |
+| `aleph dev app.ts [--port 3000] [--watch] [--seed seed.ts] [--data file] [--secret NAME=value]` | Serves the app locally; see [Local development](/docs/testing/#local-development) |
 | `aleph openapi app.ts` | Prints an OpenAPI 3.1 document |
 | `aleph mcp app.ts` | Prints the MCP tools the app exposes |
 

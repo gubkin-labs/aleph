@@ -16,7 +16,7 @@ export function markdownFor(slug: string): string {
   const source = readFileSync(join(ROOT, fileFor(slug)), "utf8");
   return source
     .split("\n")
-    .filter((line) => !/^(import|export) /.test(line))
+    .filter((line) => !/^(import|export) /.test(line) && line !== "{/* scope */}")
     .join("\n")
     .trim();
 }

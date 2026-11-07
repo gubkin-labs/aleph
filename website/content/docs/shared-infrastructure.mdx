@@ -1,4 +1,4 @@
-# Shared infrastructure
+# Shared infrastructure and isolation
 
 The most important consequence of Aleph's design is economic: **bounded apps can safely share machines**, and sharing is much cheaper than giving every app its own.
 
@@ -27,7 +27,7 @@ An Aleph app is a manifest of bounded operations, run by a trusted core. That ch
 | One tenant reads another's data | Keys are built inside the tenant's keyspace; a plan can't name anyone else's |
 | Author code escapes its sandbox | There's no author code: the runtime interprets data |
 
-So many apps, from many unrelated authors, can run in the **same processes** against the **same database**. A runtime can also use each request's known worst case to admit work fairly. See [Tenants and isolation](/docs/running/isolation/).
+So many apps, from many unrelated authors, can run in the **same processes** against the **same database**. A runtime can also use each request's known worst case to admit work fairly. See [Tenants and isolation](/docs/shared-infrastructure/#tenants-and-isolation).
 
 ## What that means for cost
 
@@ -38,3 +38,28 @@ So many apps, from many unrelated authors, can run in the **same processes** aga
 <Note title="Where the savings come from">
 Aleph, the language, makes sharing *safe*. The savings come from a runtime that actually packs many apps onto shared machines. The open-source core gives any runtime the parts it needs: validation, cost analysis, metering, isolation, and execution. See [Running a manifest](/docs/running/).
 </Note>
+
+{/* scope */}
+
+## Tenants and isolation
+
+Aleph is designed so many apps, and many tenants of each app, can share one runtime safely.
+
+### Keys can't escape their tenant
+
+Every storage key a plan touches is built by the core inside the executing tenant's **keyspace**: a prefix the plan can't see or change. A plan names entities and key values, never raw keys. There's no expression that produces another tenant's prefix, so cross-tenant access isn't something a check prevents. It can't be expressed at all.
+
+Property tests check this for keys, pagination cursors (which can't be forged to escape the range they came from), and generated plans.
+
+### Resources can't be monopolized
+
+- **Per request:** every request's cost is bounded before it runs and metered while it runs. One app's expensive route can't run long enough to hurt others.
+- **Over time:** a runtime can use the static bounds for admission control and fair scheduling, such as reserving a request's worst case and charging what it actually used.
+
+### Code doesn't run
+
+A manifest contains no author code, so there's no sandbox to escape. The runtime interprets data with a small, trusted Rust core, fuzzed and property-tested. Integrations are the only way out, and they're declared, typed, and executed by the runtime.
+
+### Auth is the runtime's job
+
+Authentication (who the caller is) happens before the core. The core enforces each route's declared authorization: public, signed-in, org member with roles, or API key with scopes. In development, `aleph dev` takes the caller from headers.

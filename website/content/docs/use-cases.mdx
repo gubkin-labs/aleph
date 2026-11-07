@@ -1,4 +1,4 @@
-# Use cases
+# Use cases and alternatives
 
 Aleph fits backends whose work is mostly data, rules, and coordination: the large middle of application backends.
 
@@ -9,7 +9,7 @@ Orgs, members, roles, API keys, plan limits, and per-tenant data. Org membership
 Exact decimals, serializable transactions, invariants like "a balance never goes negative", and idempotency keys so a retried transfer applies once.
 
 ## Commerce
-Orders with line items as nested objects, prices as decimals, inventory reservations, payment webhooks, and fulfillment as a [durable workflow](/docs/compute/workflows/) with compensation.
+Orders with line items as nested objects, prices as decimals, inventory reservations, payment webhooks, and fulfillment as a [durable workflow](/docs/background-work/#durable-workflows) with compensation.
 
 ## Pipelines and background work
 Uploads processed by queue jobs that call integrations, with retries, backoff, and dead letters, plus scheduled jobs that walk an entity in bounded batches.
@@ -18,9 +18,28 @@ Uploads processed by queue jobs that call integrations, with retries, backoff, a
 Signed inbound webhooks from Stripe, GitHub, or any HMAC sender, deduplicated by event id. Outbound calls are journaled, so a retried request never repeats a call.
 
 ## Tools for AI agents
-Every route can be exposed as an [MCP tool](/docs/api/) with the same inputs, auth, and limits. Agents get a typed, bounded API, and the bounds mean an agent can't accidentally run an expensive operation.
+Every route can be exposed as an [MCP tool](/docs/integrations/#openapi-mcp-and-typed-clients) with the same inputs, auth, and limits. Agents get a typed, bounded API, and the bounds mean an agent can't accidentally run an expensive operation.
 
 ## When Aleph isn't the right fit
 - **Compute-heavy work**, like image processing or ML inference. Do it behind an integration.
 - **Unbounded analytics**, like ad-hoc SQL over all your data. Export to a warehouse instead.
 - **Long-lived connections and streaming**, which aren't part of the language yet. See the [roadmap](/docs/roadmap/).
+
+{/* scope */}
+
+## Aleph vs. alternatives
+
+### Serverless functions
+Functions run arbitrary code per request. You get full flexibility, but you're on your own for transactions, idempotency, isolation, and cost: a function's worst case is unknown until it happens. Aleph trades that flexibility for guarantees the runtime can enforce. Many teams use both: Aleph for the data and rules, a function behind an integration for heavy compute.
+
+### Backend-as-a-service (hosted databases with auth and rules)
+These give you storage, auth, and row-level rules. Logic usually ends up in client code or in separate functions, and the cost of a query depends on how it's written. In Aleph the logic lives next to the data in one declaration, every query is bounded by its declared limits, and multi-step work is transactional.
+
+### An ORM with a web framework
+The most flexible option, and the most work: you write the transactions, retries, outbox, pagination, validation, docs, and client yourself, and keep them consistent. Aleph generates most of that from one schema. The cost is that you work inside its operation set.
+
+### Workflow engines
+Workflow engines make long-running processes durable by replaying code, which forces that code to be deterministic. Aleph workflows are declared as steps, each a bounded transaction with typed state. There's nothing to replay, and determinism is structural instead of a rule you have to follow.
+
+### Infrastructure as code
+Tools like Terraform and Pulumi describe infrastructure as data and compute a plan before applying it. Aleph applies the same idea to application logic: describe it, check it, and know what it will do before it runs.

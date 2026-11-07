@@ -114,7 +114,7 @@ function simulate(code: string[], steps: Step[], start: number, upTo = steps.len
 const TOKEN =
   /(\/\/.*$)|("(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?|`[^`]*`?)|(\b\d+\b)|\b(import|from|const|export|default|return|true|false)\b|(\.\w+)(?=\()|(\b[A-Z]\w*\b)/g;
 
-function highlight(text: string): ReactNode[] {
+export function highlight(text: string): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   for (const m of text.matchAll(TOKEN)) {
@@ -147,6 +147,7 @@ export function Demo({
   code,
   steps,
   still,
+  rows,
   caption,
 }: {
   title: string;
@@ -157,6 +158,8 @@ export function Demo({
   steps: Step[];
   /** How many steps make up the still frame (default: all of them). */
   still?: number;
+  /** Show at most this many code lines, scrolling to keep the highlight in view. */
+  rows?: number;
   caption: ReactNode;
 }) {
   const ref = useRef<HTMLElement>(null);
@@ -287,6 +290,17 @@ export function Demo({
     else if (t.left < b.left + 40) body.scrollLeft -= b.left + 40 - t.left + 24;
   });
 
+  // In a scrolling editor, bring the highlighted lines into view.
+  const lit = state.hl.join(",");
+  useEffect(() => {
+    const body = ref.current?.querySelector<HTMLElement>(".editor-body");
+    if (!rows || !body || !lit) return;
+    const first = body.querySelector<HTMLElement>(".lit");
+    if (!first) return;
+    const top = first.offsetTop - body.clientHeight / 3;
+    body.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  }, [lit, rows]);
+
   const typing = state.typing;
   const width = String(start + sim.maxCode.length).length;
 
@@ -307,7 +321,10 @@ export function Demo({
 
       <div className="editor">
         <div className="editor-tab">{file}</div>
-        <div className="editor-body stack">
+        <div
+          className={rows ? "editor-body stack editor-scroll" : "editor-body stack"}
+          style={rows ? { maxHeight: `calc(${rows} * 11.5px * 1.7 + 8px)` } : undefined}
+        >
           <div className="ghost" aria-hidden>
             {sim.maxCode.map((line, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: lines are positional

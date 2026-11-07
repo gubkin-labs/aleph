@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { Demo, Panel } from "@/components/Demo";
 import { Install } from "@/components/Install";
+import { Playground } from "@/components/Playground";
 import {
   HowScene,
   IsolationScene,
@@ -10,6 +11,7 @@ import {
   TransactionScene,
 } from "@/components/Scenes";
 import { agent, cost, evolve, loop, more } from "./demos";
+import { PLAYGROUND } from "./playgrounds";
 
 /** What a backend usually needs and an Aleph author doesn't write. Each is struck out in turn. */
 const HANDLED = [
@@ -77,6 +79,8 @@ export default function Home() {
         <Install />
       </section>
 
+      <Playground categories={PLAYGROUND} />
+
       <Section
         eyebrow="Why Aleph"
         title={
@@ -101,7 +105,7 @@ export default function Home() {
           Aleph makes the opposite trade. It gives up some flexibility for shared building blocks
           for what every backend needs, predictable behavior, and code that’s trusted by default.
           When agents write the code, that trade matters more than ever: a narrow language is easy
-          to check and hard to get wrong. <Link href="/docs/why-declarative/">Why declarative</Link>
+          to check and hard to get wrong. <Link href="/docs/#why-declarative">Why declarative</Link>
         </p>
       </Section>
 
@@ -112,19 +116,18 @@ export default function Home() {
           <Demo
             title="worst case of every route"
             {...cost}
-            caption="20 posts, each with up to 5 comments: at most 120 reads. Ask for 10,000 posts and it won't build."
+            caption="A page of 20 posts, 5 comments each, and a cursor for the next page: at most 120 reads. Ask for 10,000 at once and it won't build."
           />
         }
       >
         <p>
-          Aleph works out the most each route can ever read, write, compute, and hold in memory,
-          before a single request runs. Every query has a limit, and loops multiply them: 20 posts
-          with 5 comments each is 120 reads, every time.
+          Every query has a limit, and Aleph multiplies them out: a page of 20 posts with 5 comments
+          each is at most 120 reads, before a single request runs.
         </p>
         <p>
-          A query that could fetch too many rows is rejected before it ships, with the line and the
-          bound to change. The same limits are enforced while it runs, so a budget is a guarantee,
-          not a guess.
+          So the natural way to return a long list is the right one: a page and a cursor. Ask for
+          everything at once and it’s rejected before it ships, with the line to change. The same
+          limits are enforced while it runs, so a budget is a guarantee, not a guess.
         </p>
       </Section>
 
@@ -156,7 +159,8 @@ export default function Home() {
           <Demo
             title="more than routes"
             {...more}
-            caption="A trigger that calls a moderation API and streams comments live, and a weekly email. Each one has a worst case too."
+            rows={18}
+            caption="An HTTP API, email, a live channel, a trigger, and a weekly schedule, all in the same app.ts, each with a worst case."
           />
         }
       >
@@ -169,7 +173,7 @@ export default function Home() {
         <p>
           Every one of them is checked the same way: triggers and schedules get a worst-case cost,
           and their effects go out only after they commit.{" "}
-          <Link href="/docs/compute/">Compute and async work</Link>
+          <Link href="/docs/background-work/">Background work and workflows</Link>
         </p>
       </Section>
 
@@ -315,7 +319,7 @@ export default function Home() {
           <Link href="/docs/quickstart/" className="button">
             Start the quickstart
           </Link>
-          <Link href="/docs/why-declarative/" className="button button-secondary">
+          <Link href="/docs/#why-declarative" className="button button-secondary">
             Why declarative
           </Link>
         </div>
