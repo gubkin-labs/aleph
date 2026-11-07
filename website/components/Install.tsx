@@ -5,7 +5,7 @@ import { useState } from "react";
 // Alpha releases are tarballs on GitHub, not npm packages yet. Install a versioned URL: a lockfile
 // records the file's checksum, and the "latest" link serves a new file on every release.
 // `scripts/set-release-version.mjs` updates this on each release.
-const VERSION = "0.1.0-alpha.1";
+const VERSION = "0.1.0-alpha.2";
 const RELEASE = `https://github.com/gubkin-labs/aleph/releases/download/v${VERSION}`;
 const SDK = `${RELEASE}/aleph-sdk.tgz`;
 const CLI = `${RELEASE}/aleph-cli.tgz`;

@@ -15,8 +15,8 @@ The packages aren't on npm yet. Install them from a [GitHub release](https://git
 on Node.js 24 or later:
 
 ```bash
-npm install https://github.com/gubkin-labs/aleph/releases/download/v0.1.0-alpha.1/aleph-sdk.tgz
-npm install --save-dev https://github.com/gubkin-labs/aleph/releases/download/v0.1.0-alpha.1/aleph-cli.tgz
+npm install https://github.com/gubkin-labs/aleph/releases/download/v0.1.0-alpha.2/aleph-sdk.tgz
+npm install --save-dev https://github.com/gubkin-labs/aleph/releases/download/v0.1.0-alpha.2/aleph-cli.tgz
 npm pkg set type=module   # Aleph apps are ES modules; new npm projects default to CommonJS
 ```
 
