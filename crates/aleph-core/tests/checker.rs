@@ -1205,3 +1205,116 @@ fn workflow_state_fields_may_be_cleared_to_null() {
     assert_eq!(report.failures, Vec::<String>::new(), "{report:#?}");
     assert_eq!(report.ran, 2, "{report:#?}");
 }
+
+#[test]
+#[allow(
+    clippy::many_single_char_names,
+    reason = "short builders keep the table readable"
+)]
+fn expressions_evaluate_to_what_they_say() {
+    let name = || body("name");
+    let n = || body("n");
+    let s = |v: &str| lit(json!(v));
+    let i = |v: i64| lit(json!(v));
+    let nul = || lit(Json::Null);
+    let test =
+        |op: &str, arg: Json| json!({ "kind": "strTest", "op": op, "of": name(), "arg": arg });
+    let row = || var(0);
+    let cases = json!({
+        "starts": test("startsWith", s("ab")),
+        "notStarts": test("startsWith", s("b")),
+        "ends": test("endsWith", s("bc")),
+        "contains": test("contains", s("b")),
+        "testNull": test("contains", nul()),
+        "split": { "kind": "split", "of": name(), "sep": s("b"), "max": 5 },
+        "splitNull": { "kind": "split", "of": name(), "sep": nul(), "max": 5 },
+        "replace": { "kind": "replace", "of": name(), "find": s("b"), "with": s("XY") },
+        "replaceNull": { "kind": "replace", "of": name(), "find": nul(), "with": s("XY") },
+        "lteEq": bin("lte", n(), i(5)),
+        "lteLess": bin("lte", n(), i(6)),
+        "lteMore": bin("lte", n(), i(4)),
+        "gtEq": bin("gt", n(), i(5)),
+        "gtMore": bin("gt", n(), i(4)),
+        "gteEq": bin("gte", n(), i(5)),
+        "ltEq": bin("lt", n(), i(5)),
+        "nullPlus": bin("add", field(var(8), "n"), i(1)),
+        "plusNull": bin("add", i(1), field(var(8), "n")),
+        "nullLt": bin("lt", nul(), i(1)),
+        "nullEq": bin("eq", nul(), nul()),
+        "nested": field(field(row(), "meta"), "a"),
+        "nestedMissing": field(field(row(), "meta"), "b"),
+        "fieldOfNull": field(field(var(8), "meta"), "a"),
+        "sumSkipsNull": { "kind": "agg", "op": "sum", "list": list(json!([i(2), nul(), i(3)])), "item": 1 },
+        "min": { "kind": "agg", "op": "min", "list": list(json!([i(4), nul(), i(2), i(9)])), "item": 1 },
+        "max": { "kind": "agg", "op": "max", "list": list(json!([i(4), i(9), nul(), i(2)])), "item": 1 },
+        "minEmpty": { "kind": "agg", "op": "min", "list": list(json!([nul()])), "item": 1 },
+    });
+    let m = manifest(
+        vec![
+            let_(
+                9,
+                insert(item(
+                    json!({ "id": s("i0"), "meta": obj(json!({ "a": i(7) })) }),
+                )),
+            ),
+            let_(0, get(s("i0"))),
+            // A row that doesn't exist: its fields read as null.
+            let_(8, get(s("nope"))),
+            ensure(not_null(var(0))),
+        ],
+        json!({ "kind": "object", "fields": cases }),
+    );
+    let r = run(&m, json!({ "n": 5, "name": "abc" }));
+    assert_eq!(r.status, 200, "{:?}", r.body);
+    assert_eq!(
+        r.body,
+        json!({
+            "starts": true, "notStarts": false, "ends": true, "contains": true, "testNull": false,
+            "split": ["a", "c"], "splitNull": null,
+            "replace": "aXYc", "replaceNull": null,
+            "lteEq": true, "lteLess": true, "lteMore": false,
+            "gtEq": false, "gtMore": true, "gteEq": true, "ltEq": false,
+            "nullPlus": null, "plusNull": null, "nullLt": false, "nullEq": true,
+            "nested": 7, "nestedMissing": null, "fieldOfNull": null,
+            "sumSkipsNull": 5, "min": 2, "max": 9, "minEmpty": null,
+        })
+    );
+}
+
+#[test]
+fn int_range_bounds_on_a_decimal_index_compare_as_decimals() {
+    let price = |var_id: u32, id: &str, p: &str| {
+        let_(
+            var_id,
+            insert(item(json!({ "id": lit(json!(id)), "price": dec(p) }))),
+        )
+    };
+    let in_range = |range: Json| {
+        let query = json!({
+            "op": "query", "entity": "Item", "index": "byPrice", "limit": lit(json!(10)), "range": range,
+        });
+        let ids = json!({ "op": "map", "list": var(4), "item": 5, "yield": field(var(5), "id") });
+        let mut m = manifest(
+            vec![
+                price(1, "p1", "1.50"),
+                price(2, "p2", "2.00"),
+                price(3, "p3", "3.25"),
+                let_(4, query),
+                let_(6, ids),
+            ],
+            var(6),
+        );
+        m["entities"]["Item"]["fields"]["price"] =
+            json!({ "type": { "kind": "decimal", "scale": 2 }, "optional": true });
+        m["entities"]["Item"]["indexes"] = json!({ "byPrice": { "fields": ["price"] } });
+        let r = run(&m, json!({ "n": 1, "name": "a" }));
+        assert_eq!(r.status, 200, "{:?}", r.body);
+        r.body
+    };
+    assert_eq!(in_range(json!({ "gt": lit(json!(2)) })), json!(["p3"]));
+    assert_eq!(
+        in_range(json!({ "gte": lit(json!(2)) })),
+        json!(["p2", "p3"])
+    );
+    assert_eq!(in_range(json!({ "lt": lit(json!(2)) })), json!(["p1"]));
+}

@@ -13,6 +13,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use aleph_core::keys::{KeyPart, Keyspace};
 use aleph_core::manifest::Method;
 use aleph_core::{Engine, FixedEnv, Limits, MemoryStore, Request, TenantId, parse_and_validate};
 use proptest::prelude::*;
@@ -195,4 +196,48 @@ proptest! {
             }
         }
     }
+}
+
+#[test]
+fn a_sharded_counter_spreads_one_group_over_its_shards() {
+    // Sharding exists to spread write contention: one group's rows must land on several shards,
+    // while reads still sum to the full count.
+    let store = Arc::new(MemoryStore::new());
+    let valid = parse_and_validate(&manifest(), &Limits::ROUTE).unwrap();
+    let engine = Engine::new(valid, store.clone(), Arc::new(FixedEnv::new(1, 1)));
+    let tenant = TenantId::new("t").unwrap();
+    let call = |path: &str, body: Json| {
+        engine.handle(
+            &tenant,
+            &Request {
+                method: Method::Post,
+                path: path.into(),
+                query: BTreeMap::new(),
+                body: Some(body),
+                caller: None,
+                ip: None,
+                idempotency_key: None,
+                headers: BTreeMap::new(),
+                raw_body: None,
+            },
+        )
+    };
+    for i in 0..20 {
+        let r = call(
+            "/upsert",
+            json!({ "id": format!("r{i}"), "grp": "a", "n": 1 }),
+        );
+        assert_eq!(r.status, 200, "{:?}", r.body);
+    }
+    assert_eq!(call("/read", json!({ "grp": "a" })).body["sharded"], 20);
+    let shards = Keyspace::new(&tenant).counter_range("sharded", &[KeyPart::Str("a")]);
+    let used = store
+        .entries()
+        .iter()
+        .filter(|(key, _)| shards.contains(key))
+        .count();
+    assert!(
+        (2..=4).contains(&used),
+        "20 rows landed on {used} of 4 shards"
+    );
 }

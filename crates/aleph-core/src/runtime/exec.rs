@@ -2335,3 +2335,25 @@ fn validate_output(
     }
     Ok(Value::Object(out))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::sort_comparisons;
+
+    #[test]
+    fn sorts_are_charged_n_times_ceil_log2_n_comparisons() {
+        let expected = [
+            (0, 0),
+            (1, 0),
+            (2, 2),
+            (3, 6),
+            (4, 8),
+            (5, 15),
+            (8, 24),
+            (9, 36),
+        ];
+        for (n, comparisons) in expected {
+            assert_eq!(sort_comparisons(n), comparisons, "{n} items");
+        }
+    }
+}
