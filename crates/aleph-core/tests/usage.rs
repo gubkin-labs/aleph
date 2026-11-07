@@ -89,7 +89,7 @@ fn copies_of_a_big_input_count_toward_memory() {
 fn matching_is_charged_per_character() {
     let matches = |pattern: &str| json!({ "kind": "matches", "of": s(), "pattern": pattern });
     assert_eq!(
-        codes(&route(&text(100), &[], &matches("a{0,250}b"))),
+        codes(&route(&text(100), &[], &matches("a{0,1100}b"))),
         [DiagnosticCode::InvalidExpression]
     );
     let big = format!("(?:a|b|c|d|e|f|g|h|i|j)*{}z", "[a-z]".repeat(40));
@@ -104,9 +104,9 @@ fn matching_is_charged_per_character() {
         [DiagnosticCode::InvalidExpression]
     );
     // A text near the limit is charged most of the route's ops, and runs in a few ms.
-    let manifest = route(&text(3500), &[], &matches("a{0,100}b"));
+    let manifest = route(&text(1100), &[], &matches("a{0,100}b"));
     let started = Instant::now();
-    let r = run(&manifest, &json!({ "s": "a".repeat(3500) }));
+    let r = run(&manifest, &json!({ "s": "a".repeat(1100) }));
     assert_eq!(r.body, json!(false));
     assert!(r.usage.ops > 1500, "{:?}", r.usage);
     assert!(started.elapsed() < Duration::from_millis(200));

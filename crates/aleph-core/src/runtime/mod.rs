@@ -20,6 +20,7 @@ mod env;
 mod exec;
 mod input;
 mod meter;
+mod pattern;
 mod process;
 mod time;
 mod webhook;
@@ -27,7 +28,7 @@ mod workflow;
 
 pub(crate) use blobs::MAX_BLOB_INFO_BYTES;
 pub use blobs::{BlobAccess, BlobGrant, BlobInfo, BlobRejection, BlobSigner};
-pub(crate) use builtins::{IN_LITERALS_PER_OP, compile_ops, compile_pattern, match_ops};
+pub(crate) use builtins::IN_LITERALS_PER_OP;
 pub use effects::{
     Delivery, DeliveryKind, Integrations, MemorySink, MockIntegrations, NoIntegrations, NullSink,
     RecordedCall, Sink,
@@ -38,6 +39,7 @@ pub use env::{Env, FixedEnv};
 pub use exec::LogEntry;
 pub(crate) use exec::sort_comparisons;
 pub use input::InputProblem;
+pub(crate) use pattern::{compile_ops, compile_pattern, match_ops};
 pub use process::{HandlerRun, ProcessReport};
 pub use webhook::{MemorySecrets, Secrets, sign_hex};
 

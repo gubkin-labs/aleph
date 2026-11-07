@@ -260,8 +260,21 @@
     }
   },
   {
-    "route": "get_legacy_products",
+    "route": "get_skus_sku_check",
     "step": 23,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 810,
+      "ops": 33,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "get_legacy_products",
+    "step": 24,
     "usage": {
       "bytesRead": 96,
       "calls": 0,

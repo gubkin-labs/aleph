@@ -11,66 +11,6 @@ use crate::value::Value;
 /// this stops pathological ones early.
 pub(crate) const MAX_STRING_BYTES: usize = 1024 * 1024;
 
-/// The largest compiled pattern `matches` accepts, in regex-lite's approximate bytes. Matching
-/// takes time proportional to the text's length times this size, so it's capped.
-pub(crate) const MAX_PATTERN_BYTES: u64 = 8 * 1024;
-
-/// Compiled sizes a pattern is rounded up to. Ops are charged by the class, not the exact size.
-const PATTERN_CLASSES: [u64; 5] = [512, 1024, 2048, 4096, MAX_PATTERN_BYTES];
-
-/// Characters times compiled bytes that one op of matching pays for. At worst, regex-lite's
-/// matcher takes about 0.3 ns per character per compiled byte, so an op stays near 5 µs.
-const MATCH_WORK_PER_OP: u64 = 16 * 1024;
-
-/// Compiled bytes one op of compiling pays for (compiling takes up to about 5 ns per byte, and
-/// may try every size class).
-const COMPILE_BYTES_PER_OP: u64 = 512;
-
-/// A compiled `matches` pattern and its size class.
-#[derive(Debug)]
-pub(crate) struct Pattern {
-    pub(crate) regex: regex_lite::Regex,
-    /// The smallest size class it compiles within, in bytes.
-    pub(crate) size: u64,
-}
-
-/// Compiles a pattern within [`MAX_PATTERN_BYTES`], finding its size class.
-pub(crate) fn compile_pattern(pattern: &str) -> Result<Pattern, String> {
-    let build = |limit: u64| {
-        regex_lite::RegexBuilder::new(pattern)
-            .size_limit(usize::try_from(limit).unwrap_or(usize::MAX))
-            .build()
-    };
-    if let Err(e) = build(MAX_PATTERN_BYTES) {
-        // Distinguish a pattern that's too big from one that doesn't parse.
-        return Err(match build(u64::from(u32::MAX)) {
-            Ok(_) => format!(
-                "the pattern compiles to more than {MAX_PATTERN_BYTES} bytes. Lower its counted \
-                 repetitions (like {{0,250}}) or split it into simpler patterns"
-            ),
-            Err(_) => format!("invalid pattern: {e}"),
-        });
-    }
-    for size in PATTERN_CLASSES {
-        if let Ok(regex) = build(size) {
-            return Ok(Pattern { regex, size });
-        }
-    }
-    Err(format!(
-        "the pattern compiles to more than {MAX_PATTERN_BYTES} bytes"
-    ))
-}
-
-/// Ops charged for compiling a pattern of this size class.
-pub(crate) fn compile_ops(size: u64) -> u64 {
-    size.div_ceil(COMPILE_BYTES_PER_OP)
-}
-
-/// Ops charged for matching `chars` characters against a pattern of this size class.
-pub(crate) fn match_ops(chars: u64, size: u64) -> u64 {
-    chars.saturating_mul(size).div_ceil(MATCH_WORK_PER_OP)
-}
-
 fn overflow() -> String {
     "number out of range".into()
 }
@@ -340,28 +280,6 @@ mod tests {
             replace(&"a".repeat(500), "a", &with).unwrap().len(),
             1_000_000
         );
-    }
-
-    #[test]
-    fn patterns_get_a_size_class_and_big_ones_are_refused() {
-        assert_eq!(compile_pattern(r"^\w+$").unwrap().size, 512);
-        let email = compile_pattern(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$").unwrap();
-        assert!(email.size <= 1024);
-        assert!(
-            compile_pattern("a{0,250}b")
-                .unwrap_err()
-                .contains("more than 8192 bytes")
-        );
-        assert!(
-            compile_pattern("(")
-                .unwrap_err()
-                .starts_with("invalid pattern")
-        );
-        // Matching is charged per character times the size class: a 254-character email is cheap,
-        // a 64 KB text against an 8 KB pattern is far over a route's ops.
-        assert!(match_ops(254, email.size) <= 16);
-        assert_eq!(match_ops(65_536, MAX_PATTERN_BYTES), 32_768);
-        assert_eq!(compile_ops(512), 1);
     }
 
     #[test]

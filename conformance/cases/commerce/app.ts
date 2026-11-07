@@ -134,6 +134,16 @@ a.route("GET /go/:sku")
     $.redirect($.fmt`/products/${params.sku}`, 301);
   });
 
+// Pattern matching is charged per character and per pattern state; this route's golden bounds
+// come from the WASM build and are checked natively, so both must count patterns the same way.
+a.route("GET /skus/:sku/check")
+  .auth("public")
+  .params({ sku })
+  .handle((_, { params }) => ({
+    wellFormed: params.sku.matches(/^[A-Z]{2}-[0-9]{1,6}$/),
+    padded: params.sku.matches("a".repeat(256)),
+  }));
+
 // ─── Orders ────────────────────────────────────────────────────────────────────────────────
 
 const Order = a.entity("Order", {

@@ -255,6 +255,28 @@
         }
       }
     },
+    "get_skus_sku_check": {
+      "bounds": {
+        "reads": 0,
+        "writes": 0,
+        "ops": 98,
+        "bytesRead": 0,
+        "effects": 0,
+        "calls": 0,
+        "memory": 1056
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "padded": {
+            "kind": "bool"
+          },
+          "wellFormed": {
+            "kind": "bool"
+          }
+        }
+      }
+    },
     "get_stats": {
       "bounds": {
         "reads": 6,

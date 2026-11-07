@@ -395,6 +395,20 @@
       }
     },
     {
+      "name": "sku patterns",
+      "request": {
+        "method": "GET",
+        "path": "/skus/BK-12/check"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "wellFormed": true,
+          "padded": false
+        }
+      }
+    },
+    {
       "name": "the deprecated route still answers",
       "request": {
         "method": "GET",

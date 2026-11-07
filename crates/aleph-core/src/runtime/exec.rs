@@ -104,7 +104,7 @@ pub(crate) struct Exec<'a> {
     pub(crate) inputs: &'a Inputs,
     pub(crate) vars: HashMap<VarId, Value>,
     /// Patterns `matches` compiled during this execution, by pattern text.
-    pub(crate) patterns: HashMap<&'a str, std::rc::Rc<builtins::Pattern>>,
+    pub(crate) patterns: HashMap<&'a str, std::rc::Rc<super::pattern::Pattern>>,
     /// Off while evaluating counter predicates, which are part of the write they belong to.
     pub(crate) metered: bool,
     /// Response headers, status, cookies, and logs the plan set.
@@ -2101,21 +2101,20 @@ impl<'a> Exec<'a> {
                         Some(compiled) => compiled.clone(),
                         None => {
                             let compiled = std::rc::Rc::new(
-                                builtins::compile_pattern(pattern).map_err(runtime)?,
+                                super::pattern::compile_pattern(pattern).map_err(runtime)?,
                             );
-                            self.meter
-                                .charge(crate::limits::Cost::ops(builtins::compile_ops(
-                                    compiled.size,
-                                )))?;
+                            self.meter.charge(crate::limits::Cost::ops(
+                                super::pattern::compile_ops(compiled.states),
+                            ))?;
                             self.patterns.insert(pattern, compiled.clone());
                             compiled
                         }
                     };
                     let chars = text.chars().count() as u64;
                     self.meter
-                        .charge(crate::limits::Cost::ops(builtins::match_ops(
+                        .charge(crate::limits::Cost::ops(super::pattern::match_ops(
                             chars,
-                            compiled.size,
+                            compiled.states,
                         )))?;
                     Value::Bool(compiled.regex.is_match(&text))
                 }

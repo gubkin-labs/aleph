@@ -2238,7 +2238,7 @@ impl<'a> Checker<'a> {
                     return (Ty::Bool, own + cost);
                 }
                 let size = match crate::runtime::compile_pattern(pattern) {
-                    Ok(compiled) => compiled.size,
+                    Ok(compiled) => compiled.states,
                     Err(message) => {
                         self.diag(Code::InvalidExpression, &format!("{path}.pattern"), message);
                         return (Ty::Bool, own + cost);

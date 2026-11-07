@@ -1358,6 +1358,54 @@
     },
     {
       "auth": {
+        "kind": "public"
+      },
+      "errors": {},
+      "id": "get_skus_sku_check",
+      "input": {
+        "body": {},
+        "params": {
+          "sku": {
+            "type": {
+              "kind": "string",
+              "max": 32,
+              "min": 1
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "GET",
+      "path": "/skus/:sku/check",
+      "plan": {
+        "body": [],
+        "output": {
+          "fields": {
+            "padded": {
+              "kind": "matches",
+              "of": {
+                "kind": "input",
+                "name": "sku",
+                "source": "params"
+              },
+              "pattern": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            "wellFormed": {
+              "kind": "matches",
+              "of": {
+                "kind": "input",
+                "name": "sku",
+                "source": "params"
+              },
+              "pattern": "^[A-Z]{2}-[0-9]{1,6}$"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
         "kind": "signedIn"
       },
       "errors": {

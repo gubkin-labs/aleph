@@ -42,7 +42,7 @@
               "source": "body",
               "name": "s"
             },
-            "pattern": "a{0,250}b"
+            "pattern": "a{0,1100}b"
           }
         }
       },

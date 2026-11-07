@@ -230,7 +230,7 @@ fn cases() -> Vec<Case> {
         ),
     );
 
-    // Regular expressions: matching is linear in the text, times the compiled pattern's size.
+    // Regular expressions: matching is linear in the text, times the pattern's states.
     let class = format!("(?:a|b|c|d|e|f|g|h|i|j)*{}z", "[a-z]".repeat(40));
     let matches = |p: &str| json!({ "kind": "matches", "of": body("s"), "pattern": p });
     case(
@@ -252,28 +252,28 @@ fn cases() -> Vec<Case> {
         matches(&class),
     );
     case(
-        "matches/14 KB, 256-char pattern x1",
-        text_input(14 * 1024),
+        "matches/3 KB, 256-char pattern x1",
+        text_input(3000),
         vec![],
         matches(&class),
     );
     case(
-        "matches/7 KB, 256-char pattern x1",
-        text_input(7000),
+        "matches/240 chars, a{0,500}b (1003 states)",
+        text_input(240),
         vec![],
-        matches(&class),
+        matches("a{0,500}b"),
     );
     case(
-        "matches/3.5 KB, a{0,100}b x1",
-        text_input(3500),
+        "matches/900 chars, a x256",
+        text_input(900),
         vec![],
-        matches("a{0,100}b"),
+        matches(&a(256)),
     );
     case(
-        "matches/20 chars, 256-char pattern x660",
+        "matches/20 chars, 256-char pattern x90",
         text_input(20),
         vec![],
-        count_of(&matches(&class), 600),
+        count_of(&matches(&class), 90),
     );
     let email = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$";
     case(
