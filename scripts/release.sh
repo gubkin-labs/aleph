@@ -54,7 +54,8 @@ step "Packing"
 node scripts/release-pack.mjs --version "$VERSION" --out release
 
 step "Publishing to npm"
-while read -r file; do
+# Read the order up front: npm needs this terminal's stdin to ask for a one-time password.
+for file in $(cat release/publish-order.txt); do
   name=$(tar -xzOf "release/$file" package/package.json |
     node -p "JSON.parse(require('fs').readFileSync(0)).name")
   if npm view "$name@$VERSION" version >/dev/null 2>&1; then
@@ -62,7 +63,7 @@ while read -r file; do
     continue
   fi
   npm publish "./release/$file" --access public --tag "$TAG"
-done <release/publish-order.txt
+done
 
 step "Tagging and creating the GitHub release"
 git tag -a "v$VERSION" -m "Aleph v$VERSION"
