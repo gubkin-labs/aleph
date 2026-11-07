@@ -114,7 +114,7 @@ function simulate(code: string[], steps: Step[], start: number, upTo = steps.len
 const TOKEN =
   /(\/\/.*$)|("(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?|`[^`]*`?)|(\b\d+\b)|\b(import|from|const|export|default|return|true|false)\b|(\.\w+)(?=\()|(\b[A-Z]\w*\b)/g;
 
-export function highlight(text: string): ReactNode[] {
+function highlight(text: string): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   for (const m of text.matchAll(TOKEN)) {

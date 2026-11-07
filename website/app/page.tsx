@@ -2,7 +2,6 @@ import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { Demo, Panel } from "@/components/Demo";
 import { Install } from "@/components/Install";
-import { Playground } from "@/components/Playground";
 import {
   HowScene,
   IsolationScene,
@@ -11,7 +10,6 @@ import {
   TransactionScene,
 } from "@/components/Scenes";
 import { agent, cost, evolve, loop, more } from "./demos";
-import { PLAYGROUND } from "./playgrounds";
 
 /** What a backend usually needs and an Aleph author doesn't write. Each is struck out in turn. */
 const HANDLED = [
@@ -78,8 +76,6 @@ export default function Home() {
         </ul>
         <Install />
       </section>
-
-      <Playground categories={PLAYGROUND} />
 
       <Section
         eyebrow="Why Aleph"
