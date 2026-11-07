@@ -812,8 +812,9 @@ fn a_literal_slice_end_bounds_the_result() {
     };
     let (whole, none, one) = (slice(None), slice(Some(0)), slice(Some(1)));
     assert!(none < one && one < whole, "{none} {one} {whole}");
-    // A negative end counts from the end, so it doesn't bound the length.
-    assert_eq!(slice(Some(-1)), whole);
+    // A negative end counts from the end, so it doesn't bound the length: it's charged like an
+    // end past the list (both pay for the end literal itself).
+    assert_eq!(slice(Some(-1)), slice(Some(3)));
 }
 
 /// The inferred output schema of the route `POST /r` whose output is `{ v: expr }`, at `v`.

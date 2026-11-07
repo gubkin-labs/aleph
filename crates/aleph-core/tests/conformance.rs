@@ -232,24 +232,38 @@ fn route_examples_pass() {
     }
 }
 
+/// An engine set up like the WASM dev engine, with its clock, sink, mocks, and secrets.
+type Harness = (
+    Engine,
+    Arc<FixedEnv>,
+    Arc<MemorySink>,
+    Arc<MockIntegrations>,
+    Arc<MemorySecrets>,
+);
+
+fn harness(valid: aleph_core::ValidatedManifest, seed: u64) -> Harness {
+    let env = Arc::new(FixedEnv::new(0, seed));
+    let sink = Arc::new(MemorySink::new());
+    let integrations = Arc::new(MockIntegrations::new());
+    let secrets = Arc::new(MemorySecrets::new());
+    let engine = Engine::new(valid, Arc::new(MemoryStore::new()), env.clone())
+        .with_sink(sink.clone())
+        .with_integrations(integrations.clone())
+        .with_secrets(secrets.clone())
+        // The same base and key as the WASM dev engine, so URLs match.
+        .with_blobs(BlobSigner::new("/_aleph/blobs", b"aleph-dev-blob-signing-key").unwrap());
+    (engine, env, sink, integrations, secrets)
+}
+
 #[test]
 fn scenarios_behave_as_expected_within_bounds() {
     for dir in cases() {
         let valid = parse_and_validate(&read(&dir.join("manifest.json")), &Limits::ROUTE).unwrap();
         let report = valid.report().clone();
         let scenario: Scenario = serde_json::from_str(&read(&dir.join("scenarios.json"))).unwrap();
-        let env = Arc::new(FixedEnv::new(0, scenario.seed));
-        let sink = Arc::new(MemorySink::new());
-        let integrations = Arc::new(MockIntegrations::new());
-        let secrets = Arc::new(MemorySecrets::new());
+        let (engine, env, sink, integrations, secrets) = harness(valid, scenario.seed);
         // The WASM dev engine uses tenant "dev"; ids and responses must match it exactly.
         let tenant = TenantId::new("dev").unwrap();
-        let engine = Engine::new(valid, Arc::new(MemoryStore::new()), env.clone())
-            .with_sink(sink.clone())
-            .with_integrations(integrations.clone())
-            .with_secrets(secrets.clone())
-            // The same base and key as the WASM dev engine, so URLs match.
-            .with_blobs(BlobSigner::new("/_aleph/blobs", b"aleph-dev-blob-signing-key").unwrap());
         let mut vars = BTreeMap::new();
         let mut extra = 0;
         let mut usage = Vec::new();
