@@ -231,92 +231,86 @@ export function GeneratedScene() {
   );
 }
 
-/** An open-ended language needs a reviewer; a small vocabulary can be checked mechanically. */
+/** Two cars, two roads: one weaves through everything a backend needs, the other gets it built in. */
 export function TradeoffScene() {
-  const choices = [
-    { t: "any library", x: 30, y: 70 },
-    { t: "raw SQL", x: 168, y: 70 },
-    { t: "unbounded loop", x: 54, y: 100 },
-    { t: "threads", x: 186, y: 100 },
-    { t: "eval()", x: 30, y: 130 },
-    { t: "network call", x: 112, y: 130 },
-    { t: "fs access", x: 44, y: 160 },
-    { t: "custom auth", x: 150, y: 160 },
-    { t: "any query", x: 80, y: 190 },
+  const obstacles = [
+    { t: "servers", x: 110, up: true },
+    { t: "ORM", x: 190, up: false },
+    { t: "auth", x: 270, up: true },
+    { t: "retries", x: 350, up: false },
+    { t: "scaling", x: 430, up: true },
   ];
-  const vocab = ["route", "access", "entity", "query", "effect"];
+  const features = [
+    { t: "auth", x: 80, row: 0 },
+    { t: "transactions", x: 150, row: 1 },
+    { t: "retries", x: 220, row: 0 },
+    { t: "scaling", x: 290, row: 1 },
+    { t: "migrations", x: 360, row: 0 },
+    { t: "API docs", x: 430, row: 1 },
+    { t: "isolation", x: 500, row: 0 },
+  ];
+  const car = (cls: string) => (
+    <g className={`s-car ${cls}`}>
+      <rect x="-18" y="-9" width="36" height="18" rx="6" className="s-car-body" />
+      <rect x="2" y="-7" width="9" height="14" rx="2.5" className="s-car-glass" />
+      <rect x="-14" y="-6" width="6" height="12" rx="2" className="s-car-glass" />
+    </g>
+  );
   return (
     <svg
-      viewBox="0 0 560 270"
+      viewBox="0 0 560 280"
       className="scene"
       role="img"
-      aria-label="A general-purpose language allows any library, query, or loop, so every app needs its own review; Aleph's five building blocks are checked before they ship"
+      aria-label="On the general-purpose road, a car weaves around servers, an ORM, auth, retries, and scaling. On the Aleph road, a car drives straight past auth, transactions, retries, scaling, migrations, API docs, and isolation, all built in."
     >
-      <text x="16" y="26" className="s-label">
+      <text x="16" y="20" className="s-label">
         general-purpose
       </text>
-      <rect x="16" y="40" width="254" height="172" rx="6" className="s-card" />
-      {choices.map((c, i) => (
-        <text
-          key={c.t}
-          x={c.x}
-          y={c.y}
-          className="s-tiny s-choice"
-          style={{ animationDelay: `${(i * 0.53) % 3}s` }}
-        >
-          {c.t}
-        </text>
-      ))}
-      <text x="16" y="240" className="s-tiny s-muted">
-        anything goes, so every app needs
-      </text>
-      <text x="16" y="256" className="s-tiny s-muted">
-        its own servers, review, guardrails
-      </text>
-
-      <text x="296" y="26" className="s-label">
-        aleph
-      </text>
-      {vocab.map((v, i) => {
-        const y = 44 + i * 34;
-        const d = `M396 ${y + 13} C 418 ${y + 13}, 418 126, 440 126`;
+      <rect x="16" y="30" width="528" height="84" rx="6" className="s-road" />
+      <line x1="16" y1="72" x2="544" y2="72" className="s-lane" />
+      <line x1="530" y1="30" x2="530" y2="114" className="s-finish" />
+      {obstacles.map((o) => {
+        const w = o.t.length * 6.6 + 18;
+        const y = o.up ? 38 : 84;
         return (
-          <g key={v}>
-            <rect x="296" y={y} width="100" height="26" rx="13" className="s-pill" />
-            <text x="346" y={y + 17} className="s-tiny" textAnchor="middle">
-              {v}
+          <g key={o.t}>
+            <rect x={o.x - w / 2} y={y} width={w} height="22" rx="3" className="s-obstacle" />
+            <text x={o.x} y={y + 15} className="s-tiny s-warn-text" textAnchor="middle">
+              {o.t}
             </text>
-            <path d={d} className="s-edge" />
-            <path
-              d={d}
-              pathLength={1}
-              className="s-flow"
-              style={{ animationDelay: `${i * 0.18}s` }}
-            />
           </g>
         );
       })}
-      <rect
-        x="440"
-        y="102"
-        width="104"
-        height="48"
-        rx="6"
-        className="s-card s-strong-card s-out"
-        style={{ animationDelay: "0.5s" }}
-      />
-      <text x="492" y="123" className="s-tiny s-ok-text" textAnchor="middle">
-        ✔ trusted
+      {car("s-car-a")}
+
+      <text x="16" y="150" className="s-label">
+        aleph
       </text>
-      <text x="492" y="139" className="s-tiny s-muted" textAnchor="middle">
-        by default
-      </text>
-      <text x="296" y="240" className="s-tiny s-muted">
-        five building blocks, each one
-      </text>
-      <text x="296" y="256" className="s-tiny s-muted">
-        bounded and checked before it ships
-      </text>
+      <rect x="16" y="160" width="528" height="56" rx="6" className="s-road" />
+      <line x1="16" y1="188" x2="544" y2="188" className="s-lane" />
+      <line x1="530" y1="160" x2="530" y2="216" className="s-finish" />
+      {features.map((f) => {
+        const w = f.t.length * 6.6 + 24;
+        const y = f.row === 0 ? 226 : 252;
+        const delay = ((f.x - 24) / 506) * 3.6;
+        return (
+          <g key={f.t}>
+            <rect
+              x={f.x - w / 2}
+              y={y}
+              width={w}
+              height="20"
+              rx="10"
+              className="s-feature"
+              style={{ animationDelay: `${delay}s` }}
+            />
+            <text x={f.x} y={y + 14} className="s-tiny" textAnchor="middle">
+              ✔ {f.t}
+            </text>
+          </g>
+        );
+      })}
+      {car("s-car-b")}
     </svg>
   );
 }

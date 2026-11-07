@@ -86,8 +86,8 @@ export default function Home() {
         }
         panel={
           <Panel
-            title="what a language allows"
-            caption="A narrow language can be checked by a machine instead of reviewed by a person."
+            title="two roads to production"
+            caption="General-purpose code steers around everything a backend needs. In Aleph, it’s built into the road."
           >
             <TradeoffScene />
           </Panel>
