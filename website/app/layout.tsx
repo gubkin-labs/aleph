@@ -1,3 +1,4 @@
+import { Analytics } from "@vercel/analytics/next";
 import type { Metadata } from "next";
 import { Instrument_Serif } from "next/font/google";
 import Link from "next/link";
@@ -43,6 +44,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <a href="/llms.txt">llms.txt</a> · <a href={REPO}>Source</a>
           </span>
         </footer>
+        <Analytics />
       </body>
     </html>
   );
