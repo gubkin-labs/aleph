@@ -773,3 +773,45 @@ fn inserting_over_an_expired_row_stays_within_bounds_exactly() {
         "the purge wrote too"
     );
 }
+
+#[test]
+fn expression_limits_hold_at_their_exact_bounds() {
+    let check = |expr: Json| codes(&manifest(vec![], obj(json!({ "v": expr }))));
+    let name = || body("name");
+    let split =
+        |max: u32| json!({ "kind": "split", "of": name(), "sep": lit(json!(",")), "max": max });
+    let pad = |length: u32, fill: &str| json!({ "kind": "pad", "of": name(), "length": length, "fill": fill });
+    let matches = |pattern: String| json!({ "kind": "matches", "of": name(), "pattern": pattern });
+    let format_time = |pattern: String| json!({ "kind": "formatTime", "of": { "kind": "now" }, "pattern": pattern });
+    let bad = || only("invalid_expression");
+
+    assert_eq!(check(split(1)), ok());
+    assert_eq!(check(split(1000)), ok());
+    assert_eq!(check(split(0)), bad());
+    assert_eq!(check(split(1001)), bad());
+
+    assert_eq!(check(pad(1000, "0")), ok());
+    assert_eq!(check(pad(1001, "0")), bad());
+    assert_eq!(check(pad(5, "")), bad());
+
+    assert_eq!(check(matches("a".repeat(256))), ok());
+    assert_eq!(check(matches("a".repeat(257))), bad());
+
+    assert_eq!(check(format_time("x".repeat(64))), ok());
+    assert_eq!(check(format_time("x".repeat(65))), bad());
+}
+
+#[test]
+fn a_literal_slice_end_bounds_the_result() {
+    let slice = |end: Option<i64>| {
+        let mut s = json!({ "kind": "slice", "of": list(json!([lit(json!(1)), lit(json!(2)), lit(json!(3))])), "start": lit(json!(0)) });
+        if let Some(end) = end {
+            s["end"] = lit(json!(end));
+        }
+        bounds(&manifest(vec![], obj(json!({ "v": s })))).memory
+    };
+    let (whole, none, one) = (slice(None), slice(Some(0)), slice(Some(1)));
+    assert!(none < one && one < whole, "{none} {one} {whole}");
+    // A negative end counts from the end, so it doesn't bound the length.
+    assert_eq!(slice(Some(-1)), whole);
+}
