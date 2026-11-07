@@ -5,6 +5,7 @@ import { Install } from "@/components/Install";
 import {
   HowScene,
   IsolationScene,
+  RuntimeScene,
   SharedScene,
   TradeoffScene,
   TransactionScene,
@@ -243,6 +244,39 @@ export default function Home() {
           That changes the price, too. A platform doesn’t have to set aside servers and a database
           for every app it hosts, so it can offer apps built with Aleph much better pricing than a
           dedicated deployment. <Link href="/docs/shared-infrastructure/">How sharing works</Link>
+        </p>
+      </Section>
+
+      <Section
+        title={
+          <>
+            Write TypeScript, <em>run on Rust.</em>
+          </>
+        }
+        panel={
+          <Panel
+            title="one manifest, any runtime"
+            caption="TypeScript is only how you write the app. What ships is a manifest, and any engine that reads it can run it."
+          >
+            <RuntimeScene />
+          </Panel>
+        }
+      >
+        <p>
+          Your TypeScript never runs in production. It compiles to a manifest, and the manifest
+          doesn’t care what executes it. Today that’s aleph-core, a small engine written in Rust.
+        </p>
+        <p>
+          So you get the Rust runtime’s benefits without writing Rust: no garbage-collection pauses
+          or JIT warm-up, steady latency under load, and memory that stays small enough to pack
+          thousands of apps into one process. A new version of your app is a manifest loaded in
+          milliseconds, not a container booting, so there are no cold starts.
+        </p>
+        <p>
+          The same core runs as WebAssembly in the CLI and in <code>aleph dev</code>, so what you
+          test locally is exactly what runs in production. And because the manifest is an open spec,
+          a platform can swap in a faster engine, or a different language, without you changing a
+          line. <Link href="/docs/running/">Running Aleph</Link>
         </p>
       </Section>
 

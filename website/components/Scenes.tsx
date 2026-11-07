@@ -507,3 +507,67 @@ export function TransactionScene() {
     </svg>
   );
 }
+
+/** One manifest, any runtime: the TypeScript is only how you write it. */
+export function RuntimeScene() {
+  const runtimes = [
+    { y: 46, name: "aleph-core", note: "Rust, native: the platform", strong: true },
+    { y: 112, name: "aleph-core", note: "Rust as WASM: CLI, aleph dev, tests", strong: false },
+    { y: 178, name: "your engine", note: "Go, Zig, anything that reads the spec", strong: false },
+  ];
+  return (
+    <svg
+      viewBox="0 18 560 228"
+      className="scene"
+      role="img"
+      aria-label="You write app.ts in TypeScript; Aleph compiles it to manifest.json; the same manifest runs on the Rust core natively, on the Rust core as WASM, or on any other engine that implements the open spec."
+    >
+      <text x="64" y="104" className="s-tiny s-muted" textAnchor="middle">
+        you write
+      </text>
+      <rect x="16" y="116" width="96" height="44" rx="6" className="s-card s-strong-card" />
+      <text x="64" y="142" className="s-file" textAnchor="middle">
+        app.ts
+      </text>
+      <path d="M112 138 L146 138" className="s-edge" />
+      <path d="M112 138 L146 138" pathLength={1} className="s-flow" />
+
+      <text x="211" y="104" className="s-tiny s-muted" textAnchor="middle">
+        aleph builds
+      </text>
+      <rect x="146" y="116" width="130" height="44" rx="6" className="s-card" />
+      <text x="211" y="135" className="s-file" textAnchor="middle">
+        manifest.json
+      </text>
+      <text x="211" y="151" className="s-tiny s-muted" textAnchor="middle">
+        no runtime inside
+      </text>
+
+      {runtimes.map((r, i) => (
+        <g key={r.note}>
+          <path d={`M276 138 C 300 138, 300 ${r.y + 22}, 324 ${r.y + 22}`} className="s-edge" />
+          <path
+            d={`M276 138 C 300 138, 300 ${r.y + 22}, 324 ${r.y + 22}`}
+            pathLength={1}
+            className="s-flow"
+            style={{ animationDelay: `${0.5 + i * 0.3}s` }}
+          />
+          <rect
+            x="324"
+            y={r.y}
+            width="220"
+            height="44"
+            rx="6"
+            className={r.strong ? "s-card s-strong-card" : "s-card"}
+          />
+          <text x="434" y={r.y + 19} className="s-file" textAnchor="middle">
+            {r.name}
+          </text>
+          <text x="434" y={r.y + 35} className="s-tiny s-muted" textAnchor="middle">
+            {r.note}
+          </text>
+        </g>
+      ))}
+    </svg>
+  );
+}
