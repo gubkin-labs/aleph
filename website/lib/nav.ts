@@ -39,6 +39,12 @@ export const NAV: Section[] = [
     title: "Concepts",
     pages: [
       {
+        slug: "programming-model",
+        title: "How Aleph programs work",
+        description:
+          "How your code runs, where state lives, what the cost model counts, and what the language leaves out.",
+      },
+      {
         slug: "bounded-by-construction",
         title: "Bounded by construction",
         description:

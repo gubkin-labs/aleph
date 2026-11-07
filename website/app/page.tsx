@@ -102,7 +102,8 @@ export default function Home() {
           Aleph makes the opposite trade. It gives up some flexibility for shared building blocks
           for what every backend needs, predictable behavior, and code that’s trusted by default.
           When agents write the code, that trade matters more than ever: a narrow language is easy
-          to check and hard to get wrong. <Link href="/docs/#why-declarative">Why declarative</Link>
+          to check and hard to get wrong.{" "}
+          <Link href="/docs/programming-model/">How Aleph programs work</Link>
         </p>
       </Section>
 
@@ -169,8 +170,11 @@ export default function Home() {
         </p>
         <p>
           Every one of them is checked the same way: triggers and schedules get a worst-case cost,
-          and their effects go out only after they commit.{" "}
-          <Link href="/docs/background-work/">Background work and workflows</Link>
+          and their effects go out only after they commit.
+        </p>
+        <p>
+          <Link href="/docs/programming-model/">How Aleph programs work</Link>: how state is
+          managed, what the cost model counts, and what the language leaves out.
         </p>
       </Section>
 
@@ -349,8 +353,8 @@ export default function Home() {
           <Link href="/docs/quickstart/" className="button">
             Start the quickstart
           </Link>
-          <Link href="/docs/#why-declarative" className="button button-secondary">
-            Why declarative
+          <Link href="/docs/programming-model/" className="button button-secondary">
+            How Aleph programs work
           </Link>
         </div>
       </section>

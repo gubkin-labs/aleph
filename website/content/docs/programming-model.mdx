@@ -1,0 +1,147 @@
+# How Aleph programs work
+
+Aleph looks like TypeScript, but it runs differently, and that difference is where its guarantees come from. This page explains how your code runs, where state lives, what the cost model counts, and what the language deliberately leaves out.
+
+## Your code runs once, at build time
+
+When `aleph build` or `aleph check` loads `app.ts`, each handler runs **once**, with placeholder values. Nothing in it touches real data. Every SDK call records an operation instead of performing it:
+
+```ts
+a.route("GET /orgs/:orgId/open")
+  .params({ orgId: t.string().max(64) })
+  .handle((_, { params }) => {
+    const tasks = Task.query({ prefix: [params.orgId], limit: 50 }); // records a query
+    return tasks.filter((task) => task.done.not());                  // records a filter
+  });
+```
+
+- `params.orgId` is an expression meaning "the `orgId` path parameter", not a string.
+- `Task.query(...)` returns a placeholder for "the rows this query will return", not rows.
+- `task.done.not()` returns an expression meaning "not done", not a boolean.
+
+The result is a **plan**: a tree of built-in operations saved in the manifest. On every request, the core interprets that plan. Your JavaScript never runs in production.
+
+Two consequences follow:
+
+- **Plain `if` and `for` run at build time.** They run once, while the plan is recorded, so they can't depend on request data. A JavaScript loop over a constant simply records its body that many times. Use the `$` helpers for anything decided per request.
+- **Request data can't be used as a JavaScript value.** `for (const t of tasks)` or `if (task.done)` throws at build time, because a placeholder has no items and no truth value. The SDK catches most of these mistakes.
+
+## Values, not variables
+
+A `const` in a handler names a value. It's computed once per request, and it can't be reassigned from one pass of a loop to the next. Most loops that update a variable have a direct replacement:
+
+| Instead of | Write |
+|---|---|
+| `total += x` in a loop | `list.sum((item) => ...)` |
+| a counter | `list.count((item) => ...)` |
+| best so far | `list.max(...)`, `list.min(...)`, or `list.sortBy(...).first()` |
+| a "found" flag | `list.some(...)`, `list.every(...)` |
+| building a new list | `list.map(...)`, `list.filter(...)`, `list.concat(...)` |
+| stopping at the first match | `list.filter(...).first()` |
+| state that must outlive the request | a row, written in `$.forEach` |
+
+<Tbd>
+State carried from one pass of a loop to the next (a running balance, walking a chain until a condition holds) isn't expressible yet. Two additions are planned: `$.let(expr)`, which binds an intermediate value, and a bounded `$.loop({ max, state })`, costed as `max` passes.
+</Tbd>
+
+## Control flow
+
+Branches and loops nest freely: a loop can hold a branch that holds another loop.
+
+| | |
+|---|---|
+| `$.if(cond).then(...).else(...)`, `$.when(cond, ...)` | branch |
+| `$.select(cond, a, b)`, `$.match(value, { ... })` | choose a value |
+| `$.ensure(cond, error)`, `$.fail(error)` | stop with a declared error |
+| `.map`, `.filter`, `.some`, `.every`, `.count`, `.sum`, `.min`, `.max`, `.sortBy`, `.take` | loops that compute (they may read, never write) |
+| `$.forEach(list, ...)`, `.updateAll`, `.deleteAll` | loops that write |
+
+```ts
+a.route("POST /orgs/:orgId/close-overdue")
+  .params({ orgId: t.string().max(64) })
+  .handle(($, { params }) => {
+    const tasks = Task.query({ prefix: [params.orgId], limit: 40 });
+    $.forEach(tasks, (task) => {
+      $.when(task.done.not().and(task.dueAt.isSet()), () => {
+        task.update({ status: "closed" });
+      });
+    });
+    return { closed: tasks.count((task) => task.done.not()) };
+  });
+```
+
+Every loop runs over a list with a known maximum size: a query's `limit`, an array input's maximum, or the maximum parts of a `.split`. There's no `while` and no recursion.
+
+{/* scope */}
+
+## Where state lives
+
+- **Nothing stays in memory between requests.** There are no global variables, in-process caches, or sessions. Each request starts from its inputs and the data.
+- **Durable state is data you declared:**
+  - rows of entities (with their indexes)
+  - counters, which are kept up to date as rows change
+  - a workflow instance's typed state, carried from step to step
+  - the payloads of queued jobs and events
+- **A request's inputs** are its path parameters, query, body, and headers, plus the authenticated **caller** (`$.caller`). A handler's input is its trigger's payload.
+- **Time and ids come from the runtime.** `$.now()` gives the request's time, and fields declared `t.id().generated()` get new ids, so tests can pin both.
+
+### Transactions and effects
+
+Every request, job, and workflow step is **one serializable transaction**. It sees a consistent snapshot, and its writes all commit or none do. A conflicting transaction is re-run automatically.
+
+Effects (emails, events, jobs, channel messages) are recorded during the run and released **only after the commit, exactly once**. A request that fails halfway sends nothing. See [Transactions and schema changes](/docs/transactions/).
+
+## The cost model
+
+Before an app deploys, the checker computes the worst case of every route and handler on seven resources: reads, writes, operations, bytes read, memory, effects, and integration calls.
+
+- A sequence of steps **adds** up.
+- A branch costs its **more expensive** side.
+- A loop costs one pass **times** the list's maximum size, so nested loops multiply.
+- A query reads at most its `limit` rows.
+
+The result is compared with the [limits](/docs/reference/limits/): for a route, 250 reads, 50 writes, and 2,000 operations. A plan that could go over is rejected, with the line and the bound to change:
+
+```text
+✖ over_budget at app.ts:44:4 (routes[1].plan)
+  route "create_post" can use up to 40809 ops in the worst case, over the limit of 2000.
+  Lower the bounds that drive it (query limits, list sizes) or split the work.
+```
+
+At run time, a meter charges the same costs as they happen and stops any run at its first charge over a limit. The checker says the meter will never trip; the meter makes sure. See [Bounded by construction](/docs/bounded-by-construction/).
+
+Complex logic is fine. What matters is the worst case, so a tighter bound (a smaller page, fewer items per request, `.take(n)`) is usually the fix.
+
+## Where work goes
+
+| The work | Use | Why |
+|---|---|---|
+| Logic that fits one request's budget, however complex | a **route** | one transaction: all or nothing |
+| Reacting to a change or an event | an **entity trigger** or **event handler** | runs after the commit, with its own budget |
+| More than one request can do | a **queue job** | higher limits (500 reads, 200 writes) |
+| Every row of an entity | a **scheduled scan** | walks the data in bounded batches |
+| Steps over time: waits, outside calls, undo | a **workflow** | durable state, retries, compensation |
+
+Keep work in a route when you can. Each job or workflow step is its own transaction, so splitting trades all-or-nothing for scale or durability. See [Background work and workflows](/docs/background-work/).
+
+### Chains of handlers
+
+Each handler run is bounded, and the checker also rejects **trigger cycles**: handlers that set each other off without end, like a trigger that inserts a row of its own entity. A guarded, intended cycle declares `maxDepth`, which the runtime enforces. A queue job that re-enqueues its own queue to work in batches is allowed, up to 10,000 times in a row. See [Trigger cycles](/docs/background-work/#trigger-cycles).
+
+## What you can't do
+
+These limits are what buy the guarantees:
+
+- **No arbitrary code at request time.** No npm packages, no `fetch`, no filesystem. The outside world is reached through declared [integrations](/docs/integrations/), and incoming calls arrive as webhooks.
+- **No unbounded loops or recursion.** Every loop has a declared maximum.
+- **No mutable variables across loop passes** (see above).
+- **No access to another app's data.** Every key is built inside the app's own keyspace, and no expression can name another's. See [Shared infrastructure and isolation](/docs/shared-infrastructure/).
+- **No work beyond the budgets in one run.** Bigger work moves to jobs, scans, and workflows.
+
+## What you can expect
+
+- Every route and handler has a known worst case before it deploys, and that worst case is enforced while it runs.
+- Every request is atomic, and its effects go out exactly once, after commit.
+- No request, bug, or loop in your app can take capacity from another app on the same platform.
+- Schema changes are compared with what's deployed, and breaking ones are blocked.
+- The same manifest runs the same way in `aleph dev`, in `aleph test`, and in production, because it's the same core.
