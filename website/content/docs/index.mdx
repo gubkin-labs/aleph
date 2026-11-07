@@ -34,8 +34,8 @@ It reads like ordinary TypeScript, but the handlers don't run per request. They 
 
 A program can do anything at run time, so nobody knows in advance what a request will cost. A description can be read before it runs. Everything else follows from that:
 
-- **Known costs before deploy.** The checker computes the most each route can read, write, compute, call, and allocate, from your string maximums, query limits, and list sizes. A route that could go over budget is rejected with a diagnostic that names the line. A runtime meter enforces the same bounds while it runs. See [Bounded by construction](/docs/bounded-by-construction/).
-- **Safe to share.** No request can run away with the CPU or the database, and no app can name another's keys, so many apps can share the same processes and database. See [Shared infrastructure and isolation](/docs/shared-infrastructure/).
+- **Known costs before deploy.** Because a route is a fixed plan, not a program, the checker can count the most it can ever read, write, compute, call, and allocate, from your string maximums, query limits, and list sizes. A route that could go over budget is rejected with a diagnostic that names the line. A runtime meter enforces the same bounds while it runs. See [Bounded by construction](/docs/bounded-by-construction/).
+- **Safe to share, so cheaper to run.** No request can run away with the CPU, memory, or the database, and no app can name another's keys. So many apps can share the same processes and database, instead of each getting its own isolated runtime (a Lambda function, a container, or a VPS) and database, mostly idle. See [Shared infrastructure and isolation](/docs/shared-infrastructure/).
 - **Correct by default.** Every request is one serializable transaction. Emails, jobs, and events go out exactly once, after commit. Idempotent routes replay their response for a repeated key.
 - **Nothing to operate.** Storage layout, retries, the outbox, and scaling are the runtime's job. There are no Dockerfiles, queues to provision, or deploy pipelines.
 - **One source for everything.** The same declarations produce input validation, response types, a typed client, OpenAPI, MCP tools for agents, and tests from worked examples.
@@ -44,7 +44,7 @@ A program can do anything at run time, so nobody knows in advance what a request
 ### What you give up
 
 - **No arbitrary code in requests.** You compose built-in operations; the outside world is reached through declared [integrations](/docs/integrations/).
-- **No unbounded loops or scans.** Loops run over lists with a known maximum. Work over all your data becomes a [schedule that walks it in batches](/docs/background-work/).
+- **No unbounded loops or scans.** Loops run over lists with a known maximum, or declare their own (`$.loop`). Work over all your data becomes a [schedule that walks it in batches](/docs/background-work/).
 - **Per-request budgets.** A route reads at most 250 rows and writes at most 50; bigger work moves to jobs and workflows. See [Limits](/docs/reference/limits/).
 
 These constraints are what buy the guarantees, and most application backends fit inside them.

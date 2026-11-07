@@ -95,8 +95,9 @@ export default function Home() {
         }
       >
         <p>
-          General-purpose languages let an app do anything. So every app needs its own servers, its
-          own review, and its own guardrails, and someone has to set up and maintain all of it.
+          General-purpose languages let an app do anything. So every app needs its own isolated
+          runtime, like a Lambda function, a Docker container, or a VPS, plus its own review and its
+          own guardrails, and someone has to set up and maintain all of it.
         </p>
         <p>
           Aleph makes the opposite trade. It gives up some flexibility for shared building blocks
@@ -268,9 +269,10 @@ export default function Home() {
         }
       >
         <p>
-          A backend usually gets its own server, database, and cache, sized for its busiest hour and
-          idle the rest of the day. It needs them to itself because, in a shared setup, one runaway
-          query or one bug can hurt everyone.
+          A backend usually gets its own isolated runtime (a Lambda, a container, or a VPS), its own
+          database, and its own cache, sized for its busiest hour and idle the rest of the day. It
+          needs them to itself because, in a shared setup, one runaway query or one bug can hurt
+          everyone.
         </p>
         <p>
           Aleph rules both out. It counts what every route can cost and refuses any that could take

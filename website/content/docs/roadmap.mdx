@@ -8,11 +8,11 @@ Aleph is pre-1.0. This page is the honest list of what exists in the language to
 |---|---|
 | **Auth** | Per-route rules: public, signed-in, org members by role, API keys by scope. Caller profiles and a user directory |
 | **Data** | Entities with ordered keys; unique, partial, and computed indexes; prefix, range, and `anyOf` queries; cursor pagination; counters (count, sum, min/max, distinct, sharded, time-bucketed); invariants; versioned rows; row expiry; parent/child relations with cascading deletes; schema evolution checks |
-| **Compute** | Routes with full HTTP control; bounded logic; events, entity triggers, queues with retries and dead letters, keyed and delayed jobs, interval and calendar schedules, batch scans; durable workflows |
+| **Compute** | Routes with full HTTP control; bounded logic, including loops that carry state; events, entity triggers, queues with retries and dead letters, keyed and delayed jobs, interval and calendar schedules, batch scans; durable workflows |
 | **Integrations** | Declared calls (journaled) and sends (after commit); signed webhooks (HMAC, Stripe, GitHub) with dedupe |
 | **API surface** | Inferred and declared response types, typed clients, OpenAPI, MCP tools |
 | **Verifying** | Route examples and `aleph test`; `aleph dev` with watch, seeds, persistent data, mocks, and an inspector |
-| **Guarantees** | Static bounds on 7 resources, enforced by a runtime meter; tenant isolation; differential tests over 100k+ generated plans |
+| **Guarantees** | Static bounds on 7 resources, enforced by a runtime meter; trigger-cycle detection; tenant isolation; differential tests over 100k+ generated plans |
 
 ## Not in the language yet
 

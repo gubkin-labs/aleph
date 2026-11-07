@@ -16,12 +16,13 @@ Every route and handler has a **static bound**: the most it can use of each reso
 
 The checker folds over the plan:
 - **Sequences add**, and **branches take the maximum.**
-- **Loops multiply** the body's cost by the list's maximum length. Lists get a maximum from where they come from: a query's `limit`, an array field's `max`, a list literal, or `map`/`filter` over those.
+- **Loops multiply** the body's cost by the list's maximum length. Lists get a maximum from where they come from: a query's `limit`, an array field's `max`, a list literal, or `map`/`filter` over those. A [`$.loop`](/docs/logic/#loops-that-carry-state) multiplies one pass by its declared `max`, and its state must keep the same type, so it can't grow from pass to pass.
 - **Queries** cost `limit` reads, and `limit × max row size` bytes.
 - **Writes** cost the row, plus each index entry and counter it maintains (twice for updates, which may move an entry).
 - **Sorting** costs `n × ⌈log₂ n⌉` comparisons.
+- **Chains of handlers** are bounded too: each run has its own budget, and handlers that could set each other off without end are rejected as [trigger cycles](/docs/background-work/#trigger-cycles).
 
-Everything traces back to a declaration: `.max(...)` on strings, ints, and arrays, and `limit` on queries. That's why a string field without a maximum isn't a field.
+Everything traces back to a declaration: `.max(...)` on strings, ints, and arrays, `limit` on queries, and `max` on `$.loop`. That's why a string field without a maximum isn't a field.
 
 ## When a bound is too high
 
@@ -42,4 +43,6 @@ At runtime every charge goes through a meter configured with the same limits. St
 
 ## Why this matters
 
-Bounds make a shared runtime safe. A runtime can admit a request knowing its worst case, schedule work fairly, and bill predictably. One app's bad loop can't starve the others, because the bad loop can't be expressed.
+Bounds make a shared runtime safe. A runtime can admit a request knowing its worst case, schedule work fairly, and bill predictably. One app's bad loop or heavy query can't starve the others, because it can't be expressed.
+
+That's what lets many apps share the same processes and database instead of each getting its own isolated runtime, and why each app costs far less to run. See [Shared infrastructure and isolation](/docs/shared-infrastructure/).

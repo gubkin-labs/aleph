@@ -5,7 +5,7 @@ The most important consequence of Aleph's design is economic: **bounded apps can
 ## The problem with one stack per app
 
 A typical small backend runs on dedicated pieces:
-- a server or container
+- an isolated runtime: a Lambda function, a Docker container, or a VPS
 - a database
 - a cache
 - a queue
@@ -21,9 +21,10 @@ An Aleph app is a manifest of bounded operations, run by a trusted core. That ch
 
 | Risk in a shared runtime | Why it can't happen with Aleph |
 |---|---|
-| A request runs away with the CPU | Every request's operations are bounded statically and metered at run time |
+| A request runs away with the CPU | Every loop has a known maximum, and every request's operations are bounded statically and metered at run time |
 | A request floods the shared database | Reads, writes, and bytes per request are bounded; queries are always by key or range with a limit |
 | Memory spikes take down the process | The bytes a request can hold are bounded too |
+| Handlers set each other off without end | Trigger cycles are rejected before deploy, and chains stop at 16 hops |
 | One tenant reads another's data | Keys are built inside the tenant's keyspace; a plan can't name anyone else's |
 | Author code escapes its sandbox | There's no author code: the runtime interprets data |
 
