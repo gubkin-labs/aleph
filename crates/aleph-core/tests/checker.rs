@@ -815,3 +815,136 @@ fn a_literal_slice_end_bounds_the_result() {
     // A negative end counts from the end, so it doesn't bound the length.
     assert_eq!(slice(Some(-1)), whole);
 }
+
+/// The inferred output schema of the route `POST /r` whose output is `{ v: expr }`, at `v`.
+fn output_of(expr: Json) -> Json {
+    let m = manifest(vec![], obj(json!({ "v": expr })));
+    let valid =
+        parse_and_validate(&m.to_string(), &Limits::ROUTE).unwrap_or_else(|d| panic!("{d:#?}"));
+    let output = serde_json::to_value(&valid.report().routes["r"].output).unwrap();
+    output["fields"]["v"].clone()
+}
+
+fn dec(value: &str) -> Json {
+    json!({ "kind": "decimal", "value": value })
+}
+
+fn bin(op: &str, lhs: Json, rhs: Json) -> Json {
+    json!({ "kind": "binary", "op": op, "lhs": lhs, "rhs": rhs })
+}
+
+#[test]
+fn decimal_arithmetic_tracks_scale() {
+    let d2 = || dec("1.25");
+    let d3 = || dec("1.125");
+    let scale = |expr: Json| output_of(expr)["scale"].clone();
+    assert_eq!(scale(bin("add", d2(), lit(json!(1)))), json!(2));
+    assert_eq!(scale(bin("add", lit(json!(1)), d3())), json!(3));
+    assert_eq!(scale(bin("sub", d2(), d3())), json!(3));
+    assert_eq!(scale(bin("mul", d2(), d3())), json!(5));
+    assert_eq!(scale(bin("mul", d2(), lit(json!(3)))), json!(2));
+    assert_eq!(scale(json!({ "kind": "abs", "arg": d3() })), json!(3));
+    let sum = json!({ "kind": "agg", "op": "sum", "list": list(json!([d2(), d2()])), "item": 1 });
+    assert_eq!(scale(sum), json!(2));
+    assert_eq!(
+        output_of(bin("add", lit(json!(1)), lit(json!(2))))["kind"],
+        "int"
+    );
+}
+
+#[test]
+fn min_and_max_keep_integer_bounds_for_query_limits() {
+    // A query's limit must have a known maximum; min and max of bounded ints keep one.
+    let reads = |limit: Json| {
+        bounds(&manifest(
+            vec![let_(
+                0,
+                json!({ "op": "query", "entity": "Item", "limit": limit }),
+            )],
+            lit(json!(1)),
+        ))
+        .reads
+    };
+    let three = || lit(json!(3));
+    let n = || body("n");
+    assert_eq!(reads(three()), reads(bin("min", n(), three())));
+    assert_eq!(reads(three()), reads(bin("min", three(), n())));
+    assert_eq!(reads(three()), reads(bin("max", lit(json!(2)), three())));
+    assert_eq!(reads(three()), reads(bin("max", three(), lit(json!(1)))));
+    assert!(reads(n()) > reads(three()), "n is bounded by 100");
+    assert_eq!(reads(n()), reads(bin("max", n(), three())));
+}
+
+#[test]
+fn operands_must_have_the_types_their_operators_need() {
+    let check = |expr: Json| codes(&manifest(vec![], obj(json!({ "v": expr }))));
+    let mismatch = || only("type_mismatch");
+    let n = || body("n");
+    let name = || body("name");
+    let ints = || list(json!([lit(json!(1)), lit(json!(2))]));
+    let agg = |op: &str, list: Json, value: Option<Json>| {
+        let mut a = json!({ "kind": "agg", "op": op, "list": list, "item": 1 });
+        if let Some(value) = value {
+            a["value"] = value;
+        }
+        a
+    };
+
+    assert_eq!(check(bin("mod", n(), lit(json!(3)))), ok());
+    assert_eq!(check(bin("mod", dec("1.5"), lit(json!(3)))), mismatch());
+    assert_eq!(check(bin("add", name(), lit(json!(3)))), mismatch());
+
+    // some/every need bools, from the value or the list itself; count may count anything.
+    let bools = || list(json!([lit(json!(true))]));
+    assert_eq!(check(agg("some", bools(), None)), ok());
+    assert_eq!(check(agg("every", ints(), None)), mismatch());
+    assert_eq!(check(agg("some", ints(), None)), mismatch());
+    assert_eq!(check(agg("count", ints(), None)), ok());
+    assert_eq!(
+        check(agg("count", ints(), Some(bin("gt", var(1), lit(json!(1)))))),
+        ok()
+    );
+    assert_eq!(check(agg("count", ints(), Some(var(1)))), mismatch());
+
+    // min and max need values that order.
+    let objects = || list(json!([obj(json!({ "a": lit(json!(1)) }))]));
+    assert_eq!(check(agg("max", ints(), None)), ok());
+    assert_eq!(check(agg("max", objects(), None)), mismatch());
+    assert_eq!(check(agg("min", objects(), None)), mismatch());
+
+    // Int arguments take ints (or null), not strings.
+    let slice = |start: Json| json!({ "kind": "slice", "of": ints(), "start": start });
+    assert_eq!(check(slice(lit(json!(1)))), ok());
+    assert_eq!(check(slice(lit(Json::Null))), ok());
+    assert_eq!(check(slice(lit(json!("1")))), mismatch());
+}
+
+#[test]
+fn rounding_scales_and_time_zones_are_validated() {
+    let check = |expr: Json| codes(&manifest(vec![], obj(json!({ "v": expr }))));
+    let round = |scale: u8| json!({ "kind": "round", "of": dec("1.25"), "scale": scale });
+    assert_eq!(check(round(18)), ok());
+    assert_eq!(check(round(19)), only("invalid_expression"));
+    let format =
+        |tz: &str| json!({ "kind": "formatTime", "of": { "kind": "now" }, "tz": lit(json!(tz)) });
+    assert_eq!(check(format("Europe/Berlin")), ok());
+    assert_eq!(check(format("Mars/Olympus")), only("invalid_expression"));
+}
+
+#[test]
+fn matching_on_anything_but_an_enum_needs_a_default_case() {
+    let check = |cases: Json| {
+        codes(&manifest(
+            vec![],
+            obj(json!({ "v": { "kind": "match", "on": body("name"), "cases": cases } })),
+        ))
+    };
+    assert_eq!(
+        check(json!({ "a": lit(json!(1)), "_": lit(json!(2)) })),
+        ok()
+    );
+    assert_eq!(
+        check(json!({ "a": lit(json!(1)) })),
+        only("non_exhaustive_match")
+    );
+}
