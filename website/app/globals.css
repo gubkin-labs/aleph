@@ -1040,11 +1040,11 @@ body:has(main.home) .topbar nav {
 }
 
 .s-car-a {
-  transform: translate(310px, 82px);
+  transform: translate(512px, 52px);
 }
 
 .s-car-b {
-  transform: translate(512px, 208px);
+  transform: translate(512px, 216px);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -1301,56 +1301,80 @@ body:has(main.home) .topbar nav {
 }
 
 @keyframes s-car-a {
-  0% {
-    transform: translate(28px, 82px);
+  0.0% {
+    transform: translate(28px, 86px);
   }
-  8% {
-    transform: translate(70px, 82px);
+  1.0% {
+    transform: translate(35.4px, 86px) rotate(-75deg);
   }
-  14% {
-    transform: translate(110px, 113px) rotate(8deg);
+  5.6% {
+    transform: translate(44.6px, 52px) rotate(-75deg);
   }
-  22% {
-    transform: translate(150px, 82px) rotate(-14deg);
+  6.4% {
+    transform: translate(50.6px, 52px);
   }
-  30% {
-    transform: translate(190px, 51px) rotate(-6deg);
+  15.5% {
+    transform: translate(120.5px, 52px);
   }
-  38% {
-    transform: translate(230px, 82px) rotate(14deg);
+  16.3% {
+    transform: translate(126.5px, 52px) rotate(75deg);
   }
-  46% {
-    transform: translate(270px, 113px) rotate(6deg);
+  25.5% {
+    transform: translate(144.7px, 120px) rotate(75deg);
   }
-  54% {
-    transform: translate(310px, 82px) rotate(-14deg);
+  26.3% {
+    transform: translate(150.7px, 120px);
   }
-  62% {
-    transform: translate(350px, 51px) rotate(-6deg);
+  32.8% {
+    transform: translate(200.9px, 120px);
   }
-  70% {
-    transform: translate(390px, 82px) rotate(14deg);
+  33.6% {
+    transform: translate(206.9px, 120px) rotate(-75deg);
   }
-  78% {
-    transform: translate(430px, 113px) rotate(6deg);
+  42.8% {
+    transform: translate(225.1px, 52px) rotate(-75deg);
   }
-  86% {
-    transform: translate(470px, 82px) rotate(-10deg);
+  43.6% {
+    transform: translate(231.1px, 52px);
+  }
+  52.8% {
+    transform: translate(301.1px, 52px);
+  }
+  53.6% {
+    transform: translate(307.1px, 52px) rotate(75deg);
+  }
+  62.8% {
+    transform: translate(325.3px, 120px) rotate(75deg);
+  }
+  63.5% {
+    transform: translate(331.3px, 120px);
+  }
+  74.4% {
+    transform: translate(414.5px, 120px);
+  }
+  75.2% {
+    transform: translate(420.5px, 120px) rotate(-75deg);
+  }
+  84.4% {
+    transform: translate(438.7px, 52px) rotate(-75deg);
+  }
+  85.2% {
+    transform: translate(444.7px, 52px);
   }
   94%,
   100% {
-    transform: translate(512px, 82px);
+    transform: translate(512px, 52px);
   }
 }
 
 @keyframes s-car-b {
   0% {
-    transform: translate(28px, 208px);
+    transform: translate(28px, 216px);
     animation-timing-function: ease-in-out;
   }
   45%,
   100% {
-    transform: translate(512px, 208px);
+    transform: translate(512px, 216px);
   }
 }
 
