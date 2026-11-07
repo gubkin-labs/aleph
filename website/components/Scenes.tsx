@@ -234,11 +234,11 @@ export function GeneratedScene() {
 /** Two cars, two roads: one weaves through everything a backend needs, the other gets it built in. */
 export function TradeoffScene() {
   const obstacles = [
-    { t: "servers", x: 110, up: true },
-    { t: "ORM", x: 190, up: false },
-    { t: "auth", x: 270, up: true },
-    { t: "retries", x: 350, up: false },
-    { t: "scaling", x: 430, up: true },
+    { t: ["CPU / memory", "alert"], x: 110, up: true },
+    { t: ["DB load"], x: 190, up: false },
+    { t: ["tests, CI,", "deploys"], x: 270, up: true },
+    { t: ["slow", "responses"], x: 350, up: false },
+    { t: ["huge bill"], x: 430, up: true },
   ];
   const features = [
     { t: "auth", x: 80, row: 0 },
@@ -258,40 +258,46 @@ export function TradeoffScene() {
   );
   return (
     <svg
-      viewBox="0 0 560 280"
+      viewBox="0 0 560 300"
       className="scene"
       role="img"
-      aria-label="On the general-purpose road, a car weaves around servers, an ORM, auth, retries, and scaling. On the Aleph road, a car drives straight past auth, transactions, retries, scaling, migrations, API docs, and isolation, all built in."
+      aria-label="On the general-purpose road, a car weaves around CPU and memory alerts, database load, tests, CI and deploys, slow responses, and a huge bill. On the Aleph road, a car drives straight past auth, transactions, retries, scaling, migrations, API docs, and isolation, all built in."
     >
       <text x="16" y="20" className="s-label">
         general-purpose
       </text>
-      <rect x="16" y="30" width="528" height="84" rx="6" className="s-road" />
-      <line x1="16" y1="72" x2="544" y2="72" className="s-lane" />
-      <line x1="530" y1="30" x2="530" y2="114" className="s-finish" />
+      <rect x="16" y="30" width="528" height="104" rx="6" className="s-road" />
+      <line x1="16" y1="82" x2="544" y2="82" className="s-lane" />
+      <line x1="530" y1="30" x2="530" y2="134" className="s-finish" />
       {obstacles.map((o) => {
-        const w = o.t.length * 6.6 + 18;
-        const y = o.up ? 38 : 84;
+        const w = Math.max(...o.t.map((line) => line.length)) * 6.6 + 14;
+        const h = o.t.length * 11 + 7;
+        // Hug the road's edge, clear of the middle lane the car crosses between obstacles.
+        const y = o.up ? 33 : 131 - h;
         return (
-          <g key={o.t}>
-            <rect x={o.x - w / 2} y={y} width={w} height="22" rx="3" className="s-obstacle" />
-            <text x={o.x} y={y + 15} className="s-tiny s-warn-text" textAnchor="middle">
-              {o.t}
+          <g key={o.t.join(" ")}>
+            <rect x={o.x - w / 2} y={y} width={w} height={h} rx="3" className="s-obstacle" />
+            <text y={y + 12} className="s-tiny s-warn-text" textAnchor="middle">
+              {o.t.map((line, i) => (
+                <tspan key={line} x={o.x} dy={i === 0 ? 0 : 11}>
+                  {line}
+                </tspan>
+              ))}
             </text>
           </g>
         );
       })}
       {car("s-car-a")}
 
-      <text x="16" y="150" className="s-label">
+      <text x="16" y="170" className="s-label">
         aleph
       </text>
-      <rect x="16" y="160" width="528" height="56" rx="6" className="s-road" />
-      <line x1="16" y1="188" x2="544" y2="188" className="s-lane" />
-      <line x1="530" y1="160" x2="530" y2="216" className="s-finish" />
+      <rect x="16" y="180" width="528" height="56" rx="6" className="s-road" />
+      <line x1="16" y1="208" x2="544" y2="208" className="s-lane" />
+      <line x1="530" y1="180" x2="530" y2="236" className="s-finish" />
       {features.map((f) => {
         const w = f.t.length * 6.6 + 24;
-        const y = f.row === 0 ? 226 : 252;
+        const y = f.row === 0 ? 246 : 272;
         const delay = ((f.x - 24) / 506) * 3.6;
         return (
           <g key={f.t}>

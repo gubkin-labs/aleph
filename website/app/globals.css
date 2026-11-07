@@ -1040,11 +1040,11 @@ body:has(main.home) .topbar nav {
 }
 
 .s-car-a {
-  transform: translate(310px, 72px);
+  transform: translate(310px, 82px);
 }
 
 .s-car-b {
-  transform: translate(512px, 188px);
+  transform: translate(512px, 208px);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -1302,55 +1302,55 @@ body:has(main.home) .topbar nav {
 
 @keyframes s-car-a {
   0% {
-    transform: translate(28px, 72px);
+    transform: translate(28px, 82px);
   }
   8% {
-    transform: translate(70px, 72px);
+    transform: translate(70px, 82px);
   }
   14% {
-    transform: translate(110px, 95px) rotate(8deg);
+    transform: translate(110px, 113px) rotate(8deg);
   }
   22% {
-    transform: translate(150px, 72px) rotate(-14deg);
+    transform: translate(150px, 82px) rotate(-14deg);
   }
   30% {
-    transform: translate(190px, 49px) rotate(-6deg);
+    transform: translate(190px, 51px) rotate(-6deg);
   }
   38% {
-    transform: translate(230px, 72px) rotate(14deg);
+    transform: translate(230px, 82px) rotate(14deg);
   }
   46% {
-    transform: translate(270px, 95px) rotate(6deg);
+    transform: translate(270px, 113px) rotate(6deg);
   }
   54% {
-    transform: translate(310px, 72px) rotate(-14deg);
+    transform: translate(310px, 82px) rotate(-14deg);
   }
   62% {
-    transform: translate(350px, 49px) rotate(-6deg);
+    transform: translate(350px, 51px) rotate(-6deg);
   }
   70% {
-    transform: translate(390px, 72px) rotate(14deg);
+    transform: translate(390px, 82px) rotate(14deg);
   }
   78% {
-    transform: translate(430px, 95px) rotate(6deg);
+    transform: translate(430px, 113px) rotate(6deg);
   }
   86% {
-    transform: translate(470px, 72px) rotate(-10deg);
+    transform: translate(470px, 82px) rotate(-10deg);
   }
   94%,
   100% {
-    transform: translate(512px, 72px);
+    transform: translate(512px, 82px);
   }
 }
 
 @keyframes s-car-b {
   0% {
-    transform: translate(28px, 188px);
+    transform: translate(28px, 208px);
     animation-timing-function: ease-in-out;
   }
   45%,
   100% {
-    transform: translate(512px, 188px);
+    transform: translate(512px, 208px);
   }
 }
 
