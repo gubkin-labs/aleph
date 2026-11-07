@@ -394,6 +394,45 @@
           ]
         }
       }
+    },
+    {
+      "name": "deposit into the EUR account",
+      "request": {
+        "method": "POST",
+        "path": "/accounts/{{e}}/deposit",
+        "caller": {
+          "userId": "u1"
+        },
+        "body": {
+          "amount": 1000
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "balance": 1000
+        }
+      }
+    },
+    {
+      "name": "charges apply in order, skipping one the running balance can't cover",
+      "request": {
+        "method": "POST",
+        "path": "/accounts/{{e}}/charges",
+        "caller": {
+          "userId": "u1"
+        },
+        "body": {
+          "amounts": [300, 900, 200]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "balance": 500,
+          "skipped": 1
+        }
+      }
     }
   ]
 }

@@ -68,7 +68,9 @@ impl<'a> Fires<'a> {
             Op::StartWorkflow { workflow, .. } => {
                 self.workflows.insert(workflow);
             }
-            Op::Map { body, .. } | Op::Filter { body, .. } => self.stmts(body),
+            Op::Map { body, .. } | Op::Filter { body, .. } | Op::Loop { body, .. } => {
+                self.stmts(body);
+            }
             _ => {}
         }
     }

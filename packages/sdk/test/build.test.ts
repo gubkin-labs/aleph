@@ -97,6 +97,55 @@ describe("build", () => {
     ).toThrow(/inside map\/filter/);
   });
 
+  it("records a state-carrying loop, with shared values bound by $.let", () => {
+    const { a, Todo } = todoApp();
+    a.route("GET /streak").handle(($) => {
+      const todos = Todo.query({ prefix: [$.caller], limit: 20 });
+      const end = $.loop(
+        { max: 20, state: { i: 0, streak: 0 }, while: (s) => s.i.lt(todos.length) },
+        (s) => {
+          const done = $.let(todos.slice(s.i, s.i.plus(1)).first().done.ifNull(false));
+          return { i: s.i.plus(1), streak: $.select(done, s.streak.plus(1), 0) };
+        },
+      );
+      return { streak: end.streak };
+    });
+    const body = a.build().routes[0]?.plan.body ?? [];
+    const loop = body.find((s) => s.kind === "let" && s.op.op === "loop");
+    expect(loop?.kind === "let" && loop.op.op === "loop" && loop.op).toMatchObject({
+      max: 20,
+      state: { i: { kind: "lit", value: 0 }, streak: { kind: "lit", value: 0 } },
+      while: { kind: "binary", op: "lt" },
+    });
+    const inner = loop?.kind === "let" && loop.op.op === "loop" ? loop.op.body : [];
+    expect(inner.map((s) => (s.kind === "let" ? s.op.op : s.kind))).toEqual(["eval"]);
+  });
+
+  it("refuses writes in a loop body, reads in its while, and a bad max", () => {
+    const { a, Todo } = todoApp();
+    expect(() =>
+      a.route("POST /a").handle(($) =>
+        $.loop({ max: 3, state: { n: 0 } }, (s) => {
+          Todo.insert({ ownerId: $.caller, title: "x" });
+          return { n: s.n.plus(1) };
+        }),
+      ),
+    ).toThrow(/inside map\/filter\/loop/);
+    expect(() =>
+      a
+        .route("POST /b")
+        .handle(($) =>
+          $.loop(
+            { max: 3, state: { n: 0 }, while: () => Todo.query({ limit: 1 }).isEmpty() },
+            (s) => ({ n: s.n.plus(1) }),
+          ),
+        ),
+    ).toThrow(/while condition can only compute from the state/);
+    expect(() =>
+      a.route("POST /c").handle(($) => $.loop({ max: 0, state: { n: 0 } }, (s) => ({ n: s.n }))),
+    ).toThrow(/max must be an integer from 1 to 1000/);
+  });
+
   it("catches expressions used as plain JavaScript values", () => {
     const { a } = todoApp();
     expect(() => a.route("GET /bad").handle(($) => `${String($.now())}`)).toThrow(AlephBuildError);

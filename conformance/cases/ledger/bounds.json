@@ -8,6 +8,28 @@
     }
   },
   "routes": {
+    "chargeMany": {
+      "bounds": {
+        "reads": 2,
+        "writes": 3,
+        "ops": 629,
+        "bytesRead": 1006,
+        "effects": 0,
+        "calls": 0,
+        "memory": 2527
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "balance": {
+            "kind": "int"
+          },
+          "skipped": {
+            "kind": "int"
+          }
+        }
+      }
+    },
     "deposit": {
       "bounds": {
         "reads": 3,

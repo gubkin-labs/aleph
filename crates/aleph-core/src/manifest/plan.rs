@@ -330,6 +330,27 @@ pub enum Op {
         /// The predicate.
         keep: Expr,
     },
+    /// A bounded loop that carries state from one pass to the next. The state starts as
+    /// `state`; each pass checks `while` (if any, stopping when it's false), runs `body`, and
+    /// sets the state to `next`. It runs at most `max` passes, and evaluates to the final state
+    /// (an object). The body may read but never write.
+    Loop {
+        /// The most passes (1 to `MAX_LOOP_PASSES`).
+        max: u32,
+        /// The initial state.
+        state: BTreeMap<String, Expr>,
+        /// The variable the current state is bound to, inside `while`, `body`, and `next`.
+        var: VarId,
+        /// Checked before each pass; the loop stops when it's false.
+        #[serde(default, rename = "while", skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional, rename = "while"))]
+        cond: Option<Expr>,
+        /// Read-only statements run per pass.
+        #[serde(default)]
+        body: Vec<Stmt>,
+        /// The state after the pass: a value for every state field.
+        next: BTreeMap<String, Expr>,
+    },
     /// Emit an event. Released after commit.
     Emit {
         /// The event.
@@ -438,6 +459,9 @@ pub enum Op {
 }
 
 impl Op {
+    /// The most passes a [`Op::Loop`] may declare.
+    pub const MAX_LOOP_PASSES: u32 = 1000;
+
     /// Whether the operation produces an effect released after commit.
     pub fn is_effect(&self) -> bool {
         matches!(

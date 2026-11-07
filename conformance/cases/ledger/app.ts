@@ -131,4 +131,34 @@ a.route("GET /accounts/:accountId/entries/between")
     };
   });
 
+// Charges applied in order, each only if the balance left by the earlier ones covers it: a loop
+// that carries the running balance from one pass to the next.
+a.route("POST /accounts/:accountId/charges")
+  .id("chargeMany")
+  .params({ accountId: t.id() })
+  .body({ amounts: t.array(amount, 12) })
+  .errors({ notFound: err.notFound("Account not found") })
+  .handle(($, { params, body, errors }) => {
+    const account = Account.getOrFail({ accountId: params.accountId }, errors.notFound);
+    $.ensure(account.ownerId.eq($.caller), errors.notFound);
+    const end = $.loop(
+      {
+        max: 12,
+        state: { balance: account.balance, i: 0, skipped: 0 },
+        while: (s) => s.i.lt(body.amounts.length),
+      },
+      (s) => {
+        const charge = $.let(body.amounts.slice(s.i, s.i.plus(1)).first().ifNull(0));
+        const covered = $.let(s.balance.gte(charge));
+        return {
+          balance: $.select(covered, s.balance.minus(charge), s.balance),
+          i: s.i.plus(1),
+          skipped: $.select(covered, s.skipped, s.skipped.plus(1)),
+        };
+      },
+    );
+    account.update({ balance: end.balance });
+    return { balance: end.balance, skipped: end.skipped };
+  });
+
 export default a;

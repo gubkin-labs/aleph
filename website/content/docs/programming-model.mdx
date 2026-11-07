@@ -40,9 +40,26 @@ A `const` in a handler names a value. It's computed once per request, and it can
 | stopping at the first match | `list.filter(...).first()` |
 | state that must outlive the request | a row, written in `$.forEach` |
 
-<Tbd>
-State carried from one pass of a loop to the next (a running balance, walking a chain until a condition holds) isn't expressible yet. Two additions are planned: `$.let(expr)`, which binds an intermediate value, and a bounded `$.loop({ max, state })`, costed as `max` passes.
-</Tbd>
+When each pass depends on the one before (a running balance, walking a chain until it ends), use a loop that carries state, and `$.let` to bind values the next steps share:
+
+```ts
+a.route("GET /tasks/:orgId/streak")
+  .params({ orgId: t.string().max(64) })
+  .handle(($, { params }) => {
+    const tasks = Task.query({ prefix: [params.orgId], limit: 30 });
+    const end = $.loop(
+      { max: 30, state: { i: 0, streak: 0, best: 0 }, while: (s) => s.i.lt(tasks.length) },
+      (s) => {
+        const done = $.let(tasks.slice(s.i, s.i.plus(1)).first().done.ifNull(false));
+        const streak = $.let($.select(done, s.streak.plus(1), 0));
+        return { i: s.i.plus(1), streak, best: $.max(s.best, streak) };
+      },
+    );
+    return { longestStreak: end.best };
+  });
+```
+
+The loop is costed as `max` passes, and its state must keep the same type from pass to pass. See [Loops that carry state](/docs/logic/#loops-that-carry-state).
 
 ## Control flow
 
@@ -54,6 +71,7 @@ Branches and loops nest freely: a loop can hold a branch that holds another loop
 | `$.select(cond, a, b)`, `$.match(value, { ... })` | choose a value |
 | `$.ensure(cond, error)`, `$.fail(error)` | stop with a declared error |
 | `.map`, `.filter`, `.some`, `.every`, `.count`, `.sum`, `.min`, `.max`, `.sortBy`, `.take` | loops that compute (they may read, never write) |
+| `$.loop({ max, state, while }, (state) => next)`, `$.let(value)` | a loop that carries state from pass to pass, and a shared value |
 | `$.forEach(list, ...)`, `.updateAll`, `.deleteAll` | loops that write |
 
 ```ts
@@ -70,7 +88,7 @@ a.route("POST /orgs/:orgId/close-overdue")
   });
 ```
 
-Every loop runs over a list with a known maximum size: a query's `limit`, an array input's maximum, or the maximum parts of a `.split`. There's no `while` and no recursion.
+Every loop has a known maximum: a list loop runs over a query's `limit`, an array input's maximum, or the maximum parts of a `.split`, and `$.loop` declares its `max`. There's no unbounded `while` and no recursion.
 
 {/* scope */}
 
@@ -134,7 +152,7 @@ These limits are what buy the guarantees:
 
 - **No arbitrary code at request time.** No npm packages, no `fetch`, no filesystem. The outside world is reached through declared [integrations](/docs/integrations/), and incoming calls arrive as webhooks.
 - **No unbounded loops or recursion.** Every loop has a declared maximum.
-- **No mutable variables across loop passes** (see above).
+- **No mutable variables.** State that changes from pass to pass goes through `$.loop` (see above).
 - **No access to another app's data.** Every key is built inside the app's own keyspace, and no expression can name another's. See [Shared infrastructure and isolation](/docs/shared-infrastructure/).
 - **No work beyond the budgets in one run.** Bigger work moves to jobs, scans, and workflows.
 

@@ -4,7 +4,16 @@
  */
 
 import type { Expr as Node, Stmt } from "@aleph/manifest";
-import { type ErrorRef, forEach, type List } from "./data.js";
+import {
+  bind,
+  type ErrorRef,
+  forEach,
+  type Lifted,
+  type List,
+  type LoopOptions,
+  type LoopState,
+  loop,
+} from "./data.js";
 import { Expr, type ExprLike, expr } from "./expr.js";
 import type { Decimal } from "./fields.js";
 import { toNode } from "./node.js";
@@ -166,6 +175,26 @@ export const $ = {
   /** `$.if(cond).then(() => …).else(() => …)`. */
   if(cond: ExprLike<boolean>): IfBuilder {
     return new IfBuilder(expr(cond));
+  },
+
+  /**
+   * Binds a value to a variable, so later steps share it instead of recomputing it. Use it for
+   * a value that later code refers to more than once, like a running total built step by step.
+   */
+  let<V>(value: V): Lifted<V> {
+    return bind(value);
+  },
+
+  /**
+   * A bounded loop that carries state from one pass to the next: `$.loop({ max, state, while },
+   * (state) => nextState)`. It runs at most `max` passes and returns the final state. The body
+   * may read but never write.
+   */
+  loop<S extends Record<string, unknown>>(
+    options: LoopOptions<S>,
+    fn: (state: LoopState<S>) => { [K in keyof S]: unknown },
+  ): LoopState<S> {
+    return loop(options, fn);
   },
 
   /** Runs `fn` once per item of a bounded list. The body may write. */

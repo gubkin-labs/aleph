@@ -2803,6 +2803,69 @@
           ]
         },
         {
+          "description": "A bounded loop that carries state from one pass to the next. The state starts as\n`state`; each pass checks `while` (if any, stopping when it's false), runs `body`, and\nsets the state to `next`. It runs at most `max` passes, and evaluates to the final state\n(an object). The body may read but never write.",
+          "type": "object",
+          "properties": {
+            "body": {
+              "description": "Read-only statements run per pass.",
+              "type": "array",
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/Stmt"
+              }
+            },
+            "max": {
+              "description": "The most passes (1 to `MAX_LOOP_PASSES`).",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "next": {
+              "description": "The state after the pass: a value for every state field.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "op": {
+              "type": "string",
+              "const": "loop"
+            },
+            "state": {
+              "description": "The initial state.",
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/$defs/Expr"
+              }
+            },
+            "var": {
+              "description": "The variable the current state is bound to, inside `while`, `body`, and `next`.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "while": {
+              "description": "Checked before each pass; the loop stops when it's false.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Expr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "max",
+            "state",
+            "var",
+            "next"
+          ]
+        },
+        {
           "description": "Emit an event. Released after commit.",
           "type": "object",
           "properties": {

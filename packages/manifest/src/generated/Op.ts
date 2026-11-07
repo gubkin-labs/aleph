@@ -142,7 +142,31 @@ body: Array<Stmt>,
 /**
  * The predicate.
  */
-keep: Expr, } | { "op": "emit", 
+keep: Expr, } | { "op": "loop", 
+/**
+ * The most passes (1 to `MAX_LOOP_PASSES`).
+ */
+max: number, 
+/**
+ * The initial state.
+ */
+state: { [key in string]: Expr }, 
+/**
+ * The variable the current state is bound to, inside `while`, `body`, and `next`.
+ */
+var: number, 
+/**
+ * Checked before each pass; the loop stops when it's false.
+ */
+while?: Expr, 
+/**
+ * Read-only statements run per pass.
+ */
+body: Array<Stmt>, 
+/**
+ * The state after the pass: a value for every state field.
+ */
+next: { [key in string]: Expr }, } | { "op": "emit", 
 /**
  * The event.
  */

@@ -399,6 +399,36 @@ impl<'a> Exec<'a> {
                 }
                 Ok(Value::List(out))
             }
+            Op::Loop {
+                max,
+                state,
+                var,
+                cond,
+                body,
+                next,
+            } => {
+                let mut current = BTreeMap::new();
+                for (name, expr) in state {
+                    current.insert(name.clone(), self.eval(expr)?);
+                }
+                for _ in 0..*max {
+                    let value = Value::Object(current.clone());
+                    self.meter.op()?;
+                    self.meter.memory(value.size())?;
+                    self.vars.insert(*var, value.clone());
+                    if let Some(cond) = cond
+                        && !self.eval_bool(cond)?
+                    {
+                        return Ok(value);
+                    }
+                    self.block(body, true)?;
+                    current = BTreeMap::new();
+                    for (name, expr) in next {
+                        current.insert(name.clone(), self.eval(expr)?);
+                    }
+                }
+                Ok(Value::Object(current))
+            }
             Op::Filter {
                 list,
                 item,

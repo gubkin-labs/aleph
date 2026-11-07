@@ -165,6 +165,26 @@ impl Ty {
         }
     }
 
+    /// Like [`Ty::describe`], with the bounds that can grow: string lengths, list lengths, and
+    /// an object's fields.
+    pub(crate) fn describe_fields(&self) -> String {
+        match self {
+            Self::Object(fields) => {
+                let parts: Vec<String> = fields
+                    .iter()
+                    .map(|(name, ty)| format!("{name}: {}", ty.describe_fields()))
+                    .collect();
+                format!("{{ {} }}", parts.join(", "))
+            }
+            Self::String { max: Some(max) } => format!("string of at most {max} characters"),
+            Self::List { item, max } => {
+                format!("list of {} (max {max})", item.describe_fields())
+            }
+            Self::Opt(inner) => format!("{} or null", inner.describe_fields()),
+            other => other.describe(),
+        }
+    }
+
     /// The least type covering both `self` and `other` (used for branches).
     pub(crate) fn join(self, other: Self) -> Self {
         match (self, other) {

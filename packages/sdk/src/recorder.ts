@@ -82,8 +82,8 @@ export class Recorder {
     const effects = ["emit", "enqueue", "publish", "send"];
     if (this.#pureDepth > 0 && (writes.includes(op.op) || effects.includes(op.op))) {
       throw new AlephBuildError(
-        `can't ${op.op} inside map/filter: their bodies may read but never write or release ` +
-          "effects. Compute values with map, then act on them with $.forEach.",
+        `can't ${op.op} inside map/filter/loop: their bodies may read but never write or ` +
+          "release effects. Compute values first, then act on them with $.forEach.",
       );
     }
     const id = this.newVar();

@@ -16,6 +16,8 @@ $.fmt`Hello ${user.name}`     // not `Hello ${user.name}`
 | `$.when(cond, () => { ... })` | Run when `cond` |
 | `$.if(cond).then(() => ...).else(() => ...)` | Branch |
 | `$.forEach(list, (item) => { ... })` | Loop over a bounded list (may write) |
+| `$.loop({ max, state, while }, (state) => next)` | Loop that carries state from pass to pass (read-only) |
+| `$.let(value)` | Bind a value, so later steps share it |
 | `$.select(cond, a, b)` | Choose a value |
 | `$.match(value, { a: ..., b: ..., _: ... })` | Choose by an enum or string (exhaustive, or with `_`) |
 | `$.all(...)`, `$.any(...)` | Combine conditions |
@@ -38,6 +40,39 @@ tags.distinct();  tags.includes("urgent");  tags.concat(moreTags);  list.slice(1
 ```
 
 `map` and `filter` bodies may read (a `get` inside `map` is a join) but never write. Use `$.forEach` to write.
+
+## Loops that carry state
+
+When each pass depends on the one before (a running balance, walking a chain until it ends), use `$.loop`. It starts from `state`, checks `while` before each pass, and takes what the callback returns as the next state, for at most `max` passes (1-1000). It returns the final state.
+
+```ts
+a.route("POST /accounts/:accountId/charges")
+  .params({ accountId: t.id() })
+  .body({ amounts: t.array(t.int().min(1), 12) })
+  .errors({ missing: err.notFound("No such account") })
+  .handle(($, { params, body, errors }) => {
+    const account = Account.getOrFail({ accountId: params.accountId }, errors.missing);
+    // Each charge applies only if what the earlier ones left covers it.
+    const end = $.loop(
+      { max: 12, state: { balance: account.balance, i: 0 }, while: (s) => s.i.lt(body.amounts.length) },
+      (s) => {
+        const charge = $.let(body.amounts.slice(s.i, s.i.plus(1)).first().ifNull(0));
+        return {
+          balance: $.select(s.balance.gte(charge), s.balance.minus(charge), s.balance),
+          i: s.i.plus(1),
+        };
+      },
+    );
+    return account.update({ balance: end.balance });
+  });
+```
+
+- **Cost:** the checker costs the loop as `max` passes. Here that's 12, so the route's worst case is known before it deploys. At run time it stops as soon as `while` is false.
+- **State keeps its type.** Every pass must return the same fields with the same types. A string or list that grows each pass has no bound and is rejected: bound it with `.truncate(n)` or `.take(n)`. Integers may change freely, so counters are fine.
+- **`while` only computes from the state.** To stop on something you read, do the read in the body and carry the result in the state (for example, a `done` field).
+- **The body may read, but never write.** Compute with `$.loop`, then write the result.
+
+`$.let(value)` binds a value to a variable. Use it when later code refers to a value more than once. Without it, an expression used twice is recorded twice, which matters when a loop builds on it pass after pass.
 
 ## Strings
 

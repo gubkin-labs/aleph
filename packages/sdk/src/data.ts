@@ -375,6 +375,93 @@ export function forEach<T>(list: List<T>, fn: (item: T) => void): void {
   rec.push({ kind: "forEach", list: list[NODE], item, body });
 }
 
+/**
+ * What a plan sees for a value it was given: SDK values stay as they are, and plain numbers,
+ * strings, and booleans become expressions.
+ */
+export type Lifted<V> = V extends number
+  ? Expr<number>
+  : V extends string
+    ? Expr<string>
+    : V extends boolean
+      ? Expr<boolean>
+      : V;
+
+/** The state a {@link loop} carries: each field as the plan sees it. */
+export type LoopState<S> = { [K in keyof S]: Lifted<S[K]> };
+
+/** Binds a value to a variable, so later steps share it instead of recomputing it. */
+export function bind<V>(value: V): Lifted<V> {
+  const node = recorder().let({ op: "eval", expr: toNode(value) });
+  return materialize(shapeOf(value), node) as Lifted<V>;
+}
+
+/** Options for {@link loop}. */
+export interface LoopOptions<S> {
+  /** The most passes (1-1000). The checker costs the loop as this many passes. */
+  max: number;
+  /** The initial state: named values the loop carries from one pass to the next. */
+  state: S;
+  /**
+   * Checked before each pass, on the current state; the loop stops when it's false. It may only
+   * compute from the state: do reads in the body and carry their results in the state.
+   */
+  while?: (state: LoopState<S>) => ExprLike<boolean>;
+}
+
+/**
+ * A bounded loop that carries state. Starting from `state`, each pass checks `while`, runs
+ * `fn` on the current state, and takes what it returns as the next state, for at most `max`
+ * passes. Returns the final state. Like `map`, the body may read but never write.
+ */
+export function loop<S extends Record<string, unknown>>(
+  options: LoopOptions<S>,
+  fn: (state: LoopState<S>) => { [K in keyof S]: unknown },
+): LoopState<S> {
+  if (!Number.isInteger(options.max) || options.max < 1 || options.max > 1000) {
+    throw new AlephBuildError(`a loop's max must be an integer from 1 to 1000, got ${options.max}`);
+  }
+  const rec = recorder();
+  const shape = shapeOf(options.state);
+  const v = rec.newVar();
+  const current = materialize(shape, { kind: "var", id: v }) as LoopState<S>;
+  let cond: Node | undefined;
+  const condition = options.while;
+  if (condition) {
+    const recorded = rec.block(
+      () => {
+        cond = toNode(condition(current));
+      },
+      { pure: true, suffix: ".op.while" },
+    );
+    if (recorded.length > 0) {
+      throw new AlephBuildError(
+        "a loop's while condition can only compute from the state: do reads in the body and " +
+          "carry their results in the state",
+      );
+    }
+  }
+  let next: Record<string, unknown> = {};
+  const body = rec.block(
+    () => {
+      next = fn(current);
+    },
+    { pure: true, suffix: ".op.body" },
+  );
+  const fields = (values: Record<string, unknown>) =>
+    Object.fromEntries(Object.entries(values).map(([k, val]) => [k, toNode(val)]));
+  const node = rec.let({
+    op: "loop",
+    max: options.max,
+    state: fields(options.state),
+    var: v,
+    ...(cond ? { while: cond } : {}),
+    body,
+    next: fields(next),
+  });
+  return materialize(shape, node) as LoopState<S>;
+}
+
 /** A list built from values known at build time (with expressions inside). */
 export function listOf<T>(items: readonly T[]): List<T> {
   return new List<T>(toNode(items), items.length > 0 ? shapeOf(items[0]) : SCALAR);

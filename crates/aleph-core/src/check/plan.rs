@@ -344,6 +344,94 @@ impl<'a> Checker<'a> {
         );
     }
 
+    /// Checks a state-carrying loop. The state's type is found by running the pass once on the
+    /// initial state's type (diagnostics discarded), joining, and running it again: the second
+    /// pass must keep that type, or the state would grow without bound. Integers are widened
+    /// first, so counters don't count as growth.
+    #[allow(clippy::too_many_arguments)]
+    fn loop_op(
+        &mut self,
+        max: u32,
+        state: &BTreeMap<String, Expr>,
+        var: VarId,
+        cond: Option<&Expr>,
+        body: &[Stmt],
+        next: &BTreeMap<String, Expr>,
+        path: &str,
+        own: Cost,
+    ) -> (Ty, Cost) {
+        if !(1..=Op::MAX_LOOP_PASSES).contains(&max) {
+            self.diag(
+                Code::InvalidExpression,
+                &format!("{path}.max"),
+                format!("a loop runs 1 to {} passes, got {max}", Op::MAX_LOOP_PASSES),
+            );
+        }
+        if !state.keys().eq(next.keys()) {
+            self.diag(
+                Code::InvalidExpression,
+                &format!("{path}.next"),
+                "a loop's next state must set every state field, and only those",
+            );
+        }
+        let mut init_cost = Cost::ZERO;
+        let mut initial = BTreeMap::new();
+        for (name, expr) in state {
+            let (ty, cost) = self.expr(expr, &format!("{path}.state.{name}"));
+            init_cost += cost;
+            initial.insert(name.clone(), widen_ints(ty));
+        }
+        let start = Ty::Object(initial);
+        let (diags, defined) = (self.diags.len(), self.defined.clone());
+        let (probe, _) = self.loop_pass(&start, var, cond, body, next, path);
+        self.diags.truncate(diags);
+        self.defined = defined;
+        let ty = start.join(widen_ints(probe));
+        let (after, pass_cost) = self.loop_pass(&ty, var, cond, body, next, path);
+        if ty.clone().join(widen_ints(after.clone())) != ty {
+            self.diag(
+                Code::TypeMismatch,
+                &format!("{path}.next"),
+                format!(
+                    "the loop's state grows from one pass to the next (from {} to {}), so it has \
+                     no bound. Bound what grows (.truncate(n), .take(n)) so every pass keeps the \
+                     same type",
+                    ty.describe_fields(),
+                    after.describe_fields()
+                ),
+            );
+        }
+        let per_pass = pass_cost + Cost::ops(1) + self.memory(&ty);
+        (ty, own + init_cost + per_pass.times(u64::from(max)))
+    }
+
+    /// One pass of a loop on a state of type `state`: the type of its next state, and its cost.
+    fn loop_pass(
+        &mut self,
+        state: &Ty,
+        var: VarId,
+        cond: Option<&Expr>,
+        body: &[Stmt],
+        next: &BTreeMap<String, Expr>,
+        path: &str,
+    ) -> (Ty, Cost) {
+        self.scopes.push(HashMap::new());
+        self.bind(var, state.clone(), path);
+        let mut cost = match cond {
+            Some(cond) => self.condition(cond, &format!("{path}.while")),
+            None => Cost::ZERO,
+        };
+        cost += self.stmts(body, &format!("{path}.body"), true);
+        let mut fields = BTreeMap::new();
+        for (name, expr) in next {
+            let (ty, c) = self.expr(expr, &format!("{path}.next.{name}"));
+            cost += c;
+            fields.insert(name.clone(), ty);
+        }
+        self.scopes.pop();
+        (Ty::Object(fields), cost)
+    }
+
     fn bind(&mut self, var: VarId, ty: Ty, path: &str) {
         if !self.defined.insert(var) {
             self.diag(
@@ -960,6 +1048,14 @@ impl<'a> Checker<'a> {
                     own + list_cost + per_item.times(max),
                 )
             }
+            Op::Loop {
+                max,
+                state,
+                var,
+                cond,
+                body,
+                next,
+            } => self.loop_op(*max, state, *var, cond.as_ref(), body, next, path, own),
             Op::Filter {
                 list,
                 item,
@@ -2328,5 +2424,25 @@ impl<'a> Checker<'a> {
             result.unwrap_or(Ty::Unknown),
             Cost::ops(1) + on_cost + worst,
         )
+    }
+}
+
+/// The type with every integer's upper bound dropped. A loop's state is typed this way, so a
+/// counter that grows by one each pass keeps the same type.
+fn widen_ints(ty: Ty) -> Ty {
+    match ty {
+        Ty::Int { .. } => Ty::Int { max: None },
+        Ty::Opt(inner) => Ty::Opt(Box::new(widen_ints(*inner))),
+        Ty::List { item, max } => Ty::List {
+            item: Box::new(widen_ints(*item)),
+            max,
+        },
+        Ty::Object(fields) => Ty::Object(
+            fields
+                .into_iter()
+                .map(|(name, ty)| (name, widen_ints(ty)))
+                .collect(),
+        ),
+        other => other,
     }
 }

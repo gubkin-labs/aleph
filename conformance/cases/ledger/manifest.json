@@ -1036,6 +1036,383 @@
           "kind": "object"
         }
       }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {
+        "notFound": {
+          "message": "Account not found",
+          "status": 404
+        }
+      },
+      "id": "chargeMany",
+      "input": {
+        "body": {
+          "amounts": {
+            "type": {
+              "items": {
+                "kind": "int",
+                "max": 100000000,
+                "min": 1
+              },
+              "kind": "array",
+              "max": 12
+            }
+          }
+        },
+        "params": {
+          "accountId": {
+            "type": {
+              "kind": "id"
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/accounts/:accountId/charges",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Account",
+              "key": {
+                "accountId": {
+                  "kind": "input",
+                  "name": "accountId",
+                  "source": "params"
+                }
+              },
+              "op": "get"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "kind": "not"
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          },
+          {
+            "cond": {
+              "kind": "binary",
+              "lhs": {
+                "kind": "field",
+                "name": "ownerId",
+                "of": {
+                  "id": 0,
+                  "kind": "var"
+                }
+              },
+              "op": "eq",
+              "rhs": {
+                "kind": "caller"
+              }
+            },
+            "error": "notFound",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "body": [
+                {
+                  "kind": "let",
+                  "op": {
+                    "expr": {
+                      "cond": {
+                        "kind": "isNull",
+                        "of": {
+                          "kind": "first",
+                          "of": {
+                            "end": {
+                              "kind": "binary",
+                              "lhs": {
+                                "kind": "field",
+                                "name": "i",
+                                "of": {
+                                  "id": 1,
+                                  "kind": "var"
+                                }
+                              },
+                              "op": "add",
+                              "rhs": {
+                                "kind": "lit",
+                                "value": 1
+                              }
+                            },
+                            "kind": "slice",
+                            "of": {
+                              "kind": "input",
+                              "name": "amounts",
+                              "source": "body"
+                            },
+                            "start": {
+                              "kind": "field",
+                              "name": "i",
+                              "of": {
+                                "id": 1,
+                                "kind": "var"
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "else": {
+                        "kind": "first",
+                        "of": {
+                          "end": {
+                            "kind": "binary",
+                            "lhs": {
+                              "kind": "field",
+                              "name": "i",
+                              "of": {
+                                "id": 1,
+                                "kind": "var"
+                              }
+                            },
+                            "op": "add",
+                            "rhs": {
+                              "kind": "lit",
+                              "value": 1
+                            }
+                          },
+                          "kind": "slice",
+                          "of": {
+                            "kind": "input",
+                            "name": "amounts",
+                            "source": "body"
+                          },
+                          "start": {
+                            "kind": "field",
+                            "name": "i",
+                            "of": {
+                              "id": 1,
+                              "kind": "var"
+                            }
+                          }
+                        }
+                      },
+                      "kind": "select",
+                      "then": {
+                        "kind": "lit",
+                        "value": 0
+                      }
+                    },
+                    "op": "eval"
+                  },
+                  "var": 2
+                },
+                {
+                  "kind": "let",
+                  "op": {
+                    "expr": {
+                      "kind": "binary",
+                      "lhs": {
+                        "kind": "field",
+                        "name": "balance",
+                        "of": {
+                          "id": 1,
+                          "kind": "var"
+                        }
+                      },
+                      "op": "gte",
+                      "rhs": {
+                        "id": 2,
+                        "kind": "var"
+                      }
+                    },
+                    "op": "eval"
+                  },
+                  "var": 3
+                }
+              ],
+              "max": 12,
+              "next": {
+                "balance": {
+                  "cond": {
+                    "id": 3,
+                    "kind": "var"
+                  },
+                  "else": {
+                    "kind": "field",
+                    "name": "balance",
+                    "of": {
+                      "id": 1,
+                      "kind": "var"
+                    }
+                  },
+                  "kind": "select",
+                  "then": {
+                    "kind": "binary",
+                    "lhs": {
+                      "kind": "field",
+                      "name": "balance",
+                      "of": {
+                        "id": 1,
+                        "kind": "var"
+                      }
+                    },
+                    "op": "sub",
+                    "rhs": {
+                      "id": 2,
+                      "kind": "var"
+                    }
+                  }
+                },
+                "i": {
+                  "kind": "binary",
+                  "lhs": {
+                    "kind": "field",
+                    "name": "i",
+                    "of": {
+                      "id": 1,
+                      "kind": "var"
+                    }
+                  },
+                  "op": "add",
+                  "rhs": {
+                    "kind": "lit",
+                    "value": 1
+                  }
+                },
+                "skipped": {
+                  "cond": {
+                    "id": 3,
+                    "kind": "var"
+                  },
+                  "else": {
+                    "kind": "binary",
+                    "lhs": {
+                      "kind": "field",
+                      "name": "skipped",
+                      "of": {
+                        "id": 1,
+                        "kind": "var"
+                      }
+                    },
+                    "op": "add",
+                    "rhs": {
+                      "kind": "lit",
+                      "value": 1
+                    }
+                  },
+                  "kind": "select",
+                  "then": {
+                    "kind": "field",
+                    "name": "skipped",
+                    "of": {
+                      "id": 1,
+                      "kind": "var"
+                    }
+                  }
+                }
+              },
+              "op": "loop",
+              "state": {
+                "balance": {
+                  "kind": "field",
+                  "name": "balance",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                },
+                "i": {
+                  "kind": "lit",
+                  "value": 0
+                },
+                "skipped": {
+                  "kind": "lit",
+                  "value": 0
+                }
+              },
+              "var": 1,
+              "while": {
+                "kind": "binary",
+                "lhs": {
+                  "kind": "field",
+                  "name": "i",
+                  "of": {
+                    "id": 1,
+                    "kind": "var"
+                  }
+                },
+                "op": "lt",
+                "rhs": {
+                  "kind": "length",
+                  "of": {
+                    "kind": "input",
+                    "name": "amounts",
+                    "source": "body"
+                  }
+                }
+              }
+            },
+            "var": 4
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Account",
+              "key": {
+                "accountId": {
+                  "kind": "field",
+                  "name": "accountId",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              },
+              "op": "update",
+              "set": {
+                "balance": {
+                  "kind": "field",
+                  "name": "balance",
+                  "of": {
+                    "id": 4,
+                    "kind": "var"
+                  }
+                }
+              }
+            },
+            "var": 5
+          }
+        ],
+        "output": {
+          "fields": {
+            "balance": {
+              "kind": "field",
+              "name": "balance",
+              "of": {
+                "id": 4,
+                "kind": "var"
+              }
+            },
+            "skipped": {
+              "kind": "field",
+              "name": "skipped",
+              "of": {
+                "id": 4,
+                "kind": "var"
+              }
+            }
+          },
+          "kind": "object"
+        }
+      }
     }
   ]
 }

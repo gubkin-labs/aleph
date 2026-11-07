@@ -1,0 +1,126 @@
+{
+  "expect": ["type_mismatch", "invalid_expression"],
+  "manifest": {
+    "app": {
+      "name": "bad"
+    },
+    "auth": {
+      "apiKeyScopes": [],
+      "roles": []
+    },
+    "counters": {},
+    "entities": {},
+    "formatVersion": "0.2",
+    "routes": [
+      {
+        "auth": {
+          "kind": "public"
+        },
+        "errors": {},
+        "id": "get_path",
+        "input": {
+          "body": {},
+          "params": {},
+          "query": {}
+        },
+        "method": "GET",
+        "path": "/path",
+        "plan": {
+          "body": [
+            {
+              "kind": "let",
+              "op": {
+                "body": [],
+                "max": 5,
+                "next": {
+                  "path": {
+                    "kind": "concat",
+                    "parts": [
+                      {
+                        "kind": "field",
+                        "name": "path",
+                        "of": {
+                          "id": 0,
+                          "kind": "var"
+                        }
+                      },
+                      {
+                        "kind": "lit",
+                        "value": "/a"
+                      }
+                    ]
+                  }
+                },
+                "op": "loop",
+                "state": {
+                  "path": {
+                    "kind": "lit",
+                    "value": ""
+                  }
+                },
+                "var": 0
+              },
+              "var": 1
+            }
+          ],
+          "output": {
+            "id": 1,
+            "kind": "var"
+          }
+        }
+      },
+      {
+        "auth": {
+          "kind": "public"
+        },
+        "errors": {},
+        "id": "get_other",
+        "input": {
+          "body": {},
+          "params": {},
+          "query": {}
+        },
+        "method": "GET",
+        "path": "/other",
+        "plan": {
+          "body": [
+            {
+              "kind": "let",
+              "op": {
+                "body": [],
+                "max": 0,
+                "next": {
+                  "path": {
+                    "kind": "field",
+                    "of": {
+                      "kind": "var",
+                      "id": 0
+                    },
+                    "name": "path"
+                  },
+                  "extra": {
+                    "kind": "lit",
+                    "value": 1
+                  }
+                },
+                "op": "loop",
+                "state": {
+                  "path": {
+                    "kind": "lit",
+                    "value": ""
+                  }
+                },
+                "var": 0
+              },
+              "var": 1
+            }
+          ],
+          "output": {
+            "id": 1,
+            "kind": "var"
+          }
+        }
+      }
+    ]
+  }
+}
