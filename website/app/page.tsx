@@ -9,7 +9,7 @@ import {
   TradeoffScene,
   TransactionScene,
 } from "@/components/Scenes";
-import { agent, cost, evolve, examples, loop } from "./demos";
+import { agent, cost, evolve, loop, more } from "./demos";
 
 /** What a backend usually needs and an Aleph author doesn't write. Each is struck out in turn. */
 const HANDLED = [
@@ -106,6 +106,74 @@ export default function Home() {
       </Section>
 
       <Section
+        eyebrow="Guardrails"
+        title="No query can read too much"
+        panel={
+          <Demo
+            title="worst case of every route"
+            {...cost}
+            caption="20 posts, each with up to 5 comments: at most 120 reads. Ask for 10,000 posts and it won't build."
+          />
+        }
+      >
+        <p>
+          Aleph works out the most each route can ever read, write, compute, and hold in memory,
+          before a single request runs. Every query has a limit, and loops multiply them: 20 posts
+          with 5 comments each is 120 reads, every time.
+        </p>
+        <p>
+          A query that could fetch too many rows is rejected before it ships, with the line and the
+          bound to change. The same limits are enforced while it runs, so a budget is a guarantee,
+          not a guess.
+        </p>
+      </Section>
+
+      <Section
+        eyebrow="Guardrails"
+        title="No loop can run away"
+        panel={
+          <Demo
+            title="a loop inside a loop"
+            {...loop}
+            caption="Comparing every tag with every other: 10 tags is 489 ops. Allow 100 and it's 40,809, over the limit of 2,000."
+          />
+        }
+      >
+        <p>
+          There’s no <code>while</code> loop and no recursion. Every loop runs over a list with a
+          known maximum size, so even a loop inside a loop has a worst case Aleph can count.
+        </p>
+        <p>
+          That’s why one app can’t burn the CPU that other apps share: code that could, doesn’t
+          compile.
+        </p>
+      </Section>
+
+      <Section
+        eyebrow="Still flexible"
+        title="Bounded, not basic"
+        panel={
+          <Demo
+            title="more than routes"
+            {...more}
+            caption="A trigger that calls a moderation API and streams comments live, and a weekly email. Each one has a worst case too."
+          />
+        }
+      >
+        <p>
+          The limits are on cost, not on what you can build. Beyond routes and queries, the same
+          language calls external APIs, reacts to changes, pushes updates to clients in real time,
+          sends email, and runs schedules, queues, webhooks, and multi-step workflows that can wait
+          for days.
+        </p>
+        <p>
+          Every one of them is checked the same way: triggers and schedules get a worst-case cost,
+          and their effects go out only after they commit.{" "}
+          <Link href="/docs/compute/">Compute and async work</Link>
+        </p>
+      </Section>
+
+      <Section
         eyebrow="How it works"
         title="You write the logic. The platform runs it."
         panel={
@@ -169,50 +237,12 @@ export default function Home() {
         <p>
           Aleph rules both out. Every route has a bounded cost, and there’s no expression that names
           another app’s data, so cross-app access can’t be written at all. Apps can safely share
-          servers and a database, and you stop paying for idle capacity.{" "}
-          <Link href="/docs/shared-infrastructure/">How sharing works</Link>
-        </p>
-      </Section>
-
-      <Section
-        title="No query can read too much"
-        panel={
-          <Demo
-            title="worst case of every route"
-            {...cost}
-            caption="20 posts, each with up to 5 comments: at most 120 reads. Ask for 10,000 posts and it won't build."
-          />
-        }
-      >
-        <p>
-          Aleph works out the most each route can ever read, write, compute, and hold in memory,
-          before a single request runs. Every query has a limit, and loops multiply them: 20 posts
-          with 5 comments each is 120 reads, every time.
+          servers and a database, and you stop paying for idle capacity.
         </p>
         <p>
-          A query that could fetch too many rows is rejected before it ships, with the line and the
-          bound to change. The same limits are enforced while it runs, so a budget is a guarantee,
-          not a guess.
-        </p>
-      </Section>
-
-      <Section
-        title="No loop can run away"
-        panel={
-          <Demo
-            title="a loop inside a loop"
-            {...loop}
-            caption="Comparing every tag with every other: 10 tags is 489 ops. Allow 100 and it's 40,809, over the limit of 2,000."
-          />
-        }
-      >
-        <p>
-          There’s no <code>while</code> loop and no recursion. Every loop runs over a list with a
-          known maximum size, so even a loop inside a loop has a worst case Aleph can count.
-        </p>
-        <p>
-          That’s why one app can’t burn the CPU that other apps share: code that could, doesn’t
-          compile.
+          That changes the price, too. A platform doesn’t have to set aside servers and a database
+          for every app it hosts, so it can offer apps built with Aleph much better pricing than a
+          dedicated deployment. <Link href="/docs/shared-infrastructure/">How sharing works</Link>
         </p>
       </Section>
 
@@ -240,18 +270,11 @@ export default function Home() {
       <Section
         title="Change it without fear"
         panel={
-          <div className="panels">
-            <Demo
-              title="compare with what's deployed"
-              {...evolve}
-              caption="Narrowing a field could break stored rows, so it's blocked. Adding one is fine."
-            />
-            <Demo
-              title="examples are the tests"
-              {...examples}
-              caption="Each example runs on a fresh store and checks the route stayed within its bound."
-            />
-          </div>
+          <Demo
+            title="compare with what's deployed"
+            {...evolve}
+            caption="Narrowing a field could break stored rows, so it's blocked. Adding one is fine."
+          />
         }
       >
         <p>
@@ -260,9 +283,8 @@ export default function Home() {
           whoever wrote them.
         </p>
         <p>
-          Examples written next to a route (given this data and this request, expect this response)
-          document it and run as its tests. <code>aleph dev</code> serves the app locally with the
-          same core that runs it in production.
+          Additive changes ship right away. Anything that could break data already stored waits for
+          a proper deprecation, so stored rows always fit the schema.
         </p>
       </Section>
 

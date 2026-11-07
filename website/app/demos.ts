@@ -18,7 +18,7 @@ const LIST_POSTS = [
 const TABLE_HEAD =
   "route            reads  writes        ops      bytes read  effects   calls         memory";
 const ADD_ROW =
-  "add_comment     1 (0%)  1 (2%)     8 (0%)     3.5 KB (0%)   0 (0%)  0 (0%)    7.1 KB (0%)";
+  "add_comment     1 (0%)  1 (2%)     8 (0%)     3.5 KB (0%)   1 (2%)  0 (0%)    7.1 KB (0%)";
 const CREATE_ROW =
   "create_post     1 (0%)  1 (2%)  489 (24%)     3.1 KB (0%)   0 (0%)  0 (0%)   34.3 KB (0%)";
 const GET_ROW =
@@ -125,7 +125,7 @@ export const evolve = {
   code: COMMENT,
   steps: [
     { edit: 20, from: "500", to: "200" },
-    { insert: 21, text: "    likes: t.int().min(0).default(0)," },
+    { insert: 20, text: "    likes: t.int().min(0).default(0)," },
     { cmd: "$ aleph check app.ts --against deployed.json" },
     { hl: [20], tone: "err", mark: "max(200)" },
     {
@@ -159,54 +159,61 @@ export const evolve = {
   still: 5,
 };
 
-const ADD_COMMENT = [
-  'a.route("POST /posts/:postId/comments")',
-  '  .id("add_comment")',
-  "  .params({ postId: t.string().max(26) })",
-  "  .body({ text: t.string().min(1).max(500) })",
-  "  .status(201)",
-  "  .example({",
-  '    name: "adds a comment, trimmed",',
-  '    as: { userId: "ada" },',
-  '    request: { params: { postId: "p1" }, body: { text: "  Nice post!  " } },',
-  '    expect: { status: 201, body: { text: "Nice post!" } },',
-  "  })",
-  "  .handle(($, { params, body }) =>",
-  "    Comment.insert({",
-  "      postId: params.postId,",
-  "      authorId: $.caller,",
-  "      text: body.text.trim(),",
-  "    }));",
+const MORE = [
+  'a.onInsert("moderate", Comment, ($, { payload }) => {',
+  "  const comment = payload.after;",
+  '  const verdict = moderation.call("check", { text: comment.text });',
+  "  $.if(verdict.spam)",
+  "    .then(() => comment.delete())",
+  "    .else(() =>",
+  "      live.publish({ postId: comment.postId }, { text: comment.text }));",
+  "});",
+  "",
+  'a.every("weeklyDigest", "mon 09:00", ($) => {',
+  '  const posts = Post.query({ limit: 10, order: "desc" });',
+  '  email.send("send", {',
+  '    to: "readers@example.com",',
+  "    subject: $.fmt`${posts.length} new posts`,",
+  "  });",
+  "});",
 ];
 
-export const examples = {
-  start: 45,
-  code: ADD_COMMENT,
+export const more = {
+  start: 76,
+  code: MORE,
   steps: [
-    { hl: [50, 51, 52, 53, 54, 55] },
-    { cmd: "$ aleph test app.ts" },
-    {
-      out: [
-        { t: "✔ add_comment: adds a comment, trimmed", k: "ok" },
-        { t: "" },
-        { t: "1 passed, 0 failed" },
-      ],
-    },
+    { hl: [76], mark: "a.onInsert" },
+    { pause: 900 },
+    { hl: [78], mark: "moderation.call" },
+    { pause: 900 },
+    { hl: [82], mark: "live.publish" },
+    { pause: 900 },
+    { hl: [85], mark: 'a.every("weeklyDigest", "mon 09:00"' },
+    { pause: 900 },
+    { hl: [87], mark: "email.send" },
     { pause: 900 },
     { hl: [] },
-    { cmd: "$ aleph dev app.ts --watch" },
-    { out: [{ t: "aleph dev: serving app.ts on http://127.0.0.1:3000", k: "dim" }] },
-    { pause: 300 },
+    { cmd: "$ aleph check app.ts" },
     {
       out: [
+        { t: "✔ valid: worst-case cost (share of the limit)", k: "ok" },
+        { t: "" },
         {
-          t: "POST /posts/p1/comments → 201 add_comment (reads 1, writes 1, ops 8) 6.56ms",
+          t: "handler         reads  writes      ops    bytes read  effects    calls        memory",
           k: "dim",
+          table: true,
+        },
+        {
+          t: "moderate       1 (0%)  1 (1%)  14 (0%)   3.5 KB (0%)   1 (1%)  1 (20%)     23 B (0%)",
+          table: true,
+        },
+        {
+          t: "weeklyDigest  10 (2%)  0 (0%)  11 (0%)  31.4 KB (0%)   1 (1%)   0 (0%)  31.4 KB (0%)",
+          table: true,
         },
       ],
     },
-    { pause: 300 },
-    { out: [{ t: "GET /posts → 200 get_posts (reads 0, writes 0, ops 7) 0.59ms", k: "dim" }] },
+    { termHl: [4, 5] },
   ] satisfies Step[],
 };
 
