@@ -16,7 +16,8 @@
     "codegen": "cargo run -q -p xtask -- codegen",
     "codegen:check": "cargo run -q -p xtask -- codegen --check",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
-    "verify": "scripts/ci.sh"
+    "verify": "scripts/ci.sh",
+    "release": "scripts/release.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.5",

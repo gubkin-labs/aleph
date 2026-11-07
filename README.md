@@ -220,19 +220,22 @@ There's no hosted CI for now: run `pnpm verify` before pushing.
 
 ### Releasing
 
-Releases are manual. In GitHub, open **Actions → Release → Run workflow** and enter a version like
-`0.1.0`. The workflow runs the same checks as `pnpm verify`, packs `@aleph-lang/manifest`,
-`@aleph-lang/core`, `@aleph-lang/sdk`, and `@aleph-lang/cli` (`scripts/release-pack.mjs`), publishes
-them to npm with provenance, and creates a GitHub release tagged `v<version>`. The packages depend
-on each other at the exact same version. A prerelease version like `0.2.0-beta.1` goes to the npm
-tag `next`, so `npm install` keeps getting the latest stable release.
-
-Publishing needs an `NPM_TOKEN` repository secret: an npm granular access token that can publish to
-the `@aleph-lang` scope. To check the packages locally first:
+Releases are manual, from your machine with your own npm login:
 
 ```bash
-pnpm build && node scripts/release-pack.mjs --version 0.0.0-local
+pnpm release 0.1.0
 ```
+
+`scripts/release.sh` checks you're on a clean, pushed `main` and logged in to npm and GitHub, runs
+`pnpm verify`, packs `@aleph-lang/manifest`, `@aleph-lang/core`, `@aleph-lang/sdk`, and
+`@aleph-lang/cli` (`scripts/release-pack.mjs`), publishes them to npm (npm may ask you to confirm
+in the browser), then tags the commit `v<version>` and creates the GitHub release. The packages
+depend on each other at the exact same version. A prerelease like `0.2.0-beta.1` goes to the npm
+tag `next`, so `npm install` keeps getting the latest stable release. If it fails partway, run it
+again with the same version: packages already on npm are skipped.
+
+The **Release** workflow in GitHub Actions does the same from CI, with npm provenance. It needs an
+`NPM_TOKEN` repository secret that can publish to `@aleph-lang`.
 
 | Task | Command |
 |---|---|
