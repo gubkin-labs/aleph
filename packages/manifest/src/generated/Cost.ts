@@ -28,6 +28,6 @@ effects: number,
  */
 calls: number, 
 /**
- * Bytes of values bound while running (see [`Limits::memory`]).
+ * Bytes of values held while running (see [`Limits::memory`]).
  */
 memory: number, };

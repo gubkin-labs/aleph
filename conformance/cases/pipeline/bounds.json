@@ -16,7 +16,7 @@
         "bytesRead": 4976,
         "effects": 0,
         "calls": 0,
-        "memory": 7464
+        "memory": 22016
       },
       "output": {
         "kind": "object",
@@ -65,7 +65,7 @@
         "bytesRead": 2508,
         "effects": 0,
         "calls": 0,
-        "memory": 5037
+        "memory": 14470
       },
       "output": {
         "kind": "object",
@@ -122,7 +122,7 @@
         "bytesRead": 2488,
         "effects": 1,
         "calls": 0,
-        "memory": 4976
+        "memory": 9208
       },
       "output": {
         "kind": "object",
@@ -173,7 +173,7 @@
         "bytesRead": 0,
         "effects": 1,
         "calls": 0,
-        "memory": 8
+        "memory": 5832
       }
     },
     "notify": {
@@ -184,7 +184,7 @@
         "bytesRead": 2249,
         "effects": 1,
         "calls": 0,
-        "memory": 2257
+        "memory": 4209
       }
     },
     "processDoc": {
@@ -195,7 +195,7 @@
         "bytesRead": 7225,
         "effects": 2,
         "calls": 1,
-        "memory": 15281
+        "memory": 63814
       }
     },
     "processFailed": {
@@ -206,7 +206,7 @@
         "bytesRead": 4737,
         "effects": 1,
         "calls": 0,
-        "memory": 4745
+        "memory": 23903
       }
     },
     "purgeFailed": {
@@ -217,7 +217,7 @@
         "bytesRead": 248800,
         "effects": 1,
         "calls": 0,
-        "memory": 124604
+        "memory": 546944
       }
     }
   }

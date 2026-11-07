@@ -29,7 +29,8 @@ effects: number,
  */
 calls: number, 
 /**
- * Maximum bytes of values a plan binds (rows read, lists built, results), summed.
+ * Maximum bytes of values a plan holds (rows read, values copied, strings and lists built,
+ * bound or not), summed, at their in-memory size.
  */
 memory: number, 
 /**

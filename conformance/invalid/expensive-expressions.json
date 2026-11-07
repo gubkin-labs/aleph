@@ -1,0 +1,1162 @@
+{
+  "expect": ["invalid_expression", "over_budget"],
+  "manifest": {
+    "app": {
+      "name": "bad"
+    },
+    "auth": {
+      "apiKeyScopes": [],
+      "roles": []
+    },
+    "counters": {},
+    "entities": {},
+    "formatVersion": "0.2",
+    "routes": [
+      {
+        "auth": {
+          "kind": "public"
+        },
+        "errors": {},
+        "id": "post_huge_pattern",
+        "input": {
+          "body": {
+            "s": {
+              "type": {
+                "kind": "string",
+                "min": 0,
+                "max": 100
+              }
+            }
+          },
+          "params": {},
+          "query": {}
+        },
+        "method": "POST",
+        "path": "/huge_pattern",
+        "plan": {
+          "body": [],
+          "output": {
+            "kind": "matches",
+            "of": {
+              "kind": "input",
+              "source": "body",
+              "name": "s"
+            },
+            "pattern": "a{0,250}b"
+          }
+        }
+      },
+      {
+        "auth": {
+          "kind": "public"
+        },
+        "errors": {},
+        "id": "post_unbounded_text",
+        "input": {
+          "body": {
+            "s": {
+              "type": {
+                "kind": "string",
+                "min": 0,
+                "max": 100
+              }
+            }
+          },
+          "params": {},
+          "query": {}
+        },
+        "method": "POST",
+        "path": "/unbounded_text",
+        "plan": {
+          "body": [],
+          "output": {
+            "kind": "matches",
+            "of": {
+              "kind": "concat",
+              "parts": [
+                {
+                  "kind": "list",
+                  "items": [
+                    {
+                      "kind": "input",
+                      "source": "body",
+                      "name": "s"
+                    }
+                  ]
+                }
+              ]
+            },
+            "pattern": "^a+$"
+          }
+        }
+      },
+      {
+        "auth": {
+          "kind": "public"
+        },
+        "errors": {},
+        "id": "post_long_match",
+        "input": {
+          "body": {
+            "s": {
+              "type": {
+                "kind": "string",
+                "min": 0,
+                "max": 65536
+              }
+            }
+          },
+          "params": {},
+          "query": {}
+        },
+        "method": "POST",
+        "path": "/long_match",
+        "plan": {
+          "body": [],
+          "output": {
+            "kind": "matches",
+            "of": {
+              "kind": "input",
+              "source": "body",
+              "name": "s"
+            },
+            "pattern": "(?:a|b|c|d|e|f|g|h|i|j)*[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]z"
+          }
+        }
+      },
+      {
+        "auth": {
+          "kind": "public"
+        },
+        "errors": {},
+        "id": "post_copies",
+        "input": {
+          "body": {
+            "s": {
+              "type": {
+                "kind": "string",
+                "min": 0,
+                "max": 65536
+              }
+            }
+          },
+          "params": {},
+          "query": {}
+        },
+        "method": "POST",
+        "path": "/copies",
+        "plan": {
+          "body": [],
+          "output": {
+            "kind": "length",
+            "of": {
+              "kind": "concat",
+              "parts": [
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                },
+                {
+                  "kind": "input",
+                  "source": "body",
+                  "name": "s"
+                }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  }
+}

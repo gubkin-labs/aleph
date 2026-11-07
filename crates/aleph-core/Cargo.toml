@@ -27,11 +27,20 @@ ts-rs = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false }
+peak_alloc = "0.3.0"
 proptest.workspace = true
 
 [[bench]]
 name = "routes"
 harness = false
 
+[[bench]]
+name = "adversarial"
+harness = false
+
 [lints]
 workspace = true
+
+[[bench]]
+name = "load"
+harness = false

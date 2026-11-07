@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use super::Ty;
 use crate::manifest::{Entity, Field, FieldType};
+use crate::value::{ENTRY_BYTES, STRING_BYTES, VALUE_BYTES};
 
 /// Upper bound on the JSON size of one field value, in bytes.
 pub(crate) fn field_bytes(ty: &FieldType) -> u64 {
@@ -50,25 +51,36 @@ pub(crate) fn profile_bytes(fields: &BTreeMap<String, Field>) -> u64 {
 pub(crate) fn ty_bytes(ty: &Ty, rows: &dyn Fn(&str) -> u64, fallback: u64) -> u64 {
     match ty {
         Ty::Unknown => fallback,
-        Ty::Null => 4,
-        Ty::Bool => 5,
-        Ty::Int { .. } => 20,
-        Ty::Decimal { .. } => 52,
+        Ty::Null | Ty::Bool | Ty::Int { .. } | Ty::Decimal { .. } => VALUE_BYTES,
         // UTF-8 uses at most 4 bytes per character.
-        Ty::String { max } => max.map_or(fallback, |max| 2 + 4 * max),
-        Ty::Enum(values) => 2 + values.iter().map(|v| v.len() as u64).max().unwrap_or(0),
-        Ty::Row(entity) | Ty::OptRow(entity) => rows(entity).max(4),
+        Ty::String { max } => max.map_or(fallback, |max| VALUE_BYTES + STRING_BYTES + 4 * max),
+        Ty::Enum(values) => {
+            VALUE_BYTES + STRING_BYTES + values.iter().map(|v| v.len() as u64).max().unwrap_or(0)
+        }
+        Ty::Row(entity) | Ty::OptRow(entity) => rows(entity).max(VALUE_BYTES),
         Ty::List { item, max } => {
-            2 + max.saturating_mul(ty_bytes(item, rows, fallback).saturating_add(1))
+            VALUE_BYTES.saturating_add(max.saturating_mul(ty_bytes(item, rows, fallback)))
         }
-        Ty::Object(fields) => {
-            2 + fields
+        Ty::Object(fields) => VALUE_BYTES.saturating_add(
+            fields
                 .iter()
-                .map(|(name, ty)| name.len() as u64 + 4 + ty_bytes(ty, rows, fallback).max(4))
-                .fold(0_u64, u64::saturating_add)
-        }
-        Ty::Opt(inner) => ty_bytes(inner, rows, fallback).max(4),
+                .map(|(name, ty)| {
+                    (ENTRY_BYTES + name.len() as u64).saturating_add(ty_bytes(ty, rows, fallback))
+                })
+                .fold(0_u64, u64::saturating_add),
+        ),
+        Ty::Opt(inner) => ty_bytes(inner, rows, fallback).max(VALUE_BYTES),
     }
+}
+
+/// Upper bound on the in-memory size of one row ([`crate::value::Value::size`]).
+pub(crate) fn row_memory(entity: &Entity) -> u64 {
+    let fields = entity
+        .fields
+        .iter()
+        .map(|(name, field)| (name.clone(), Ty::from_field(field)))
+        .collect();
+    ty_bytes(&Ty::Object(fields), &|_| 0, 0)
 }
 
 /// Upper bound on the JSON size of one row, in bytes. Optional fields may also be `null` (4

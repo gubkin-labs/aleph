@@ -99,25 +99,36 @@ impl Value {
         }
     }
 
-    /// An approximate size in bytes, for the memory meter. Never more than the static size bound
-    /// of the value's type (see `check::size`).
+    /// An approximate in-memory size in bytes, for the memory meter: every value takes a
+    /// [`VALUE_BYTES`] slot, a string adds its bytes plus an allocation, and an object adds
+    /// [`ENTRY_BYTES`] plus the key per field. Never more than the static size bound of the
+    /// value's type (see `check::size`).
     pub fn size(&self) -> u64 {
         match self {
-            Self::Null => 4,
-            Self::Bool(_) => 5,
-            Self::Int(_) => 20,
-            Self::Decimal(_) => 42,
-            Self::String(s) => 2 + s.len() as u64,
-            Self::List(items) => 2 + items.iter().map(|v| v.size() + 1).sum::<u64>(),
+            Self::Null | Self::Bool(_) | Self::Int(_) | Self::Decimal(_) => VALUE_BYTES,
+            Self::String(s) => VALUE_BYTES + STRING_BYTES + s.len() as u64,
+            Self::List(items) => VALUE_BYTES + items.iter().map(Self::size).sum::<u64>(),
             Self::Object(map) => {
-                2 + map
-                    .iter()
-                    .map(|(k, v)| k.len() as u64 + 4 + v.size().max(4))
-                    .sum::<u64>()
+                VALUE_BYTES
+                    + map
+                        .iter()
+                        .map(|(k, v)| ENTRY_BYTES + k.len() as u64 + v.size())
+                        .sum::<u64>()
             }
         }
     }
 }
+
+/// Bytes one value takes in memory before anything it points to (a 64-bit `Value`). Fixed, so
+/// the native and WASM engines report the same bounds.
+pub const VALUE_BYTES: u64 = 48;
+
+/// A string's allocation overhead beyond its bytes (allocators round up small allocations).
+pub const STRING_BYTES: u64 = 16;
+
+/// What one object field adds besides its key's bytes and its value: the key's string and its
+/// share of the map's nodes.
+pub const ENTRY_BYTES: u64 = 64;
 
 impl Serialize for Value {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
