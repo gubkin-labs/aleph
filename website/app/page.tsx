@@ -107,6 +107,38 @@ export default function Home() {
         </p>
       </Section>
 
+      <header className="group">
+        <p className="eyebrow">The cost model</p>
+        <h2>Aleph knows what your code costs before it runs</h2>
+        <p className="group-lead">
+          Aleph code is declarative. A route isn’t a program that can do anything. It’s a fixed plan
+          of queries, loops, and writes, each with a known maximum size. So Aleph can count, before
+          a single request runs, the most work any piece of logic can ever do: the rows it reads,
+          the rows it writes, the operations it runs, and the memory it uses.
+        </p>
+        <ol className="chain">
+          <li>
+            <strong>Counted</strong>
+            Every route, trigger, and job gets a worst-case cost, computed from its code.
+          </li>
+          <li>
+            <strong>Checked</strong>
+            Code that could cost too much, like a query that reads too many rows or a loop with no
+            end, doesn’t build. A meter enforces the same limits while it runs.
+          </li>
+          <li>
+            <strong>Shared</strong>
+            No app can take the CPU, memory, or database that other apps need, so many apps can run
+            safely in one process, on one database.
+          </li>
+          <li>
+            <strong>Cheaper</strong>
+            Servers and databases aren’t set aside for each app and left idle, so each app costs far
+            less to run.
+          </li>
+        </ol>
+      </header>
+
       <Section
         eyebrow="Guardrails"
         title="No query can read too much"
@@ -141,12 +173,13 @@ export default function Home() {
         }
       >
         <p>
-          There’s no <code>while</code> loop and no recursion. Every loop runs over a list with a
-          known maximum size, so even a loop inside a loop has a worst case Aleph can count.
+          There’s no unbounded <code>while</code> loop and no recursion. Every loop runs over a list
+          with a known maximum size, or declares its own maximum, so even a loop inside a loop has a
+          worst case Aleph can count.
         </p>
         <p>
-          That’s why one app can’t burn the CPU that other apps share: code that could, doesn’t
-          compile.
+          That’s why one app can’t burn the CPU that other apps share: code that could doesn’t
+          build.
         </p>
       </Section>
 
@@ -240,9 +273,10 @@ export default function Home() {
           query or one bug can hurt everyone.
         </p>
         <p>
-          Aleph rules both out. Every route has a bounded cost, and there’s no expression that names
-          another app’s data, so cross-app access can’t be written at all. Apps can safely share
-          servers and a database, and you stop paying for idle capacity.
+          Aleph rules both out. It counts what every route can cost and refuses any that could take
+          more than its share, and there’s no expression that names another app’s data, so cross-app
+          access can’t be written at all. Apps can safely share servers and a database, and you stop
+          paying for idle capacity.
         </p>
         <p>
           That changes the price, too. A platform doesn’t have to set aside servers and a database
