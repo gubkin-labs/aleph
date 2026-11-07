@@ -9,7 +9,7 @@ import {
   TradeoffScene,
   TransactionScene,
 } from "@/components/Scenes";
-import { agent, cost, evolve, examples } from "./demos";
+import { agent, cost, evolve, examples, loop } from "./demos";
 
 /** What a backend usually needs and an Aleph author doesn't write. Each is struck out in turn. */
 const HANDLED = [
@@ -175,21 +175,45 @@ export default function Home() {
       </Section>
 
       <Section
-        title="Know the cost before you deploy"
+        title="No query can read too much"
         panel={
           <Demo
             title="worst case of every route"
             {...cost}
-            caption="The query limit on line 31 is why get_notes reads at most 20 rows."
+            caption="20 posts, each with up to 5 comments: at most 120 reads. Ask for 10,000 posts and it won't build."
           />
         }
       >
         <p>
-          Aleph works out the most each route can ever read, write, compute, and hold in memory. A
-          route that could go over its budget is rejected before it ships, with a message saying
-          which bound to change.
+          Aleph works out the most each route can ever read, write, compute, and hold in memory,
+          before a single request runs. Every query has a limit, and loops multiply them: 20 posts
+          with 5 comments each is 120 reads, every time.
         </p>
-        <p>The same limits are enforced while it runs, so a budget is a guarantee, not a guess.</p>
+        <p>
+          A query that could fetch too many rows is rejected before it ships, with the line and the
+          bound to change. The same limits are enforced while it runs, so a budget is a guarantee,
+          not a guess.
+        </p>
+      </Section>
+
+      <Section
+        title="No loop can run away"
+        panel={
+          <Demo
+            title="a loop inside a loop"
+            {...loop}
+            caption="Comparing every tag with every other: 10 tags is 489 ops. Allow 100 and it's 40,809, over the limit of 2,000."
+          />
+        }
+      >
+        <p>
+          There’s no <code>while</code> loop and no recursion. Every loop runs over a list with a
+          known maximum size, so even a loop inside a loop has a worst case Aleph can count.
+        </p>
+        <p>
+          That’s why one app can’t burn the CPU that other apps share: code that could, doesn’t
+          compile.
+        </p>
       </Section>
 
       <Section

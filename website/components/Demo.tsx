@@ -21,7 +21,7 @@ export type Step =
   | { cmd: string }
   | { agent: string }
   | { out: Line[] }
-  | { hl: number[]; tone?: Tone; mark?: string }
+  | { hl: number[]; tone?: Tone; mark?: string | string[] }
   | { termHl: number[] }
   | { edit: number; from: string; to: string }
   | { insert: number; text: string }
@@ -34,7 +34,7 @@ type State = {
   code: CodeLine[];
   hl: number[];
   tone: Tone | null;
-  mark: string | null;
+  mark: string[];
   term: Line[];
   typing: Typing;
 };
@@ -46,7 +46,7 @@ function initial(code: string[]): State {
     code: code.map((text) => ({ text, orig: text })),
     hl: [],
     tone: null,
-    mark: null,
+    mark: [],
     term: [],
     typing: null,
   };
@@ -62,7 +62,8 @@ function apply(s: State, step: Step, start: number): State {
   if ("agent" in step)
     return { ...s, term: [...s.term, { t: step.agent, k: "agent" }], typing: null };
   if ("out" in step) return { ...s, term: [...s.term, ...step.out] };
-  if ("hl" in step) return { ...s, hl: step.hl, tone: step.tone ?? null, mark: step.mark ?? null };
+  if ("hl" in step)
+    return { ...s, hl: step.hl, tone: step.tone ?? null, mark: [step.mark ?? []].flat() };
   if ("termHl" in step)
     return { ...s, term: s.term.map((l, i) => (step.termHl.includes(i) ? { ...l, hl: true } : l)) };
   if ("clear" in step) return { ...s, term: [] };
@@ -329,21 +330,20 @@ export function Demo({
                 .filter(Boolean)
                 .join(" ");
               const caret = typing?.where === "code" && typing.index === i ? typing.pos : -1;
+              const tok = lit ? state.mark.find((m) => line.text.includes(m)) : undefined;
               return (
                 // biome-ignore lint/suspicious/noArrayIndexKey: lines are positional
                 <div key={i} className={cls}>
                   <span className="gutter">{String(n).padStart(width, " ")}</span>
                   <span className="code-text">
                     {caret < 0 ? (
-                      lit && state.mark && line.text.includes(state.mark) ? (
+                      tok ? (
                         <Fragment>
-                          {highlight(line.text.slice(0, line.text.indexOf(state.mark)))}
+                          {highlight(line.text.slice(0, line.text.indexOf(tok)))}
                           <mark className={`tok-mark tok-mark-${state.tone ?? "on"}`}>
-                            {highlight(state.mark)}
+                            {highlight(tok)}
                           </mark>
-                          {highlight(
-                            line.text.slice(line.text.indexOf(state.mark) + state.mark.length),
-                          )}
+                          {highlight(line.text.slice(line.text.indexOf(tok) + tok.length))}
                         </Fragment>
                       ) : (
                         highlight(line.text)

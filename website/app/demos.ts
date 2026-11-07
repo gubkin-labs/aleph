@@ -1,27 +1,42 @@
 import type { Step } from "@/components/Demo";
 
 /**
- * The homepage demos. Every scene uses one small notes app, and every line of CLI output is in
- * the CLI's real format and wording, run against that app; scenes only leave lines out.
+ * The homepage demos. Every scene uses one small blog app (posts and their comments), and every
+ * line of CLI output is in the CLI's real format and wording, run against that app; scenes only
+ * leave lines out. The code lines keep the app's real line numbers, so locations in errors match.
  */
 
-const ROUTES = [
-  'a.route("GET /notes")',
-  "  .query({ cursor: t.cursor() })",
-  '  .mcp("list_notes")',
-  "  .handle(($, { query }) =>",
-  "    Note.page({ prefix: [$.caller], limit: 20, after: query.cursor }));",
+const LIST_POSTS = [
+  'a.route("GET /posts")',
+  "  .handle(() =>",
+  "    Post.query({ limit: 20 }).map((post) => ({",
+  "      post,",
+  "      comments: Comment.query({ prefix: [post.postId], limit: 5 }),",
+  "    })));",
 ];
 
 const TABLE_HEAD =
-  "route         reads  writes     ops    bytes read  effects   calls         memory";
-const GET_ROW = "get_notes   20 (8%)  0 (0%)  6 (0%)  67.6 KB (3%)   0 (0%)  0 (0%)  199.3 KB (2%)";
-const POST_ROW =
-  "post_notes   1 (0%)  1 (2%)  7 (0%)   3.4 KB (0%)   0 (0%)  0 (0%)    6.8 KB (0%)";
+  "route            reads  writes        ops      bytes read  effects   calls         memory";
+const ADD_ROW =
+  "add_comment     1 (0%)  1 (2%)     8 (0%)     3.5 KB (0%)   0 (0%)  0 (0%)    7.1 KB (0%)";
+const CREATE_ROW =
+  "create_post     1 (0%)  1 (2%)  489 (24%)     3.1 KB (0%)   0 (0%)  0 (0%)   34.3 KB (0%)";
+const GET_ROW =
+  "get_posts    120 (48%)  0 (0%)   187 (9%)  416.1 KB (20%)   0 (0%)  0 (0%)  1.28 MB (16%)";
+
+const overBudget = (route: string, line: number, n: number, what: string, limit: number) => [
+  {
+    t: `✖ over_budget at app.ts:${line}:4 (routes[${route === "get_posts" ? 0 : 1}].plan)`,
+    k: "err" as const,
+  },
+  {
+    t: `  route "${route}" can use up to ${n} ${what} in the worst case, over the limit of ${limit}. Lower the bounds that drive it (query limits, list sizes) or split the work.`,
+  },
+];
 
 export const cost = {
-  start: 27,
-  code: ROUTES,
+  start: 24,
+  code: LIST_POSTS,
   steps: [
     { cmd: "$ aleph check app.ts" },
     {
@@ -33,43 +48,93 @@ export const cost = {
     },
     {
       out: [
+        { t: ADD_ROW, table: true },
+        { t: CREATE_ROW, table: true },
         { t: GET_ROW, table: true },
-        { t: POST_ROW, table: true },
       ],
     },
     { pause: 700 },
-    { hl: [31], mark: "limit: 20" },
-    { termHl: [4] },
+    { hl: [26, 28], mark: ["limit: 20", "limit: 5"] },
+    { termHl: [6] },
+    { pause: 1800 },
+    { hl: [] },
+    { edit: 26, from: "20", to: "10000" },
+    { clear: true },
+    { cmd: "$ aleph check app.ts" },
+    { hl: [26], tone: "err", mark: "limit: 10000" },
+    { out: [...overBudget("get_posts", 25, 60000, "reads", 250), { t: "" }, { t: "4 problems" }] },
+  ] satisfies Step[],
+  // Without motion, show the cost table with its bounds lit.
+  still: 7,
+};
+
+const CREATE_POST = [
+  'a.route("POST /posts")',
+  '  .id("create_post")',
+  "  .body({",
+  "    title: t.string().min(1).max(200),",
+  "    tags: t.array(t.string().max(32), 10),",
+  "  })",
+  "  .status(201)",
+  "  .handle((_, { body }) =>",
+  "    Post.insert({",
+  "      title: body.title,",
+  "      tags: body.tags.filter((tag) =>",
+  "        body.tags.filter((other) => other.eq(tag)).length.eq(1)),",
+  "    }));",
+];
+
+export const loop = {
+  start: 31,
+  code: CREATE_POST,
+  steps: [
+    { hl: [41, 42], mark: ["filter", "filter"] },
+    { cmd: "$ aleph check app.ts" },
+    {
+      out: [
+        { t: "✔ valid: worst-case cost (share of the limit)", k: "ok" },
+        { t: "" },
+        { t: TABLE_HEAD, k: "dim", table: true },
+        { t: CREATE_ROW, table: true, hl: true },
+      ],
+    },
+    { pause: 1400 },
+    { hl: [] },
+    { edit: 35, from: "32), 10)", to: "32), 100)" },
+    { clear: true },
+    { cmd: "$ aleph check app.ts" },
+    { hl: [35], tone: "err", mark: "100)" },
+    { out: [...overBudget("create_post", 38, 40809, "ops", 2000), { t: "" }, { t: "1 problem" }] },
   ] satisfies Step[],
 };
 
-const ENTITY = [
-  'const Note = a.entity("Note", {',
-  '  key: ["ownerId", "noteId"],',
+const COMMENT = [
+  'const Comment = a.entity("Comment", {',
+  '  key: ["postId", "commentId"],',
   "  fields: {",
-  "    ownerId: t.string().max(64),",
-  "    noteId: t.id().generated(),",
+  "    postId: t.string().max(26),",
+  "    commentId: t.id().generated(),",
+  "    authorId: t.string().max(64),",
   "    text: t.string().min(1).max(500),",
-  "    pinned: t.bool().default(false),",
   "  },",
   "});",
 ];
 
 export const evolve = {
-  start: 5,
-  code: ENTITY,
+  start: 14,
+  code: COMMENT,
   steps: [
-    { edit: 10, from: "500", to: "200" },
-    { insert: 11, text: "    color: t.string().max(16).optional()," },
+    { edit: 20, from: "500", to: "200" },
+    { insert: 21, text: "    likes: t.int().min(0).default(0)," },
     { cmd: "$ aleph check app.ts --against deployed.json" },
-    { hl: [10], tone: "err", mark: "max(200)" },
+    { hl: [20], tone: "err", mark: "max(200)" },
     {
       out: [
         {
-          t: "✖ entities.Note.fields.text: string length 1-500 narrowed to 1-200; existing values may not fit",
+          t: "✖ entities.Comment.fields.text: string length 1-500 narrowed to 1-200; existing values may not fit",
           k: "err",
         },
-        { t: "✔ entities.Note.fields.color: new field color", k: "ok" },
+        { t: "✔ entities.Comment.fields.likes: new field likes", k: "ok" },
         { t: "" },
         {
           t: "✖ not deployable: breaking changes need a deprecation in the deployed manifest first",
@@ -79,12 +144,12 @@ export const evolve = {
     },
     { pause: 1600 },
     { hl: [] },
-    { edit: 10, from: "200", to: "500" },
+    { edit: 20, from: "200", to: "500" },
     { clear: true },
     { cmd: "$ aleph check app.ts --against deployed.json" },
     {
       out: [
-        { t: "✔ entities.Note.fields.color: new field color", k: "ok" },
+        { t: "✔ entities.Comment.fields.likes: new field likes", k: "ok" },
         { t: "" },
         { t: "✔ deployable", k: "ok" },
       ],
@@ -94,83 +159,83 @@ export const evolve = {
   still: 5,
 };
 
-const EXAMPLE = [
-  'a.route("POST /notes")',
+const ADD_COMMENT = [
+  'a.route("POST /posts/:postId/comments")',
+  '  .id("add_comment")',
+  "  .params({ postId: t.string().max(26) })",
   "  .body({ text: t.string().min(1).max(500) })",
   "  .status(201)",
   "  .example({",
-  '    name: "creates a note",',
+  '    name: "adds a comment, trimmed",',
   '    as: { userId: "ada" },',
-  '    request: { body: { text: "  hello  " } },',
-  '    expect: { status: 201, body: { text: "hello" } },',
+  '    request: { params: { postId: "p1" }, body: { text: "  Nice post!  " } },',
+  '    expect: { status: 201, body: { text: "Nice post!" } },',
   "  })",
-  "  .handle(($, { body }) =>",
-  "    Note.insert({ ownerId: $.caller, text: body.text.trim() }));",
+  "  .handle(($, { params, body }) =>",
+  "    Comment.insert({",
+  "      postId: params.postId,",
+  "      authorId: $.caller,",
+  "      text: body.text.trim(),",
+  "    }));",
 ];
 
 export const examples = {
-  start: 15,
-  code: EXAMPLE,
+  start: 45,
+  code: ADD_COMMENT,
   steps: [
-    { hl: [18, 19, 20, 21, 22, 23] },
+    { hl: [50, 51, 52, 53, 54, 55] },
     { cmd: "$ aleph test app.ts" },
     {
-      out: [{ t: "✔ post_notes: creates a note", k: "ok" }, { t: "" }, { t: "1 passed, 0 failed" }],
+      out: [
+        { t: "✔ add_comment: adds a comment, trimmed", k: "ok" },
+        { t: "" },
+        { t: "1 passed, 0 failed" },
+      ],
     },
     { pause: 900 },
     { hl: [] },
     { cmd: "$ aleph dev app.ts --watch" },
     { out: [{ t: "aleph dev: serving app.ts on http://127.0.0.1:3000", k: "dim" }] },
     { pause: 300 },
-    { out: [{ t: "POST /notes → 201 post_notes (reads 1, writes 1, ops 7) 1.3ms", k: "dim" }] },
+    {
+      out: [
+        {
+          t: "POST /posts/p1/comments → 201 add_comment (reads 1, writes 1, ops 8) 6.56ms",
+          k: "dim",
+        },
+      ],
+    },
     { pause: 300 },
-    { out: [{ t: "GET /notes → 200 get_notes (reads 1, writes 0, ops 6) 0.46ms", k: "dim" }] },
+    { out: [{ t: "GET /posts → 200 get_posts (reads 0, writes 0, ops 7) 0.59ms", k: "dim" }] },
   ] satisfies Step[],
 };
 
 export const agent = {
-  start: 27,
-  code: ROUTES,
+  start: 24,
+  code: LIST_POSTS,
   steps: [
-    { agent: "you   ▸ Show more notes per page." },
-    { edit: 31, from: "20", to: "5000" },
+    { agent: "you   ▸ Show every comment under each post." },
+    { edit: 28, from: "limit: 5 ", to: "limit: 1000 " },
     { cmd: "$ aleph check app.ts" },
-    { hl: [30, 31], tone: "err", mark: "limit: 5000" },
-    {
-      out: [
-        { t: "✖ over_budget at app.ts:30:4 (routes[1].plan)", k: "err" },
-        {
-          t: '  route "get_notes" can use up to 5000 reads in the worst case, over the limit of 250. Lower the bounds that drive it (query limits, list sizes) or split the work.',
-        },
-        { t: "" },
-        { t: "3 problems" },
-      ],
-    },
+    { hl: [26, 28], tone: "err", mark: ["limit: 20", "limit: 1000"] },
+    { out: [...overBudget("get_posts", 25, 20020, "reads", 250), { t: "" }, { t: "3 problems" }] },
     { pause: 1200 },
     {
       agent:
-        "agent ▸ 5000 is over the read budget of 250. Using 100 per page; the cursor gets the rest.",
+        "agent ▸ 20 posts × 1000 comments is over the read budget of 250. Showing 10 per post; the full thread can page in on demand.",
     },
     { hl: [] },
-    { edit: 31, from: "5000", to: "100" },
+    { edit: 28, from: "limit: 1000 ", to: "limit: 10 " },
     { clear: true },
     { cmd: "$ aleph check app.ts" },
     {
       out: [
         { t: "✔ valid: worst-case cost (share of the limit)", k: "ok" },
         { t: "" },
+        { t: TABLE_HEAD, k: "dim", table: true },
         {
-          t: "route           reads  writes     ops      bytes read  effects   calls         memory",
-          k: "dim",
-          table: true,
-        },
-        {
-          t: "get_notes   100 (40%)  0 (0%)  6 (0%)  338.1 KB (17%)   0 (0%)  0 (0%)  740.4 KB (9%)",
+          t: "get_posts    220 (88%)  0 (0%)   187 (9%)  769.6 KB (38%)   0 (0%)  0 (0%)  2.32 MB (29%)",
           hl: true,
-          table: true,
-        },
-        {
-          t: "post_notes     1 (0%)  1 (2%)  7 (0%)     3.4 KB (0%)   0 (0%)  0 (0%)    6.8 KB (0%)",
           table: true,
         },
       ],
