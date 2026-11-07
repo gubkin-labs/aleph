@@ -1151,3 +1151,57 @@ fn an_expired_row_cant_be_updated() {
     assert_eq!(status_after(1), 200);
     assert_eq!(status_after(100), 404);
 }
+
+#[test]
+fn set_cookie_headers_accumulate_and_others_replace() {
+    let header = |name: &str, value: &str| json!({ "kind": "setHeader", "name": name, "value": lit(json!(value)) });
+    let m = manifest(
+        vec![
+            header("set-cookie", "a=1"),
+            header("set-cookie", "b=2"),
+            header("x-tag", "one"),
+            header("x-tag", "two"),
+        ],
+        lit(json!(1)),
+    );
+    let r = run(&m, json!({ "n": 1, "name": "a" }));
+    assert_eq!(r.status, 200, "{:?}", r.body);
+    assert_eq!(r.cookies, ["a=1", "b=2"]);
+    assert_eq!(r.headers.get("x-tag").map(String::as_str), Some("two"));
+    assert!(!r.headers.contains_key("set-cookie"), "{:?}", r.headers);
+}
+
+#[test]
+fn workflow_state_fields_may_be_cleared_to_null() {
+    // The checker lets a step set any state field to null (state fields start unset), so the
+    // runtime must accept it too.
+    let mut m = manifest(
+        vec![let_(
+            0,
+            json!({ "op": "startWorkflow", "workflow": "w", "key": lit(json!("k")), "input": {} }),
+        )],
+        lit(json!(1)),
+    );
+    m["workflows"] = json!({ "w": { "input": {}, "start": "a", "state": { "n": { "type": { "kind": "int" } } } } });
+    let step = |name: &str, body: Vec<Json>| {
+        json!({
+            "id": format!("w_{name}"),
+            "trigger": { "kind": "workflow", "workflow": "w", "step": name },
+            "errors": {},
+            "plan": { "body": body, "output": lit(Json::Null) },
+        })
+    };
+    m["handlers"] = json!([
+        step(
+            "a",
+            vec![json!({ "kind": "next", "step": "b", "state": { "n": lit(Json::Null) } })]
+        ),
+        step("b", vec![json!({ "kind": "complete" })]),
+    ]);
+    assert_eq!(codes(&m), ok());
+    let (engine, tenant, _) = engine_for(&m);
+    assert_eq!(post(&engine, &tenant).status, 200);
+    let report = engine.process(&tenant, 100);
+    assert_eq!(report.failures, Vec::<String>::new(), "{report:#?}");
+    assert_eq!(report.ran, 2, "{report:#?}");
+}
