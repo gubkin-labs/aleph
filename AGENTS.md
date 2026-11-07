@@ -41,6 +41,9 @@ If you intentionally changed SDK output or analysis results, update the golden f
 - TypeScript: strict, with `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, and
   `isolatedDeclarations`. Biome for lint and format. Vitest for tests. `tsdown` for builds.
 - Diagnostics and error messages say what's wrong **and how to fix it**. Agents read them.
+- **Every public claim needs evidence.** `CLAIMS.md` maps each promise on the site, the docs, and
+  the README to the test or measurement behind it. Adding or strengthening a claim means adding its
+  row (and its evidence) in the same change; don't state as fact anything marked "Not yet".
 - **"Cost" means money**: what the platform hosting an Aleph app bills for it, and the
   infrastructure behind that. For what a route or handler can read, write, compute, or allocate,
   say **usage**, measured against **limits** (not "cost" or "budget"), in docs, CLI output, and

@@ -213,7 +213,7 @@ pnpm build        # builds the WASM core and all packages (Turborepo)
 ```
 
 ```bash
-pnpm verify       # every check: rustfmt, clippy, cargo test, codegen check, Biome, build, typecheck, TS tests
+pnpm verify       # every check: rustfmt, clippy, cargo test (plus 100,000 generated plans), codegen check, Biome, build, typecheck, TS tests
 ```
 
 There's no hosted CI for now: run `pnpm verify` before pushing.
@@ -275,8 +275,9 @@ Manifest format `0.2` (language v0.3 features are additive). The core and SDK co
   compensation steps, cancellation, and `maxSteps` so every instance finishes.
 - **Integrations:** journaled calls and after-commit sends, with mock providers for tests and `aleph dev`.
 - **Guarantees:** worst-case reads, writes, ops, bytes, effects, calls, and memory for every route
-  and handler, enforced by a runtime meter. A differential test over 100k+ generated plans checks
-  that actual usage never exceeds the bounds and that runs never leave their tenant.
+  and handler, enforced by a runtime meter. A differential test over 100,000 generated plans, run by
+  every `pnpm verify`, checks that actual usage never exceeds the bounds and that runs never leave
+  their tenant.
 - **Tooling:** the `aleph` CLI:
   - `build`
   - `check`, with route and handler usage tables, and `--against` to classify schema changes and

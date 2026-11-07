@@ -16,3 +16,6 @@ website/test/.samples-*/
 website/test/snippets/generated/
 website/tsconfig.tsbuildinfo
 release/
+
+# Worktrees of parallel Claude Code sessions
+.claude/worktrees/

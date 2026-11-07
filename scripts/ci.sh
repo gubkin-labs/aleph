@@ -15,6 +15,11 @@ if ! clippy_out=$(cargo clippy --workspace --all-targets --locked --quiet -- -D 
 fi
 step "Rust: tests"
 cargo test --workspace --locked --quiet
+step "Rust: 100,000 generated plans"
+# The docs promise usage never exceeds the static bounds and runs never leave their tenant, on
+# 100,000 random plans. The normal run above tries 400; this makes the documented number true.
+PROPTEST_CASES=100000 cargo test -p aleph-core --test generated_plans --release --locked --quiet \
+  generated_plans_stay_within_bounds_and_their_tenant
 step "Generated code is up to date"
 # Hide ts-rs's harmless serde-attribute notes, but show real failures (like stale files).
 if ! codegen_out=$(cargo run -q -p xtask -- codegen --check 2>&1); then

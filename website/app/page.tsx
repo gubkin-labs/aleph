@@ -234,8 +234,8 @@ export default function Home() {
             route can do, and the most it can ever use.
           </li>
           <li>
-            <strong>A platform runs the manifest.</strong> One small, audited core interprets it, so
-            your code never runs in production.
+            <strong>A platform runs the manifest.</strong> One small, open-source core interprets
+            it, so your code never runs in production.
           </li>
         </ol>
         <p>

@@ -62,7 +62,7 @@ app.ts ──@aleph-lang/sdk──▶ manifest.json ──aleph-core──▶ va
 3. **The core checks.** `aleph-core`, a Rust library, resolves every reference, infers types (including nullability and string lengths), and computes worst-case usage: sequences add, branches take the maximum, loops multiply.
 4. **The core runs.** Each request is one optimistic, serializable transaction, metered on every read, write, and operation. Effects go to a transactional outbox, and every key is built inside the tenant's keyspace. The same core compiles to WebAssembly, so `aleph dev` and `aleph test` run exactly what production runs.
 
-Static bounds and the runtime meter are two independent accounts of the same usage, and the test suite checks they agree on every example and on more than 100,000 generated plans.
+Static bounds and the runtime meter are two independent accounts of the same usage, and every full check run (`pnpm verify`) confirms they agree on every example and on 100,000 randomly generated plans.
 
 ## Next
 
