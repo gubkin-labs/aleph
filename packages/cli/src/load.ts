@@ -16,6 +16,22 @@ function isBuildable(value: unknown): value is Buildable {
   );
 }
 
+/**
+ * Explains a failed import. The common case: a project whose package.json says
+ * `"type": "commonjs"` (new npm projects do), so Node loads `app.ts` as CommonJS.
+ */
+export function loadFailure(path: string, error: unknown): LoadError {
+  const message = error instanceof Error ? error.message : String(error);
+  const commonJs =
+    /Cannot use import statement outside a module|Unexpected token 'export'/.test(message) &&
+    /\.[cm]?ts$/.test(path);
+  return new LoadError(
+    commonJs
+      ? `couldn't load ${path}: Node loaded it as CommonJS, but Aleph apps are ES modules. Set "type": "module" in your package.json (npm pkg set type=module), or rename the file to app.mts.`
+      : `couldn't load ${path}: ${message}`,
+  );
+}
+
 /** Thrown for problems loading an app that the user can fix. */
 export class LoadError extends Error {
   constructor(message: string) {
@@ -30,9 +46,7 @@ export async function loadModule(path: string, fresh = false): Promise<{ default
   try {
     return (await import(url)) as { default?: unknown };
   } catch (error) {
-    throw new LoadError(
-      `couldn't load ${path}: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw loadFailure(path, error);
   }
 }
 
@@ -52,9 +66,7 @@ export async function loadManifest(
     const url = `${pathToFileURL(file).href}${options.fresh ? `?v=${Date.now()}` : ""}`;
     module = (await import(url)) as { default?: unknown };
   } catch (error) {
-    throw new LoadError(
-      `couldn't load ${path}: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw loadFailure(path, error);
   }
   if (!isBuildable(module.default)) {
     throw new LoadError(

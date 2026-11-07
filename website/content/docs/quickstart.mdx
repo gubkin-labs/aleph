@@ -6,14 +6,20 @@ In five minutes: write a small backend, see its worst-case usage, add an example
 
 <Alpha />
 
-Aleph is two packages: the SDK you write apps with, and the CLI that checks, tests, and serves them. They aren't on npm yet, so install them from the latest [GitHub release](https://github.com/gubkin-labs/aleph/releases). The CLI brings the WebAssembly build of the core with it, so there's nothing else to install.
+Aleph is two packages: the SDK you write apps with, and the CLI that checks, tests, and serves them. They aren't on npm yet, so install them from a [GitHub release](https://github.com/gubkin-labs/aleph/releases). The CLI brings the WebAssembly build of the core with it, so there's nothing else to install.
 
 ```bash
-npm install https://github.com/gubkin-labs/aleph/releases/latest/download/aleph-sdk.tgz
-npm install --save-dev https://github.com/gubkin-labs/aleph/releases/latest/download/aleph-cli.tgz
+npm install https://github.com/gubkin-labs/aleph/releases/download/v0.1.0-alpha.1/aleph-sdk.tgz
+npm install --save-dev https://github.com/gubkin-labs/aleph/releases/download/v0.1.0-alpha.1/aleph-cli.tgz
 ```
 
-`latest` is the newest release when you install. To pin one, use its version instead, like `https://github.com/gubkin-labs/aleph/releases/download/v0.1.0-alpha.1/aleph-sdk.tgz`. pnpm and bun take the same URLs.
+Aleph apps are ES modules. New npm projects say `"type": "commonjs"` in package.json, so switch yours to modules:
+
+```bash
+npm pkg set type=module
+```
+
+pnpm and bun take the same URLs. To upgrade, change the version in both. Always install a versioned URL, not the release page's "latest" link: the file behind that link changes with every release, so the checksum in your lockfile stops matching and `npm ci` fails.
 
 Requirements:
 - **Node.js 24 or newer.** The CLI loads `app.ts` with Node's built-in TypeScript support, so there's no separate build step.

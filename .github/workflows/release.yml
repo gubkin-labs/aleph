@@ -68,3 +68,18 @@ jobs:
             --title "Aleph v$VERSION (alpha)" \
             --notes-file release/RELEASE_NOTES.md \
             --latest
+
+      # Install instructions use versioned URLs (a lockfile pins each tarball's checksum), so point
+      # them at the release that was just published.
+      - name: Point the install docs at this release
+        run: |
+          node scripts/set-release-version.mjs "$VERSION"
+          if git diff --quiet; then
+            echo "install docs already point at v$VERSION"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Point install docs at v$VERSION"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push origin "HEAD:$GITHUB_REF_NAME"

@@ -11,15 +11,18 @@ databases safely.
 
 ## Install
 
-The packages aren't on npm yet. Install them from the latest [GitHub release](https://github.com/gubkin-labs/aleph/releases), in a
-project on Node.js 24 or later:
+The packages aren't on npm yet. Install them from a [GitHub release](https://github.com/gubkin-labs/aleph/releases), in a project
+on Node.js 24 or later:
 
 ```bash
-npm install https://github.com/gubkin-labs/aleph/releases/latest/download/aleph-sdk.tgz
-npm install --save-dev https://github.com/gubkin-labs/aleph/releases/latest/download/aleph-cli.tgz
+npm install https://github.com/gubkin-labs/aleph/releases/download/v0.1.0-alpha.1/aleph-sdk.tgz
+npm install --save-dev https://github.com/gubkin-labs/aleph/releases/download/v0.1.0-alpha.1/aleph-cli.tgz
+npm pkg set type=module   # Aleph apps are ES modules; new npm projects default to CommonJS
 ```
 
-Then follow the [quickstart](https://aleph-lang.vercel.app/docs/quickstart/).
+To upgrade, change the version in both URLs. Use a versioned URL, not the release page's "latest"
+link: the file behind that link changes with every release, so the checksum in your lockfile stops
+matching and `npm ci` fails. Then follow the [quickstart](https://aleph-lang.vercel.app/docs/quickstart/).
 
 ## What's here
 
@@ -227,9 +230,11 @@ There's no hosted CI for now: run `pnpm verify` before pushing.
 Releases are manual. In GitHub, open **Actions → Release → Run workflow** and enter a version like
 `0.1.0-alpha.1`. The workflow runs the same checks as `pnpm verify`, packs `@aleph/manifest`,
 `@aleph/core`, `@aleph/sdk`, and `@aleph/cli` into tarballs (`scripts/release-pack.mjs`), and
-publishes them on a GitHub release tagged `v<version>`, marked as the latest. Each tarball depends on
-the others from the same release, so installing the SDK and the CLI by URL brings matching versions
-of the rest. To try the tarballs locally first:
+publishes them on a GitHub release tagged `v<version>`. Each tarball depends on the others from the
+same release, so installing the SDK and the CLI by URL brings matching versions of the rest. Last,
+it commits "Point install docs at v<version>" to the branch it ran on
+(`scripts/set-release-version.mjs`), so the README, the quickstart, and the homepage install the new
+release by its versioned URL. To try the tarballs locally first:
 
 ```bash
 pnpm build && node scripts/release-pack.mjs --version 0.0.0-local --base-url "file:$PWD/release"

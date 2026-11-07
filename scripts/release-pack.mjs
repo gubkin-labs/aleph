@@ -6,8 +6,9 @@
 // Run `pnpm build` first. Each package is staged with its built files, a README, and the license,
 // and its package.json gets the release version. Dependencies on other Aleph packages point at
 // their tarballs in the same release (`--base-url`), so installing @aleph/sdk and @aleph/cli by
-// URL pulls in matching versions of @aleph/manifest and @aleph/core. Tarballs have stable names
-// (aleph-sdk.tgz) so `releases/latest/download/aleph-sdk.tgz` always means the newest release.
+// URL pulls in matching versions of @aleph/manifest and @aleph/core. Install instructions always
+// use versioned URLs: a lockfile records each tarball's checksum, and the release page's "latest"
+// link serves a new file on every release, which would break `npm ci`.
 import { execFileSync } from "node:child_process";
 import {
   cpSync,
@@ -56,11 +57,13 @@ const ALPHA = [
   "> format, and these packages will change without notice between releases.",
 ].join("\n");
 
-const latest = (file) => `https://github.com/${REPO}/releases/latest/download/${file}`;
+/** Where this version's tarballs are published (even when testing with a local `--base-url`). */
+const published = (file) => `https://github.com/${REPO}/releases/download/v${version}/${file}`;
 const install = (url) => [
   "```bash",
   `npm install ${url("aleph-sdk.tgz")}`,
   `npm install -D ${url("aleph-cli.tgz")}`,
+  "npm pkg set type=module   # Aleph apps are ES modules; new npm projects default to CommonJS",
   "```",
 ];
 
@@ -72,9 +75,9 @@ function readme(name, description) {
     "",
     ALPHA,
     "",
-    "Aleph isn't published to npm yet. Install it from the latest GitHub release:",
+    `Aleph isn't published to npm yet. Install this release (v${version}) from GitHub:`,
     "",
-    ...install(latest),
+    ...install(published),
     "",
     "Docs: https://aleph-lang.vercel.app/docs/ · Source: https://github.com/gubkin-labs/aleph",
     "",
@@ -139,7 +142,6 @@ for (const [dir, name, file] of PACKAGES) {
 }
 rmSync(join(out, "stage"), { recursive: true, force: true });
 
-const pinned = (f) => `${baseUrl}/${f}`;
 writeFileSync(
   join(out, "RELEASE_NOTES.md"),
   [
@@ -149,11 +151,10 @@ writeFileSync(
     "",
     "In a project with Node.js 24 or later:",
     "",
-    ...install(pinned),
+    ...install(published),
     "",
-    "Or always take the newest release:",
-    "",
-    ...install(latest),
+    "To upgrade later, change the version in both URLs. Don't install the release page's \"latest\"",
+    "link: it serves a new file on every release, so your lockfile's checksum stops matching.",
     "",
     "Then follow the [quickstart](https://aleph-lang.vercel.app/docs/quickstart/).",
     "",

@@ -1,9 +1,11 @@
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { main, startDevServer } from "../src/index.js";
+import { loadFailure } from "../src/load.js";
 
 const cases = join(import.meta.dirname, "..", "..", "..", "conformance", "cases");
 const invalid = join(import.meta.dirname, "..", "..", "..", "conformance", "invalid");
@@ -23,6 +25,20 @@ describe("aleph build", () => {
     expect(readFileSync(target, "utf8")).toBe(
       readFileSync(join(cases, name, "manifest.json"), "utf8"),
     );
+  });
+
+  it("explains an app that Node loads as CommonJS", () => {
+    // Node's real error for an ES module in a "type": "commonjs" project. (Vitest transforms
+    // imports itself, so the CLI has to be checked against Node's message directly.)
+    const dir = mkdtempSync(join(tmpdir(), "aleph-cli-"));
+    writeFileSync(join(dir, "package.json"), '{ "type": "commonjs" }\n');
+    writeFileSync(join(dir, "app.ts"), 'import { app } from "@aleph/sdk";\nexport default app;\n');
+    const node = spawnSync(process.execPath, [join(dir, "app.ts")], { encoding: "utf8" });
+    const message = node.stderr.split("\n").find((l) => l.startsWith("SyntaxError")) ?? "";
+    expect(message).not.toBe("");
+    expect(
+      loadFailure("app.ts", new SyntaxError(message.replace("SyntaxError: ", ""))).message,
+    ).toMatch(/Aleph apps are ES modules[\s\S]*npm pkg set type=module/);
   });
 
   it("explains a module that doesn't export an app", async () => {
