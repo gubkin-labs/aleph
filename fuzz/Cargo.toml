@@ -1,0 +1,43 @@
+[package]
+name = "aleph-core-fuzz"
+description = "Coverage-guided fuzz targets for aleph-core (run with cargo-fuzz; see the README)"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Not part of the main workspace: `cargo fuzz` needs nightly, and `pnpm verify` stays on stable.
+[workspace]
+
+[dependencies]
+aleph-core = { path = "../crates/aleph-core" }
+arbitrary = "1.4"
+libfuzzer-sys = "0.4"
+serde_json = "1.0"
+
+[[bin]]
+name = "parse_bytes"
+path = "fuzz_targets/parse_bytes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_mutated"
+path = "fuzz_targets/parse_mutated.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "execute"
+path = "fuzz_targets/execute.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = 1

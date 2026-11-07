@@ -218,6 +218,38 @@ pnpm verify       # every check: rustfmt, clippy, cargo test (plus 100,000 gener
 
 There's no hosted CI for now: run `pnpm verify` before pushing.
 
+### Fuzzing
+
+`fuzz/` holds coverage-guided fuzz targets for `aleph-core`, run with
+[cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz). It's its own Cargo workspace on nightly,
+so `pnpm verify` doesn't build it. One-time setup:
+
+```bash
+rustup toolchain install nightly --profile minimal && cargo install cargo-fuzz --locked
+```
+
+```bash
+fuzz/seed.sh      # seeds parse_bytes with the golden and invalid conformance manifests
+```
+
+Then run a target from `fuzz/` (`-s none`: the core has no `unsafe`, so AddressSanitizer only
+slows it down; `-fork=N` runs N workers and keeps going after a failure):
+
+```bash
+cd fuzz && cargo +nightly fuzz run -s none -O execute -- -max_total_time=1800 -timeout=10 -fork=4 -ignore_crashes=1
+```
+
+| Target          | Input                                    | Checks                                                                                                     |
+| --------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `parse_bytes`   | arbitrary bytes (add `-dict=manifest.dict`) | `parse_and_validate` returns a manifest or diagnostics: no panic, stack overflow, or timeout              |
+| `parse_mutated` | golden manifests, structure-aware mutations | the same, plus every accepted route has bounds within the limits                                          |
+| `execute`       | a mutated manifest that validates, part of its scenario, then generated requests, `process` calls, and clock advances | usage ≤ static bounds, no `budget_exceeded`, only the executing tenant's keys change, a failed request leaves the store unchanged, no panic |
+
+`ALEPH_FUZZ_STRICT=1` also fails `execute` on `runtime_error` responses (a checker gap rather
+than a broken promise). Failures land in `fuzz/artifacts/<target>/`; reproduce one with
+`cargo +nightly fuzz run -s none -O <target> <file>`, shrink it with `cargo +nightly fuzz tmin`,
+and add it as a regression test in `crates/aleph-core/tests/` before fixing the core.
+
 ### Releasing
 
 Releases are manual, from your machine with your own npm login:
