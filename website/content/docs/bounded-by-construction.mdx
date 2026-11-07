@@ -10,7 +10,7 @@ Every route and handler has a **static bound**: the most it can use of each reso
 | `bytesRead` | Bytes read from storage |
 | `effects` | Events, jobs, messages, sends, and change triggers released |
 | `calls` | Integration calls |
-| `memory` | Bytes of values bound while running |
+| `memory` | Bytes of values held while running: every value read, copied, or built, bound or not, at its in-memory size |
 
 ## How bounds are computed
 
@@ -20,6 +20,8 @@ The checker folds over the plan:
 - **Queries** use `limit` reads, and `limit × max row size` bytes.
 - **Writes** use one for the row, plus each index entry and counter it maintains (twice for updates, which may move an entry).
 - **Sorting** uses `n × ⌈log₂ n⌉` comparisons.
+- **Pattern matching** (`.matches()`) uses ops for the text's maximum length times the compiled pattern's size, so the text needs a `.max()`, and patterns that compile to over 8 KB are rejected. A 254-character email check uses about 20 ops.
+- **`in` against a list of constants** uses one more op per 64 constants.
 - **Chains of handlers** are bounded too: each run has its own limits, and handlers that could set each other off without end are rejected as [trigger cycles](/docs/background-work/#trigger-cycles).
 
 Everything traces back to a declaration: `.max(...)` on strings, ints, and arrays, `limit` on queries, and `max` on `$.loop`. That's why a string field without a maximum isn't a field.

@@ -22,7 +22,7 @@
         "bytesRead": 4704,
         "effects": 1,
         "calls": 0,
-        "memory": 8
+        "memory": 1400
       },
       "output": {
         "kind": "null"
@@ -36,7 +36,7 @@
         "bytesRead": 2395,
         "effects": 0,
         "calls": 0,
-        "memory": 3871
+        "memory": 24522
       },
       "output": {
         "kind": "object",
@@ -73,7 +73,7 @@
         "bytesRead": 14668,
         "effects": 0,
         "calls": 0,
-        "memory": 16812
+        "memory": 62634
       },
       "output": {
         "kind": "object",
@@ -120,7 +120,7 @@
         "bytesRead": 0,
         "effects": 0,
         "calls": 0,
-        "memory": 4
+        "memory": 642
       },
       "output": {
         "kind": "null"
@@ -134,7 +134,7 @@
         "bytesRead": 14540,
         "effects": 0,
         "calls": 0,
-        "memory": 31730
+        "memory": 89056
       },
       "output": {
         "kind": "object",
@@ -158,7 +158,7 @@
         "bytesRead": 1823,
         "effects": 0,
         "calls": 0,
-        "memory": 4953
+        "memory": 16870
       },
       "output": {
         "kind": "object",
@@ -196,7 +196,7 @@
         "bytesRead": 38484,
         "effects": 0,
         "calls": 0,
-        "memory": 104421
+        "memory": 269638
       },
       "output": {
         "kind": "object",
@@ -220,7 +220,7 @@
         "bytesRead": 4704,
         "effects": 0,
         "calls": 0,
-        "memory": 14918
+        "memory": 165938
       },
       "output": {
         "kind": "object",
@@ -263,7 +263,7 @@
         "bytesRead": 208,
         "effects": 0,
         "calls": 0,
-        "memory": 154
+        "memory": 1192
       },
       "output": {
         "kind": "object",
@@ -291,7 +291,7 @@
         "bytesRead": 2908,
         "effects": 0,
         "calls": 0,
-        "memory": 4362
+        "memory": 12408
       },
       "output": {
         "kind": "object",
@@ -330,7 +330,7 @@
         "bytesRead": 19244,
         "effects": 2,
         "calls": 0,
-        "memory": 38568
+        "memory": 471043
       },
       "output": {
         "kind": "object",
@@ -381,7 +381,7 @@
         "bytesRead": 1689,
         "effects": 0,
         "calls": 0,
-        "memory": 3378
+        "memory": 7673
       },
       "output": {
         "kind": "object",
@@ -413,7 +413,7 @@
         "bytesRead": 9408,
         "effects": 1,
         "calls": 0,
-        "memory": 9446
+        "memory": 60769
       },
       "output": {
         "kind": "object",
@@ -438,7 +438,7 @@
         "bytesRead": 74944,
         "effects": 1,
         "calls": 0,
-        "memory": 9427
+        "memory": 50902
       },
       "output": {
         "kind": "object",
@@ -457,7 +457,7 @@
         "bytesRead": 2395,
         "effects": 0,
         "calls": 0,
-        "memory": 4790
+        "memory": 12869
       },
       "output": {
         "kind": "object",
@@ -488,7 +488,7 @@
         "bytesRead": 1454,
         "effects": 0,
         "calls": 0,
-        "memory": 2908
+        "memory": 6609
       },
       "output": {
         "kind": "object",
@@ -529,7 +529,7 @@
         "bytesRead": 0,
         "effects": 1,
         "calls": 0,
-        "memory": 8
+        "memory": 17006
       }
     },
     "cascade_Note_batch": {
@@ -540,7 +540,7 @@
         "bytesRead": 168900,
         "effects": 1,
         "calls": 0,
-        "memory": 169160
+        "memory": 684506
       }
     },
     "remind": {
@@ -551,7 +551,7 @@
         "bytesRead": 6527,
         "effects": 1,
         "calls": 0,
-        "memory": 6971
+        "memory": 31946
       }
     },
     "weeklyDigest": {
@@ -562,7 +562,7 @@
         "bytesRead": 64,
         "effects": 0,
         "calls": 0,
-        "memory": 24
+        "memory": 192
       }
     }
   }

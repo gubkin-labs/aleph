@@ -103,6 +103,8 @@ pub(crate) struct Exec<'a> {
     pub(crate) caller: Option<&'a super::Caller>,
     pub(crate) inputs: &'a Inputs,
     pub(crate) vars: HashMap<VarId, Value>,
+    /// Patterns `matches` compiled during this execution, by pattern text.
+    pub(crate) patterns: HashMap<&'a str, std::rc::Rc<builtins::Pattern>>,
     /// Off while evaluating counter predicates, which are part of the write they belong to.
     pub(crate) metered: bool,
     /// Response headers, status, cookies, and logs the plan set.
@@ -1771,11 +1773,22 @@ impl<'a> Exec<'a> {
         }
     }
 
-    #[allow(clippy::too_many_lines, reason = "one arm per expression kind")]
+    /// Evaluates an expression, charging an op and the memory of the value it produces: reading
+    /// a variable or input copies it, and building a string or list allocates it, whether or not
+    /// the result is ever bound.
     fn eval(&mut self, expr: &'a Expr) -> R<Value> {
         if self.metered {
             self.meter.op()?;
         }
+        let value = self.eval_kind(expr)?;
+        if self.metered {
+            self.meter.memory(value.size())?;
+        }
+        Ok(value)
+    }
+
+    #[allow(clippy::too_many_lines, reason = "one arm per expression kind")]
+    fn eval_kind(&mut self, expr: &'a Expr) -> R<Value> {
         Ok(match expr {
             Expr::Lit { value } => Value::from(value),
             Expr::Decimal { value } => Value::Decimal(
@@ -1858,10 +1871,12 @@ impl<'a> Exec<'a> {
             Expr::Binary { op, lhs, rhs } => self.binary(*op, lhs, rhs)?,
             Expr::In { value, list } => {
                 let value = self.eval(value)?;
-                Value::Bool(
-                    list.iter()
-                        .any(|l| builtins::equal(&Value::from(l), &value)),
-                )
+                if self.metered {
+                    self.meter.charge(crate::limits::Cost::ops(
+                        list.len() as u64 / builtins::IN_LITERALS_PER_OP,
+                    ))?;
+                }
+                Value::Bool(list.iter().any(|l| builtins::equal_literal(&value, l)))
             }
             Expr::Select {
                 cond,
@@ -2082,9 +2097,27 @@ impl<'a> Exec<'a> {
             Expr::Matches { of, pattern } => match self.eval_opt_string(of)? {
                 None => Value::Bool(false),
                 Some(text) => {
-                    let regex = regex_lite::Regex::new(pattern)
-                        .map_err(|e| runtime(format!("invalid pattern: {e}")))?;
-                    Value::Bool(regex.is_match(&text))
+                    let compiled = match self.patterns.get(pattern.as_str()) {
+                        Some(compiled) => compiled.clone(),
+                        None => {
+                            let compiled = std::rc::Rc::new(
+                                builtins::compile_pattern(pattern).map_err(runtime)?,
+                            );
+                            self.meter
+                                .charge(crate::limits::Cost::ops(builtins::compile_ops(
+                                    compiled.size,
+                                )))?;
+                            self.patterns.insert(pattern, compiled.clone());
+                            compiled
+                        }
+                    };
+                    let chars = text.chars().count() as u64;
+                    self.meter
+                        .charge(crate::limits::Cost::ops(builtins::match_ops(
+                            chars,
+                            compiled.size,
+                        )))?;
+                    Value::Bool(compiled.regex.is_match(&text))
                 }
             },
             Expr::FormatNumber {

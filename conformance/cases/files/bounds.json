@@ -13,7 +13,7 @@
         "bytesRead": 4692,
         "effects": 1,
         "calls": 0,
-        "memory": 1307
+        "memory": 11493
       },
       "output": {
         "kind": "object",
@@ -33,7 +33,7 @@
         "bytesRead": 3196,
         "effects": 0,
         "calls": 0,
-        "memory": 71962
+        "memory": 158618
       },
       "output": {
         "kind": "object",
@@ -83,7 +83,7 @@
         "bytesRead": 0,
         "effects": 0,
         "calls": 0,
-        "memory": 69738
+        "memory": 109646
       },
       "output": {
         "kind": "object",
@@ -112,7 +112,7 @@
         "bytesRead": 4692,
         "effects": 0,
         "calls": 0,
-        "memory": 4696
+        "memory": 7012
       }
     }
   }

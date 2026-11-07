@@ -13,7 +13,7 @@
         "bytesRead": 0,
         "effects": 1,
         "calls": 0,
-        "memory": 25
+        "memory": 628
       },
       "output": {
         "kind": "object",
@@ -32,7 +32,7 @@
         "bytesRead": 65536,
         "effects": 0,
         "calls": 0,
-        "memory": 165886
+        "memory": 926722
       },
       "output": {
         "kind": "object",
@@ -96,7 +96,7 @@
         "bytesRead": 66238,
         "effects": 1,
         "calls": 0,
-        "memory": 725
+        "memory": 2344
       },
       "output": {
         "kind": "object",
@@ -115,7 +115,7 @@
         "bytesRead": 0,
         "effects": 1,
         "calls": 0,
-        "memory": 24
+        "memory": 1714
       },
       "output": {
         "kind": "object",
@@ -136,7 +136,7 @@
         "bytesRead": 66940,
         "effects": 2,
         "calls": 1,
-        "memory": 1680
+        "memory": 8218
       }
     },
     "fulfill_refund": {
@@ -147,7 +147,7 @@
         "bytesRead": 66238,
         "effects": 3,
         "calls": 0,
-        "memory": 710
+        "memory": 71749
       }
     },
     "fulfill_reserve": {
@@ -158,7 +158,7 @@
         "bytesRead": 66238,
         "effects": 2,
         "calls": 1,
-        "memory": 983
+        "memory": 3402
       }
     },
     "fulfill_ship": {
@@ -169,7 +169,7 @@
         "bytesRead": 66940,
         "effects": 3,
         "calls": 0,
-        "memory": 1412
+        "memory": 8824
       }
     }
   }

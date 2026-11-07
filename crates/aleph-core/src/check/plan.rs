@@ -310,6 +310,9 @@ struct Checker<'a> {
     outputs: Vec<(Ty, String)>,
     /// The workflow whose step this is, if any.
     workflow: Option<(&'a str, &'a WorkflowDecl)>,
+    /// Inside a loop's probe pass, which only needs types: nested loops skip their own second
+    /// pass, so checking nested loops stays linear instead of doubling per level.
+    probing: bool,
 }
 
 impl<'a> Checker<'a> {
@@ -329,6 +332,7 @@ impl<'a> Checker<'a> {
             defined: HashSet::new(),
             outputs: Vec::new(),
             workflow: None,
+            probing: false,
         }
     }
 
@@ -383,10 +387,16 @@ impl<'a> Checker<'a> {
         }
         let start = Ty::Object(initial);
         let (diags, defined) = (self.diags.len(), self.defined.clone());
+        let probing = std::mem::replace(&mut self.probing, true);
         let (probe, _) = self.loop_pass(&start, var, cond, body, next, path);
+        self.probing = probing;
         self.diags.truncate(diags);
         self.defined = defined;
         let ty = start.join(widen_ints(probe));
+        if self.probing {
+            // An enclosing probe keeps only the type, which the second pass doesn't change.
+            return (ty, Cost::ZERO);
+        }
         let (after, pass_cost) = self.loop_pass(&ty, var, cond, body, next, path);
         if ty.clone().join(widen_ints(after.clone())) != ty {
             self.diag(
@@ -1717,7 +1727,12 @@ impl<'a> Checker<'a> {
     /// The memory a bound value of type `ty` can take (values of unknown size count as a
     /// maximum row; the runtime meter is the backstop for those).
     fn memory(&self, ty: &Ty) -> Cost {
-        let rows = |entity: &str| self.row_bytes(entity);
+        let rows = |entity: &str| {
+            self.m
+                .entities
+                .get(entity)
+                .map_or(0, super::size::row_memory)
+        };
         Cost {
             memory: super::size::ty_bytes(ty, &rows, 64 * 1024),
             ..Cost::ZERO
@@ -1787,7 +1802,16 @@ impl<'a> Checker<'a> {
     }
 
     #[allow(clippy::too_many_lines, reason = "one arm per expression kind")]
+    /// An expression's type and worst-case usage: an op per node, plus the memory of the value
+    /// each node produces (the runtime charges both in `eval`).
     fn expr(&mut self, expr: &Expr, path: &str) -> (Ty, Cost) {
+        let (ty, cost) = self.expr_kind(expr, path);
+        let memory = self.memory(&ty);
+        (ty, cost + memory)
+    }
+
+    #[allow(clippy::too_many_lines, reason = "one arm per expression kind")]
+    fn expr_kind(&mut self, expr: &Expr, path: &str) -> (Ty, Cost) {
         let own = Cost::ops(1);
         match expr {
             Expr::Lit { value } => (Ty::from_literal(value), own),
@@ -1920,8 +1944,12 @@ impl<'a> Checker<'a> {
                 (ty, own + cost)
             }
             Expr::Binary { op, lhs, rhs } => self.binary(*op, lhs, rhs, path),
-            Expr::In { value, list: _ } => {
-                (Ty::Bool, own + self.expr(value, &format!("{path}.value")).1)
+            Expr::In { value, list } => {
+                let scan = Cost::ops(list.len() as u64 / crate::runtime::IN_LITERALS_PER_OP);
+                (
+                    Ty::Bool,
+                    own + scan + self.expr(value, &format!("{path}.value")).1,
+                )
             }
             Expr::Select {
                 cond,
@@ -2175,20 +2203,39 @@ impl<'a> Checker<'a> {
                 (Ty::String { max }, own + cost)
             }
             Expr::Matches { of, pattern } => {
-                let cost = self.string(of, &format!("{path}.of")).1;
+                let (ty, mut cost) = self.string(of, &format!("{path}.of"));
                 if pattern.chars().count() > 256 {
                     self.diag(
                         Code::InvalidExpression,
                         &format!("{path}.pattern"),
                         "patterns are limited to 256 characters",
                     );
-                } else if let Err(e) = regex_lite::Regex::new(pattern) {
-                    self.diag(
-                        Code::InvalidExpression,
-                        &format!("{path}.pattern"),
-                        format!("invalid pattern: {e}"),
-                    );
+                    return (Ty::Bool, own + cost);
                 }
+                let size = match crate::runtime::compile_pattern(pattern) {
+                    Ok(compiled) => compiled.size,
+                    Err(message) => {
+                        self.diag(Code::InvalidExpression, &format!("{path}.pattern"), message);
+                        return (Ty::Bool, own + cost);
+                    }
+                };
+                // Matching time grows with the text, so the text needs a known maximum length.
+                let chars = match ty.max_chars() {
+                    Some(chars) => chars,
+                    None if matches!(ty.non_null(), Ty::Unknown) => 0,
+                    None => {
+                        self.diag(
+                            Code::InvalidExpression,
+                            &format!("{path}.of"),
+                            "matches needs a string with a known maximum length. Declare a \
+                             .max() on the input, or .truncate(n) it first",
+                        );
+                        0
+                    }
+                };
+                cost += Cost::ops(
+                    crate::runtime::compile_ops(size) + crate::runtime::match_ops(chars, size),
+                );
                 (Ty::Bool, own + cost)
             }
             Expr::FormatNumber { of, .. } => {

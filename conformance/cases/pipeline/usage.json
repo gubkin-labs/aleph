@@ -6,7 +6,7 @@
       "bytesRead": 0,
       "calls": 0,
       "effects": 1,
-      "memory": 338,
+      "memory": 3167,
       "ops": 6,
       "reads": 1,
       "writes": 3
@@ -19,7 +19,7 @@
       "bytesRead": 0,
       "calls": 0,
       "effects": 1,
-      "memory": 8,
+      "memory": 2268,
       "ops": 7,
       "reads": 0,
       "writes": 0
@@ -32,7 +32,7 @@
       "bytesRead": 0,
       "calls": 0,
       "effects": 0,
-      "memory": 4,
+      "memory": 144,
       "ops": 3,
       "reads": 0,
       "writes": 0
@@ -45,7 +45,7 @@
       "bytesRead": 284,
       "calls": 1,
       "effects": 2,
-      "memory": 990,
+      "memory": 6002,
       "ops": 40,
       "reads": 2,
       "writes": 4
@@ -58,7 +58,7 @@
       "bytesRead": 0,
       "calls": 0,
       "effects": 1,
-      "memory": 113,
+      "memory": 1302,
       "ops": 13,
       "reads": 1,
       "writes": 1
@@ -71,7 +71,7 @@
       "bytesRead": 341,
       "calls": 0,
       "effects": 0,
-      "memory": 791,
+      "memory": 6873,
       "ops": 14,
       "reads": 2,
       "writes": 0
@@ -84,7 +84,7 @@
       "bytesRead": 678,
       "calls": 0,
       "effects": 0,
-      "memory": 365,
+      "memory": 2950,
       "ops": 18,
       "reads": 2,
       "writes": 0
@@ -110,7 +110,7 @@
       "bytesRead": 678,
       "calls": 0,
       "effects": 0,
-      "memory": 1095,
+      "memory": 6541,
       "ops": 19,
       "reads": 2,
       "writes": 2
@@ -123,7 +123,7 @@
       "bytesRead": 0,
       "calls": 0,
       "effects": 1,
-      "memory": 342,
+      "memory": 3173,
       "ops": 6,
       "reads": 1,
       "writes": 3
@@ -136,7 +136,7 @@
       "bytesRead": 0,
       "calls": 0,
       "effects": 1,
-      "memory": 8,
+      "memory": 2272,
       "ops": 7,
       "reads": 0,
       "writes": 0
@@ -149,7 +149,7 @@
       "bytesRead": 144,
       "calls": 0,
       "effects": 1,
-      "memory": 288,
+      "memory": 2382,
       "ops": 16,
       "reads": 2,
       "writes": 4
@@ -162,7 +162,7 @@
       "bytesRead": 146,
       "calls": 0,
       "effects": 0,
-      "memory": 403,
+      "memory": 5813,
       "ops": 14,
       "reads": 2,
       "writes": 0
@@ -175,7 +175,7 @@
       "bytesRead": 0,
       "calls": 0,
       "effects": 1,
-      "memory": 330,
+      "memory": 3143,
       "ops": 6,
       "reads": 1,
       "writes": 3
@@ -201,7 +201,7 @@
       "bytesRead": 0,
       "calls": 0,
       "effects": 1,
-      "memory": 334,
+      "memory": 3153,
       "ops": 6,
       "reads": 1,
       "writes": 3
@@ -214,7 +214,7 @@
       "bytesRead": 0,
       "calls": 0,
       "effects": 1,
-      "memory": 8,
+      "memory": 2260,
       "ops": 7,
       "reads": 0,
       "writes": 0
@@ -227,7 +227,7 @@
       "bytesRead": 0,
       "calls": 0,
       "effects": 1,
-      "memory": 8,
+      "memory": 2264,
       "ops": 7,
       "reads": 0,
       "writes": 0
@@ -240,7 +240,7 @@
       "bytesRead": 280,
       "calls": 1,
       "effects": 2,
-      "memory": 396,
+      "memory": 4814,
       "ops": 40,
       "reads": 2,
       "writes": 4
@@ -253,7 +253,7 @@
       "bytesRead": 0,
       "calls": 0,
       "effects": 1,
-      "memory": 113,
+      "memory": 1298,
       "ops": 13,
       "reads": 1,
       "writes": 1
@@ -266,7 +266,7 @@
       "bytesRead": 276,
       "calls": 1,
       "effects": 2,
-      "memory": 392,
+      "memory": 4806,
       "ops": 40,
       "reads": 2,
       "writes": 4
@@ -279,7 +279,7 @@
       "bytesRead": 0,
       "calls": 0,
       "effects": 1,
-      "memory": 113,
+      "memory": 1294,
       "ops": 13,
       "reads": 1,
       "writes": 1
@@ -292,7 +292,7 @@
       "bytesRead": 288,
       "calls": 0,
       "effects": 0,
-      "memory": 179,
+      "memory": 2320,
       "ops": 10,
       "reads": 2,
       "writes": 3
@@ -305,7 +305,7 @@
       "bytesRead": 0,
       "calls": 0,
       "effects": 0,
-      "memory": 4,
+      "memory": 350,
       "ops": 8,
       "reads": 1,
       "writes": 0

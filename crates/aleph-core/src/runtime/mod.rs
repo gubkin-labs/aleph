@@ -27,6 +27,7 @@ mod workflow;
 
 pub(crate) use blobs::MAX_BLOB_INFO_BYTES;
 pub use blobs::{BlobAccess, BlobGrant, BlobInfo, BlobRejection, BlobSigner};
+pub(crate) use builtins::{IN_LITERALS_PER_OP, compile_ops, compile_pattern, match_ops};
 pub use effects::{
     Delivery, DeliveryKind, Integrations, MemorySink, MockIntegrations, NoIntegrations, NullSink,
     RecordedCall, Sink,
@@ -535,6 +536,7 @@ impl Engine {
             caller: None,
             inputs: &inputs,
             vars: HashMap::new(),
+            patterns: HashMap::new(),
             metered: false,
             meta: exec::ResponseMeta::default(),
             workflow: None,
@@ -824,7 +826,7 @@ impl Engine {
     /// Runs a route's plan, re-running it on transaction conflicts. With `replay`, a stored
     /// response for the same idempotency key is returned instead, and a new successful response
     /// is stored in the same transaction as the plan's writes.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn execute(
         &self,
         keys: &Keyspace,
@@ -868,6 +870,7 @@ impl Engine {
                     caller,
                     inputs,
                     vars: HashMap::new(),
+                    patterns: HashMap::new(),
                     metered: true,
                     meta: exec::ResponseMeta::default(),
                     workflow: None,

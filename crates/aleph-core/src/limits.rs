@@ -36,7 +36,8 @@ pub struct Limits {
     /// Maximum integration calls.
     #[cfg_attr(feature = "codegen", ts(type = "number"))]
     pub calls: u64,
-    /// Maximum bytes of values a plan binds (rows read, lists built, results), summed.
+    /// Maximum bytes of values a plan holds (rows read, values copied, strings and lists built,
+    /// bound or not), summed, at their in-memory size.
     #[cfg_attr(feature = "codegen", ts(type = "number"))]
     pub memory: u64,
     /// Maximum encoded size of a single row.
@@ -158,7 +159,7 @@ pub struct Cost {
     /// Integration calls.
     #[cfg_attr(feature = "codegen", ts(type = "number"))]
     pub calls: u64,
-    /// Bytes of values bound while running (see [`Limits::memory`]).
+    /// Bytes of values held while running (see [`Limits::memory`]).
     #[cfg_attr(feature = "codegen", ts(type = "number"))]
     pub memory: u64,
 }
