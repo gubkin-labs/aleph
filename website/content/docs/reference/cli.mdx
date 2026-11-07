@@ -9,7 +9,7 @@ Every command takes an app module (`app.ts`, whose default export is an `app(...
 | Command | What it does |
 |---|---|
 | `aleph build app.ts [-o manifest.json] [--source-map]` | Writes the manifest (stdout without `-o`). `--source-map` adds `file:line:col` locations for diagnostics |
-| `aleph check app.ts` | Validates, and prints each route's and handler's worst-case cost as a share of its limits. Exits 1 on diagnostics |
+| `aleph check app.ts` | Validates, and prints the most each route and handler can use in one run, against its limits. Exits 1 on diagnostics |
 | `aleph check app.ts --against deployed.json` | Also classifies every change from the deployed manifest (safe, needs backfill, breaking) and prints the migration plan. Exits 1 if not deployable |
 | `aleph test app.ts` | Runs every route example. Exits 1 on failures |
 | `aleph client app.ts [-o client.ts]` | Writes a typed fetch client |

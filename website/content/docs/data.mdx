@@ -58,7 +58,7 @@ const Member = a.entity("Member", {
 
 - Indexes can be **computed** (index a value derived from the row), **unique** (a conflicting write fails with 409), or **partial** (`where`).
 - Queries scan an index by prefix, optionally with a range on the next part (`range: { gte, lt }`), or with several values for it (`anyOf`, like SQL's `IN`).
-- Each index costs writes on every change, so add the ones your queries need.
+- Each index adds writes to every change, so add the ones your queries need.
 
 ## Counters
 
@@ -81,7 +81,7 @@ Counters are maintained on write, inside the same transaction, and read in O(1).
 
 ## What's deliberately missing
 
-There are no unbounded scans, no joins, and no ad-hoc queries. Joins are written as a query plus `map` with `get` inside, which keeps the cost visible. Aggregations are counters, maintained as you write.
+There are no unbounded scans, no joins, and no ad-hoc queries. Joins are written as a query plus `map` with `get` inside, which keeps the reads visible. Aggregations are counters, maintained as you write.
 
 {/* scope */}
 

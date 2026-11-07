@@ -6,7 +6,7 @@
 //!
 //! A manifest is plain data. It never contains author code. Logic is expressed as a [`Plan`]: a
 //! tree of statements ([`Stmt`]), operations ([`Op`]), and expressions ([`Expr`]) drawn from a
-//! closed set of built-ins. That's what makes static cost analysis and safe interpretation
+//! closed set of built-ins. That's what makes static usage analysis and safe interpretation
 //! possible.
 
 use std::collections::BTreeMap;

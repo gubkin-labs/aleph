@@ -1,4 +1,4 @@
-/** `aleph check`: diagnostics, or a per-route cost table. */
+/** `aleph check`: diagnostics, or a table of each route's worst-case usage. */
 import { defaultLimits, type Evolution, jobLimits, validate } from "@aleph/core";
 import type { CheckReport, Cost, Diagnostic, Limits, RouteReport } from "@aleph/manifest";
 
@@ -15,21 +15,75 @@ export function formatDiagnostics(diagnostics: Diagnostic[]): string {
 function bytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(2)} MB`;
+  const mb = n / 1024 / 1024;
+  return `${Number.isInteger(mb) ? mb : mb.toFixed(2)} MB`;
 }
 
+/** A value's share of its limit: `–` for none, `<1%` for a little, never a misleading `0%`. */
+function share(value: number, limit: number): string {
+  if (value === 0) return "–";
+  const pct = (value / limit) * 100;
+  return pct < 1 ? "<1%" : `${Math.round(pct)}%`;
+}
+
+type Resource = keyof Cost & keyof Limits;
+
+const COLUMNS: { name: string; key: Resource; format: (n: number) => string }[] = [
+  { name: "reads", key: "reads", format: String },
+  { name: "writes", key: "writes", format: String },
+  { name: "ops", key: "ops", format: String },
+  { name: "bytes read", key: "bytesRead", format: bytes },
+  { name: "effects", key: "effects", format: String },
+  { name: "calls", key: "calls", format: String },
+  { name: "memory", key: "memory", format: bytes },
+];
+
+/** A row's name, and each column's value and share of the limit. */
+type Row = { name: string; cells: { value: string; share: string }[] };
+
+const grouped = (s: string) => s.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+/**
+ * One table: a limit row, then each route's (or handler's) worst-case usage in one run, as a value
+ * and its share of the limit.
+ */
 function table(title: string, reports: Record<string, RouteReport>, limits: Limits): string {
-  const header = [title, "reads", "writes", "ops", "bytes read", "effects", "calls", "memory"];
-  const rows = Object.entries(reports).map(([id, { bounds }]) => [id, ...cells(bounds, limits)]);
-  const widths = header.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]?.length ?? 0)));
-  const line = (cells: string[]) =>
-    cells
-      .map((c, i) => (i === 0 ? c.padEnd(widths[i] ?? 0) : c.padStart(widths[i] ?? 0)))
-      .join("  ");
-  return [line(header), ...rows.map(line)].join("\n");
+  const limitRow: Row = {
+    name: "limit",
+    cells: COLUMNS.map((c) => ({ value: grouped(c.format(limits[c.key])), share: "" })),
+  };
+  const rows: Row[] = Object.entries(reports).map(([id, { bounds }]) => ({
+    name: id,
+    cells: COLUMNS.map((c) => ({
+      value: c.format(bounds[c.key]),
+      share: share(bounds[c.key], limits[c.key]),
+    })),
+  }));
+  const all = [limitRow, ...rows];
+  const nameWidth = Math.max(title.length, ...all.map((r) => r.name.length));
+  const widths = COLUMNS.map((c, i) => {
+    const value = Math.max(...all.map((r) => r.cells[i]?.value.length ?? 0));
+    const pct = Math.max(...all.map((r) => r.cells[i]?.share.length ?? 0));
+    return { value, pct, cell: Math.max(c.name.length, value + 1 + pct) };
+  });
+  const line = (row: Row) =>
+    [
+      row.name.padEnd(nameWidth),
+      ...row.cells.map((cell, i) => {
+        const w = widths[i] ?? { value: 0, pct: 0, cell: 0 };
+        return `${cell.value.padStart(w.value)} ${cell.share.padStart(w.pct)}`.padStart(w.cell);
+      }),
+    ]
+      .join("   ")
+      .trimEnd();
+  const header = [
+    title.padEnd(nameWidth),
+    ...COLUMNS.map((c, i) => c.name.padStart(widths[i]?.cell ?? 0)),
+  ].join("   ");
+  return [header, line(limitRow), ...rows.map(line)].join("\n");
 }
 
-/** Formats the cost report: routes against the route limits, handlers against the job limits. */
+/** Formats the usage report: routes against the route limits, handlers against the job limits. */
 export function formatReport(report: CheckReport): string {
   const parts = [table("route", report.routes, defaultLimits())];
   if (report.handlers && Object.keys(report.handlers).length > 0) {
@@ -38,18 +92,8 @@ export function formatReport(report: CheckReport): string {
   return parts.join("\n\n");
 }
 
-function cells(bounds: Cost, limits: Limits): string[] {
-  const pct = (value: number, limit: number) => `${Math.round((value / limit) * 100)}%`;
-  return [
-    `${bounds.reads} (${pct(bounds.reads, limits.reads)})`,
-    `${bounds.writes} (${pct(bounds.writes, limits.writes)})`,
-    `${bounds.ops} (${pct(bounds.ops, limits.ops)})`,
-    `${bytes(bounds.bytesRead)} (${pct(bounds.bytesRead, limits.bytesRead)})`,
-    `${bounds.effects} (${pct(bounds.effects, limits.effects)})`,
-    `${bounds.calls} (${pct(bounds.calls, limits.calls)})`,
-    `${bytes(bounds.memory)} (${pct(bounds.memory, limits.memory)})`,
-  ];
-}
+/** The line above the usage report. */
+export const REPORT_HEADING = "✔ valid. The most each route and handler can use in one run:";
 
 /** Formats a schema evolution report. */
 export function formatEvolution(evolution: Evolution): string {
@@ -79,6 +123,6 @@ export function check(manifestJson: string): { ok: boolean; output: string } {
   if (!result.ok) return { ok: false, output: formatDiagnostics(result.diagnostics) };
   return {
     ok: true,
-    output: `✔ valid: worst-case cost (share of the limit)\n\n${formatReport(result.report)}`,
+    output: `${REPORT_HEADING}\n\n${formatReport(result.report)}`,
   };
 }

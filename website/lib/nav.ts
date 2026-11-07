@@ -42,7 +42,7 @@ export const NAV: Section[] = [
         slug: "programming-model",
         title: "How Aleph programs work",
         description:
-          "How your code runs, where state lives, what the cost model counts, and what the language leaves out.",
+          "How your code runs, where state lives, what the usage limits count, and what the language leaves out.",
       },
       {
         slug: "bounded-by-construction",

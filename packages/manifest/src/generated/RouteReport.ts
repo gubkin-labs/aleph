@@ -7,7 +7,7 @@ import type { TypeSchema } from "./TypeSchema.js";
  */
 export type RouteReport = { 
 /**
- * Worst-case cost of one execution. The runtime never exceeds it.
+ * The most one execution can use. The runtime never exceeds it.
  */
 bounds: Cost, 
 /**

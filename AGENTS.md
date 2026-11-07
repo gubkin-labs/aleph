@@ -8,7 +8,7 @@ and `spec/architecture.md` before changing the manifest format or the core's gua
 1. **The Rust types in `crates/aleph-core/src/manifest` are the source of truth** for the format.
    After changing them, run `pnpm codegen`. Never edit `packages/manifest/src/generated*` or
    `schema/` by hand.
-2. **Static bounds must cover runtime usage.** Every cost the runtime meter charges (`runtime/exec.rs`)
+2. **Static bounds must cover runtime usage.** Every usage the runtime meter charges (`runtime/exec.rs`)
    must be accounted for by the checker (`check/plan.rs`). The conformance runners and the
    `random_requests_stay_within_static_bounds` property test assert `usage ≤ bounds`. If you add an
    operation, update both sides and add a test.
@@ -41,5 +41,10 @@ If you intentionally changed SDK output or analysis results, update the golden f
 - TypeScript: strict, with `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, and
   `isolatedDeclarations`. Biome for lint and format. Vitest for tests. `tsdown` for builds.
 - Diagnostics and error messages say what's wrong **and how to fix it**. Agents read them.
+- **"Cost" means money**: what the platform hosting an Aleph app bills for it, and the
+  infrastructure behind that. For what a route or handler can read, write, compute, or allocate,
+  say **usage**, measured against **limits** (not "cost" or "budget"), in docs, CLI output, and
+  messages. Code identifiers (`Cost`) and stable error codes (`over_budget`,
+  `budget_exceeded`) stay as they are.
 - Tests live next to the code they test: Rust unit tests in `#[cfg(test)]` modules, integration
   tests in `crates/*/tests`, and TS tests in `packages/*/test`.

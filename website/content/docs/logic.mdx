@@ -67,7 +67,7 @@ a.route("POST /accounts/:accountId/charges")
   });
 ```
 
-- **Cost:** the checker costs the loop as `max` passes. Here that's 12, so the route's worst case is known before it deploys. At run time it stops as soon as `while` is false.
+- **Usage:** the checker counts the loop as `max` passes. Here that's 12, so the route's worst case is known before it deploys. At run time it stops as soon as `while` is false.
 - **State keeps its type.** Every pass must return the same fields with the same types. A string or list that grows each pass has no bound and is rejected: bound it with `.truncate(n)` or `.take(n)`. Integers may change freely, so counters are fine.
 - **`while` only computes from the state.** To stop on something you read, do the read in the body and carry the result in the state (for example, a `done` field).
 - **The body may read, but never write.** Compute with `$.loop`, then write the result.

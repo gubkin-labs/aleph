@@ -1,7 +1,7 @@
 # aleph-core
 
 The trusted core of [Aleph](https://github.com/gubkin-labs/aleph): manifest types, the validator and
-static cost analyzer, and the bounded plan interpreter with its runtime budget meter.
+static usage analyzer, and the bounded plan interpreter with its runtime usage meter.
 
 ```rust
 use std::sync::Arc;

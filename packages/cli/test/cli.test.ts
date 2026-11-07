@@ -33,11 +33,17 @@ describe("aleph build", () => {
 });
 
 describe("aleph check", () => {
-  it("prints the cost table for a valid app", async () => {
+  it("prints each route's worst-case usage against the limits", async () => {
     const { io, out } = capture();
     expect(await main(["check", join(cases, "projects", "manifest.json")], io)).toBe(0);
     // 4 reads: billing, counter, the row's existence, and the unique slug probe.
-    expect(out.join("\n")).toMatch(/createProject\s+4 \(2%\)\s+5 \(10%\)/);
+    const text = out.join("\n");
+    expect(text).toMatch(/^route\s+reads\s+writes/m);
+    expect(text).toMatch(/^limit\s+250\s+50\s+2,000\s+2 MB/m);
+    expect(text).toMatch(/createProject\s+4\s+2%\s+5\s+10%/);
+    // No usage shows as "–", and a little as "<1%", never "0%".
+    expect(text).toMatch(/projectBySlug\s+1\s+<1%\s+0\s+–/);
+    expect(text).not.toMatch(/\b0%/);
   });
 
   it("prints every diagnostic and exits 1 for an invalid manifest", async () => {
@@ -71,7 +77,9 @@ describe("aleph check with source maps", () => {
   it("prints handler bounds against the job limits", async () => {
     const { io, out } = capture();
     expect(await main(["check", join(cases, "pipeline", "app.ts")], io)).toBe(0);
-    expect(out.join("\n")).toMatch(/handler\s+reads[\s\S]*processDoc\s+3 \(1%\)/);
+    expect(out.join("\n")).toMatch(
+      /handler\s+reads[\s\S]*limit\s+500\s+200\s+5,000[\s\S]*processDoc\s+3\s+<1%/,
+    );
   });
 });
 

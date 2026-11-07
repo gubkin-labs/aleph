@@ -4,7 +4,7 @@ Aleph is open source under the Apache-2.0 license. The repository is a monorepo:
 
 | Path | |
 |---|---|
-| `crates/aleph-core` | The trusted core (Rust): manifest types, validator, cost analyzer, interpreter, meter, keyspace, in-memory store |
+| `crates/aleph-core` | The trusted core (Rust): manifest types, validator, usage analyzer, interpreter, meter, keyspace, in-memory store |
 | `crates/aleph-core-wasm` | The core compiled to WebAssembly |
 | `crates/xtask` | Generates the JSON Schema and TypeScript types from the Rust types |
 | `packages/manifest`, `packages/core-wasm`, `packages/sdk`, `packages/cli` | `@aleph/manifest`, `@aleph/core`, `@aleph/sdk`, `@aleph/cli` |
@@ -36,7 +36,7 @@ Run it before you push.
 
 - **The Rust types are the format.** Change them, then run `pnpm codegen`.
 - **Conformance is the contract.** An intended behavior change updates the golden files (`pnpm --filter @aleph/conformance update`), and the diff is part of the review.
-- **New language features need coverage everywhere:** the checker (types and cost), the interpreter (metered identically), the SDK, a conformance case, and docs here.
+- **New language features need coverage everywhere:** the checker (types and usage), the interpreter (metered identically), the SDK, a conformance case, and docs here.
 - **Long property runs:** `PROPTEST_CASES=100000 cargo test --release -p aleph-core --test generated_plans`.
 
 ## The docs

@@ -16,11 +16,11 @@ Every route and handler has a **static bound**: the most it can use of each reso
 
 The checker folds over the plan:
 - **Sequences add**, and **branches take the maximum.**
-- **Loops multiply** the body's cost by the list's maximum length. Lists get a maximum from where they come from: a query's `limit`, an array field's `max`, a list literal, or `map`/`filter` over those. A [`$.loop`](/docs/logic/#loops-that-carry-state) multiplies one pass by its declared `max`, and its state must keep the same type, so it can't grow from pass to pass.
-- **Queries** cost `limit` reads, and `limit × max row size` bytes.
-- **Writes** cost the row, plus each index entry and counter it maintains (twice for updates, which may move an entry).
-- **Sorting** costs `n × ⌈log₂ n⌉` comparisons.
-- **Chains of handlers** are bounded too: each run has its own budget, and handlers that could set each other off without end are rejected as [trigger cycles](/docs/background-work/#trigger-cycles).
+- **Loops multiply** the body's usage by the list's maximum length. Lists get a maximum from where they come from: a query's `limit`, an array field's `max`, a list literal, or `map`/`filter` over those. A [`$.loop`](/docs/logic/#loops-that-carry-state) multiplies one pass by its declared `max`, and its state must keep the same type, so it can't grow from pass to pass.
+- **Queries** use `limit` reads, and `limit × max row size` bytes.
+- **Writes** use one for the row, plus each index entry and counter it maintains (twice for updates, which may move an entry).
+- **Sorting** uses `n × ⌈log₂ n⌉` comparisons.
+- **Chains of handlers** are bounded too: each run has its own limits, and handlers that could set each other off without end are rejected as [trigger cycles](/docs/background-work/#trigger-cycles).
 
 Everything traces back to a declaration: `.max(...)` on strings, ints, and arrays, `limit` on queries, and `max` on `$.loop`. That's why a string field without a maximum isn't a field.
 
@@ -35,7 +35,7 @@ Everything traces back to a declaration: `.max(...)` on strings, ints, and array
 The fix is always one of:
 - **Lower a bound**, such as a smaller `limit` or a smaller `max` on a list input.
 - **Move the work to a job**: a queue job, a scanning schedule, or a [workflow](/docs/background-work/#durable-workflows). Each run is bounded against the larger job limits.
-- **Remove amplification**: an index or counter you don't need costs writes on every change.
+- **Remove amplification**: an index or counter you don't need adds writes to every change.
 
 ## The meter
 

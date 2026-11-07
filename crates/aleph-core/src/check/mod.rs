@@ -1,4 +1,4 @@
-//! Validation and static cost analysis.
+//! Validation and static usage analysis.
 //!
 //! [`validate`] checks a manifest's structure, resolves every reference, infers types, computes
 //! the worst-case [`Cost`] of every route, and rejects anything over the [`Limits`]. The only way
@@ -60,7 +60,7 @@ pub struct EntityReport {
 #[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct RouteReport {
-    /// Worst-case cost of one execution. The runtime never exceeds it.
+    /// The most one execution can use. The runtime never exceeds it.
     pub bounds: Cost,
     /// The type of a successful response body: the declared `returns`, or what the checker
     /// inferred from the plan. Routes only.
@@ -790,7 +790,7 @@ fn check_counter(m: &Manifest, counter: &Counter, path: &str, diags: &mut Vec<Di
     }
 }
 
-/// How many counter writes one row change can cost per side (old and new), for this counter.
+/// How many counter writes one row change can take per side (old and new), for this counter.
 pub(crate) fn counter_weight(counter: &Counter) -> u64 {
     match counter.agg.as_ref().map(|a| a.kind) {
         // A distinct counter updates the value's refcount and the total.

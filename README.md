@@ -9,11 +9,11 @@ This repository is the open-source half of Aleph:
 
 | Path | What it is |
 |---|---|
-| [`crates/aleph-core`](crates/aleph-core) | The trusted core (Rust): manifest types, validator, static cost analyzer, bounded plan interpreter, runtime budget meter, tenant-isolated key encoding, and an in-memory transactional store |
+| [`crates/aleph-core`](crates/aleph-core) | The trusted core (Rust): manifest types, validator, static usage analyzer, bounded plan interpreter, runtime usage meter, tenant-isolated key encoding, and an in-memory transactional store |
 | [`crates/aleph-core-wasm`](crates/aleph-core-wasm) | `aleph-core` compiled to WASM |
 | [`crates/xtask`](crates/xtask) | Code generation: JSON Schema and TypeScript types from the Rust types |
 | [`packages/manifest`](packages/manifest) | `@aleph/manifest`: generated TypeScript types for the manifest format |
-| [`packages/core-wasm`](packages/core-wasm) | `@aleph/core`: validation, cost analysis, and a local dev engine (the Rust core, via WASM) |
+| [`packages/core-wasm`](packages/core-wasm) | `@aleph/core`: validation, usage analysis, and a local dev engine (the Rust core, via WASM) |
 | [`packages/sdk`](packages/sdk) | `@aleph/sdk`: the TypeScript builder that produces manifests |
 | [`packages/cli`](packages/cli) | `@aleph/cli`: the `aleph` command (`build`, `check`, `test`, `client`, `dev`, `openapi`, `mcp`) |
 | [`examples`](examples) | Example apps with a minimal React UI and an inspector panel (`pnpm --filter @aleph-examples/shop dev`) |
@@ -65,16 +65,17 @@ export default a;
 ```
 
 The handler runs **once, at build time**, with symbolic values. Every operation is recorded into a
-plan, and the plan is what the platform runs. The core computes every route's worst-case cost before
+plan, and the plan is what the platform runs. The core computes the most every route can use before
 it's deployed:
 
 ```
 $ aleph check app.ts
-✔ valid: worst-case cost per route (share of the route limit)
+✔ valid. The most each route and handler can use in one run:
 
-route                       reads  writes      ops    bytes read
-get_orgs_orgId_projects   20 (8%)  0 (0%)   6 (0%)  24.0 KB (1%)
-post_orgs_orgId_projects   3 (1%)  3 (6%)  12 (1%)  65.2 KB (3%)
+route                       reads   writes         ops   bytes read   effects   calls         memory
+limit                      250       50      2,000          2 MB         50       3         8 MB
+get_orgs_orgId_projects     20 8%     0  –       6 <1%   24.0 KB 1%       0 –     0 –   112.1 KB  1%
+post_orgs_orgId_projects     3 1%     3 6%      12 <1%   65.2 KB 3%       0 –     0 –     2.4 KB <1%
 ```
 
 The core rejects anything over the limits, such as an unbounded query or a loop that could write too much,
@@ -170,7 +171,7 @@ See [`conformance/cases`](conformance/cases) for complete apps:
 ```
 app.ts ──@aleph/sdk──▶ manifest.json ──aleph-core──▶ validated plan ──▶ Engine::handle(tenant, request)
                                        (types, scopes,               (one optimistic transaction,
-                                        worst-case cost)              metered, tenant-prefixed keys)
+                                        worst-case usage)             metered, tenant-prefixed keys)
 ```
 
 - **One core, everywhere.** `aleph-core` runs natively in the platform and as WASM in the toolchain
@@ -245,7 +246,7 @@ Manifest format `0.2` (language v0.3 features are additive). The core and SDK co
   that actual usage never exceeds the bounds and that runs never leave their tenant.
 - **Tooling:** the `aleph` CLI:
   - `build`
-  - `check`, with route and handler cost tables, and `--against` to classify schema changes and
+  - `check`, with route and handler usage tables, and `--against` to classify schema changes and
     print a migration plan
   - `test`, which runs route examples
   - `client`, which writes a typed fetch client

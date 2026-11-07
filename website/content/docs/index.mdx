@@ -32,9 +32,9 @@ It reads like ordinary TypeScript, but the handlers don't run per request. They 
 
 ## Why declarative
 
-A program can do anything at run time, so nobody knows in advance what a request will cost. A description can be read before it runs. Everything else follows from that:
+A program can do anything at run time, so nobody knows in advance how much a request will read, write, or compute. A description can be read before it runs. Everything else follows from that:
 
-- **Known costs before deploy.** Because a route is a fixed plan, not a program, the checker can count the most it can ever read, write, compute, call, and allocate, from your string maximums, query limits, and list sizes. A route that could go over budget is rejected with a diagnostic that names the line. A runtime meter enforces the same bounds while it runs. See [Bounded by construction](/docs/bounded-by-construction/).
+- **Known usage before deploy.** Because a route is a fixed plan, not a program, the checker can count the most it can ever read, write, compute, call, and allocate, from your string maximums, query limits, and list sizes. A route that could go over a limit is rejected with a diagnostic that names the line. A runtime meter enforces the same bounds while it runs. See [Bounded by construction](/docs/bounded-by-construction/).
 - **Safe to share, so cheaper to run.** No request can run away with the CPU, memory, or the database, and no app can name another's keys. So many apps can share the same processes and database, instead of each getting its own isolated runtime (a Lambda function, a container, or a VPS) and database, mostly idle. See [Shared infrastructure and isolation](/docs/shared-infrastructure/).
 - **Correct by default.** Every request is one serializable transaction. Emails, jobs, and events go out exactly once, after commit. Idempotent routes replay their response for a repeated key.
 - **Nothing to operate.** Storage layout, retries, the outbox, and scaling are the runtime's job. There are no Dockerfiles, queues to provision, or deploy pipelines.
@@ -45,7 +45,7 @@ A program can do anything at run time, so nobody knows in advance what a request
 
 - **No arbitrary code in requests.** You compose built-in operations; the outside world is reached through declared [integrations](/docs/integrations/).
 - **No unbounded loops or scans.** Loops run over lists with a known maximum, or declare their own (`$.loop`). Work over all your data becomes a [schedule that walks it in batches](/docs/background-work/).
-- **Per-request budgets.** A route reads at most 250 rows and writes at most 50; bigger work moves to jobs and workflows. See [Limits](/docs/reference/limits/).
+- **Per-request limits.** A route reads at most 250 rows and writes at most 50; bigger work moves to jobs and workflows. See [Limits](/docs/reference/limits/).
 
 These constraints are what buy the guarantees, and most application backends fit inside them.
 
@@ -54,15 +54,15 @@ These constraints are what buy the guarantees, and most application backends fit
 ```text
 app.ts ──@aleph/sdk──▶ manifest.json ──aleph-core──▶ validated plan ──▶ execute(tenant, request)
                                        (types, scopes,               (one optimistic transaction,
-                                        worst-case cost)              metered, tenant-prefixed keys)
+                                        worst-case usage)             metered, tenant-prefixed keys)
 ```
 
 1. **The SDK records.** Handlers run once at build time with symbolic values. `Task.get(...)` appends a `get` operation and returns an accessor; `$.when(...)` records a branch; `list.map(...)` records a bounded loop. Control flow uses `$` helpers, not native `if` or `for`.
 2. **The manifest is the program.** Versioned JSON listing entities, routes, handlers, workflows, and their plans, built from a closed set of operations. No author code ships. See [Manifest format](/docs/reference/manifest/).
-3. **The core checks.** `aleph-core`, a Rust library, resolves every reference, infers types (including nullability and string lengths), and computes worst-case cost: sequences add, branches take the maximum, loops multiply.
+3. **The core checks.** `aleph-core`, a Rust library, resolves every reference, infers types (including nullability and string lengths), and computes worst-case usage: sequences add, branches take the maximum, loops multiply.
 4. **The core runs.** Each request is one optimistic, serializable transaction, metered on every read, write, and operation. Effects go to a transactional outbox, and every key is built inside the tenant's keyspace. The same core compiles to WebAssembly, so `aleph dev` and `aleph test` run exactly what production runs.
 
-Static bounds and the runtime meter are two independent accounts of the same cost, and the test suite checks they agree on every example and on more than 100,000 generated plans.
+Static bounds and the runtime meter are two independent accounts of the same usage, and the test suite checks they agree on every example and on more than 100,000 generated plans.
 
 ## Next
 

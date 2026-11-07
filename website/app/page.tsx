@@ -10,7 +10,7 @@ import {
   TradeoffScene,
   TransactionScene,
 } from "@/components/Scenes";
-import { agent, cost, evolve, loop, more } from "./demos";
+import { agent, evolve, loop, more, usage } from "./demos";
 
 /** What a backend usually needs and an Aleph author doesn't write. Each is struck out in turn. */
 const HANDLED = [
@@ -109,8 +109,8 @@ export default function Home() {
       </Section>
 
       <header className="group">
-        <p className="eyebrow">The cost model</p>
-        <h2>Aleph knows what your code costs before it runs</h2>
+        <p className="eyebrow">Usage limits</p>
+        <h2>Aleph knows what your code can use before it runs</h2>
         <p className="group-lead">
           Aleph code is declarative. A route isn’t a program that can do anything. It’s a fixed plan
           of queries, loops, and writes, each with a known maximum size. So Aleph can count, before
@@ -120,11 +120,11 @@ export default function Home() {
         <ol className="chain">
           <li>
             <strong>Counted</strong>
-            Every route, trigger, and job gets a worst-case cost, computed from its code.
+            Every route, trigger, and job gets its worst-case usage, computed from its code.
           </li>
           <li>
             <strong>Checked</strong>
-            Code that could cost too much, like a query that reads too many rows or a loop with no
+            Code that could use too much, like a query that reads too many rows or a loop with no
             end, doesn’t build. A meter enforces the same limits while it runs.
           </li>
           <li>
@@ -146,7 +146,7 @@ export default function Home() {
         panel={
           <Demo
             title="worst case of every route"
-            {...cost}
+            {...usage}
             caption="A page of 20 posts, 5 comments each, and a cursor for the next page: at most 120 reads. Ask for 10,000 at once and it won't build."
           />
         }
@@ -158,7 +158,7 @@ export default function Home() {
         <p>
           So the natural way to return a long list is the right one: a page and a cursor. Ask for
           everything at once and it’s rejected before it ships, with the line to change. The same
-          limits are enforced while it runs, so a budget is a guarantee, not a guess.
+          limits are enforced while it runs, so a limit is a guarantee, not a guess.
         </p>
       </Section>
 
@@ -197,18 +197,18 @@ export default function Home() {
         }
       >
         <p>
-          The limits are on cost, not on what you can build. Beyond routes and queries, the same
+          The limits are on usage, not on what you can build. Beyond routes and queries, the same
           language calls external APIs, reacts to changes, pushes updates to clients in real time,
           sends email, and runs schedules, queues, webhooks, and multi-step workflows that can wait
           for days.
         </p>
         <p>
-          Every one of them is checked the same way: triggers and schedules get a worst-case cost,
+          Every one of them is checked the same way: triggers and schedules get a worst-case usage,
           and their effects go out only after they commit.
         </p>
         <p>
           <Link href="/docs/programming-model/">How Aleph programs work</Link>: how state is
-          managed, what the cost model counts, and what the language leaves out.
+          managed, what the usage limits count, and what the language leaves out.
         </p>
       </Section>
 
@@ -231,7 +231,7 @@ export default function Home() {
           </li>
           <li>
             <strong>Aleph compiles it into a manifest.</strong> Data, not code: exactly what each
-            route can do, and the most it can ever cost.
+            route can do, and the most it can ever use.
           </li>
           <li>
             <strong>A platform runs the manifest.</strong> One small, audited core interprets it, so
@@ -275,7 +275,7 @@ export default function Home() {
           everyone.
         </p>
         <p>
-          Aleph rules both out. It counts what every route can cost and refuses any that could take
+          Aleph rules both out. It counts what every route can use and refuses any that could take
           more than its share, and there’s no expression that names another app’s data, so cross-app
           access can’t be written at all. Apps can safely share servers and a database, and you stop
           paying for idle capacity.

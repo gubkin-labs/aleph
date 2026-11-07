@@ -22,10 +22,10 @@ in-memory data starts over.
 The **inspector** panel on the right:
 - **Call as:** switches the caller. The dev server fakes auth with headers. The platform
   authenticates real callers.
-- **Activity:** every request with its route, status, and **actual cost next to its static worst
+- **Activity:** every request with its route, status, and **actual usage next to its static worst
   case**. Under each request, the async work it triggered: handler runs, retries, integration
   calls, deliveries.
-- **Static bounds:** the cost report `aleph check` computes before anything runs.
+- **Static bounds:** the usage report `aleph check` computes before anything runs.
 
 Each example also has tests (`pnpm --filter @aleph-examples/<name> test`) that validate the app
 and run its main flows on the dev engine. `pnpm verify` runs them, typechecks the UIs, and builds them.

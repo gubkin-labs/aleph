@@ -14,7 +14,7 @@ pub(crate) struct Meter {
 
 /// An execution went over its budget.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[error("execution exceeded its {resource} budget of {limit}")]
+#[error("execution went over its {resource} limit of {limit}")]
 pub(crate) struct OverBudget {
     pub(crate) resource: Resource,
     pub(crate) limit: u64,

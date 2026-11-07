@@ -14,7 +14,7 @@ const USAGE = `aleph: build, check, and run Aleph apps
 Usage:
   aleph build <app.ts> [-o manifest.json] [--source-map]   Write the app's manifest
   aleph check <app.ts | manifest.json> [--against deployed.json]
-                                            Validate and print worst-case costs; with --against,
+                                            Validate and print worst-case usage; with --against,
                                             classify every change from the deployed manifest
   aleph test <app.ts | manifest.json>       Run every route example
   aleph client <app.ts | manifest.json> [-o client.ts]   Write a typed fetch client

@@ -1,6 +1,6 @@
 # How Aleph programs work
 
-Aleph looks like TypeScript, but it runs differently, and that difference is where its guarantees come from. This page explains how your code runs, where state lives, what the cost model counts, and what the language deliberately leaves out.
+Aleph looks like TypeScript, but it runs differently, and that difference is where its guarantees come from. This page explains how your code runs, where state lives, what the usage limits count, and what the language deliberately leaves out.
 
 ## Your code runs once, at build time
 
@@ -59,7 +59,7 @@ a.route("GET /tasks/:orgId/streak")
   });
 ```
 
-The loop is costed as `max` passes, and its state must keep the same type from pass to pass. See [Loops that carry state](/docs/logic/#loops-that-carry-state).
+The loop is counted as `max` passes, and its state must keep the same type from pass to pass. See [Loops that carry state](/docs/logic/#loops-that-carry-state).
 
 ## Control flow
 
@@ -109,13 +109,13 @@ Every request, job, and workflow step is **one serializable transaction**. It se
 
 Effects (emails, events, jobs, channel messages) are recorded during the run and released **only after the commit, exactly once**. A request that fails halfway sends nothing. See [Transactions and schema changes](/docs/transactions/).
 
-## The cost model
+## Usage and limits
 
 Before an app deploys, the checker computes the worst case of every route and handler on seven resources: reads, writes, operations, bytes read, memory, effects, and integration calls.
 
 - A sequence of steps **adds** up.
-- A branch costs its **more expensive** side.
-- A loop costs one pass **times** the list's maximum size, so nested loops multiply.
+- A branch counts its **more expensive** side.
+- A loop counts one pass **times** the list's maximum size, so nested loops multiply.
 - A query reads at most its `limit` rows.
 
 The result is compared with the [limits](/docs/reference/limits/): for a route, 250 reads, 50 writes, and 2,000 operations. A plan that could go over is rejected, with the line and the bound to change:
@@ -126,7 +126,7 @@ The result is compared with the [limits](/docs/reference/limits/): for a route, 
   Lower the bounds that drive it (query limits, list sizes) or split the work.
 ```
 
-At run time, a meter charges the same costs as they happen and stops any run at its first charge over a limit. The checker says the meter will never trip; the meter makes sure. See [Bounded by construction](/docs/bounded-by-construction/).
+At run time, a meter counts the same usage as it happens and stops any run at its first charge over a limit. The checker says the meter will never trip; the meter makes sure. See [Bounded by construction](/docs/bounded-by-construction/).
 
 Complex logic is fine. What matters is the worst case, so a tighter bound (a smaller page, fewer items per request, `.take(n)`) is usually the fix.
 
@@ -134,8 +134,8 @@ Complex logic is fine. What matters is the worst case, so a tighter bound (a sma
 
 | The work | Use | Why |
 |---|---|---|
-| Logic that fits one request's budget, however complex | a **route** | one transaction: all or nothing |
-| Reacting to a change or an event | an **entity trigger** or **event handler** | runs after the commit, with its own budget |
+| Logic that fits one request's limits, however complex | a **route** | one transaction: all or nothing |
+| Reacting to a change or an event | an **entity trigger** or **event handler** | runs after the commit, with its own limits |
 | More than one request can do | a **queue job** | higher limits (500 reads, 200 writes) |
 | Every row of an entity | a **scheduled scan** | walks the data in bounded batches |
 | Steps over time: waits, outside calls, undo | a **workflow** | durable state, retries, compensation |
@@ -154,7 +154,7 @@ These limits are what buy the guarantees:
 - **No unbounded loops or recursion.** Every loop has a declared maximum.
 - **No mutable variables.** State that changes from pass to pass goes through `$.loop` (see above).
 - **No access to another app's data.** Every key is built inside the app's own keyspace, and no expression can name another's. See [Shared infrastructure and isolation](/docs/shared-infrastructure/).
-- **No work beyond the budgets in one run.** Bigger work moves to jobs, scans, and workflows.
+- **No work beyond the limits in one run.** Bigger work moves to jobs, scans, and workflows.
 
 ## What you can expect
 

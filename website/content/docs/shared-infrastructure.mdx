@@ -33,11 +33,11 @@ So many apps, from many unrelated authors, can run in the **same processes** aga
 ## What that means for cost
 
 - **No idle stack per app.** Capacity is pooled across apps, so an app with ten requests a day costs roughly ten requests' worth, not a server's worth.
-- **Predictable bills.** Every request has a worst case, so the most a route can cost is known before anyone calls it.
+- **Predictable bills.** Every request has a worst case, so the most a route can use, and so be billed for, is known before anyone calls it.
 - **Cheaper to run.** Requests are microseconds of CPU in a native Rust interpreter, with no per-app process to boot.
 
 <Note title="Where the savings come from">
-Aleph, the language, makes sharing *safe*. The savings come from a runtime that actually packs many apps onto shared machines. The open-source core gives any runtime the parts it needs: validation, cost analysis, metering, isolation, and execution. See [Running a manifest](/docs/running/).
+Aleph, the language, makes sharing *safe*. The savings come from a runtime that actually packs many apps onto shared machines. The open-source core gives any runtime the parts it needs: validation, usage analysis, metering, isolation, and execution. See [Running a manifest](/docs/running/).
 </Note>
 
 {/* scope */}
@@ -54,7 +54,7 @@ Property tests check this for keys, pagination cursors (which can't be forged to
 
 ### Resources can't be monopolized
 
-- **Per request:** every request's cost is bounded before it runs and metered while it runs. One app's expensive route can't run long enough to hurt others.
+- **Per request:** every request's usage is bounded before it runs and metered while it runs. One app's expensive route can't run long enough to hurt others.
 - **Over time:** a runtime can use the static bounds for admission control and fair scheduling, such as reserving a request's worst case and charging what it actually used.
 
 ### Code doesn't run

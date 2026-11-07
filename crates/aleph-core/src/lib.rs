@@ -1,6 +1,6 @@
 //! # aleph-core
 //!
-//! The trusted core of Aleph: manifest types, the validator and static cost analyzer, and the
+//! The trusted core of Aleph: manifest types, the validator and static usage analyzer, and the
 //! bounded plan interpreter with its runtime budget meter.
 //!
 //! The same crate runs natively inside the platform and as WASM inside the CLI, so author
@@ -9,7 +9,7 @@
 //! ```text
 //! manifest JSON ──parse_and_validate──▶ ValidatedManifest ──Engine::handle──▶ Response
 //!                  (types, scopes,                         (one optimistic transaction,
-//!                   worst-case cost)                        metered, tenant-isolated keys)
+//!                   worst-case usage)                       metered, tenant-isolated keys)
 //! ```
 
 pub mod check;

@@ -398,7 +398,7 @@ export function bind<V>(value: V): Lifted<V> {
 
 /** Options for {@link loop}. */
 export interface LoopOptions<S> {
-  /** The most passes (1-1000). The checker costs the loop as this many passes. */
+  /** The most passes (1-1000). The checker counts the loop as this many passes. */
   max: number;
   /** The initial state: named values the loop carries from one pass to the next. */
   state: S;

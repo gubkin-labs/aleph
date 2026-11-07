@@ -1,7 +1,7 @@
 /**
  * `@aleph/core`: the Rust core, compiled to WASM.
  *
- * This is the same validator, cost analyzer, and interpreter the platform runs, so anything that
+ * This is the same validator, usage analyzer, and interpreter the platform runs, so anything that
  * passes here passes in production.
  */
 import { createRequire } from "node:module";
@@ -79,7 +79,7 @@ export function jobLimits(): Limits {
   return JSON.parse(wasm.jobLimits()) as Limits;
 }
 
-/** Validates a manifest and computes the worst-case cost of every route. */
+/** Validates a manifest and computes the worst-case usage of every route. */
 export function validate(manifest: Manifest | string): ValidateResult {
   const json = typeof manifest === "string" ? manifest : JSON.stringify(manifest);
   return JSON.parse(wasm.validate(json)) as ValidateResult;

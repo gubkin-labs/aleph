@@ -1,6 +1,6 @@
 [package]
 name = "aleph-core"
-description = "Aleph manifest types, validator, cost analyzer, and bounded plan interpreter"
+description = "Aleph manifest types, validator, usage analyzer, and bounded plan interpreter"
 readme = "README.md"
 version.workspace = true
 edition.workspace = true

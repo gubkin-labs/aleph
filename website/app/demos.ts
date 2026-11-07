@@ -22,13 +22,15 @@ const LIST_POSTS = [
 ];
 
 const TABLE_HEAD =
-  "route            reads  writes        ops      bytes read  effects   calls         memory";
+  "route           reads   writes         ops     bytes read   effects   calls        memory";
+const LIMIT_ROW =
+  "limit         250        50      2,000           2 MB         50        3        8 MB";
 const ADD_ROW =
-  "add_comment     1 (0%)  1 (2%)     8 (0%)     3.5 KB (0%)   1 (2%)  0 (0%)    7.1 KB (0%)";
+  "add_comment     1 <1%     1 2%       8 <1%     3.5 KB <1%      1 2%     0 –    7.1 KB <1%";
 const CREATE_ROW =
-  "create_post     1 (0%)  1 (2%)  489 (24%)     3.1 KB (0%)   0 (0%)  0 (0%)   34.3 KB (0%)";
+  "create_post     1 <1%     1 2%     489 24%     3.1 KB <1%      0  –     0 –   34.3 KB <1%";
 const GET_ROW =
-  "get_posts    120 (48%)  0 (0%)  192 (10%)  416.1 KB (20%)   0 (0%)  0 (0%)  1.34 MB (17%)";
+  "get_posts     120 48%     0  –     192 10%   416.1 KB 20%      0  –     0 –   1.34 MB 17%";
 
 const overBudget = (route: string, line: number, n: number, what: string, limit: number) => [
   {
@@ -40,16 +42,17 @@ const overBudget = (route: string, line: number, n: number, what: string, limit:
   },
 ];
 
-export const cost = {
+export const usage = {
   start: 24,
   code: LIST_POSTS,
   steps: [
     { cmd: "$ aleph check app.ts" },
     {
       out: [
-        { t: "✔ valid: worst-case cost (share of the limit)", k: "ok" },
+        { t: "✔ valid. The most each route and handler can use in one run:", k: "ok" },
         { t: "" },
         { t: TABLE_HEAD, k: "dim", table: true },
+        { t: LIMIT_ROW, k: "dim", table: true },
       ],
     },
     {
@@ -61,7 +64,7 @@ export const cost = {
     },
     { pause: 700 },
     { hl: [25, 27, 32], mark: ["t.cursor()", "limit: 20", "limit: 5"] },
-    { termHl: [6] },
+    { termHl: [7] },
     { pause: 1800 },
     { hl: [] },
     { edit: 27, from: "limit: 20", to: "limit: 10000" },
@@ -70,7 +73,7 @@ export const cost = {
     { hl: [27], tone: "err", mark: "limit: 10000" },
     { out: [...overBudget("get_posts", 26, 60000, "reads", 250), { t: "" }, { t: "4 problems" }] },
   ] satisfies Step[],
-  // Without motion, show the cost table with its bounds lit.
+  // Without motion, show the usage table with its bounds lit.
   still: 7,
 };
 
@@ -98,9 +101,10 @@ export const loop = {
     { cmd: "$ aleph check app.ts" },
     {
       out: [
-        { t: "✔ valid: worst-case cost (share of the limit)", k: "ok" },
+        { t: "✔ valid. The most each route and handler can use in one run:", k: "ok" },
         { t: "" },
         { t: TABLE_HEAD, k: "dim", table: true },
+        { t: LIMIT_ROW, k: "dim", table: true },
         { t: CREATE_ROW, table: true, hl: true },
       ],
     },
@@ -229,7 +233,7 @@ const MORE = [
   "    }));",
   "",
   '// An external HTTP API. "call" waits for the answer.',
-  "// Each call counts toward the budget.",
+  "// Each call counts toward the limit.",
   'const moderation = a.integration("moderation", {',
   '  provider: "http",',
   "  operations: {",
@@ -310,24 +314,29 @@ export const more = {
     { cmd: "$ aleph check app.ts" },
     {
       out: [
-        { t: "✔ valid: worst-case cost (share of the limit)", k: "ok" },
+        { t: "✔ valid. The most each route and handler can use in one run:", k: "ok" },
         { t: "" },
         {
-          t: "handler         reads  writes      ops    bytes read  effects    calls        memory",
+          t: "handler          reads    writes         ops    bytes read   effects   calls        memory",
           k: "dim",
           table: true,
         },
         {
-          t: "moderate       1 (0%)  1 (1%)  14 (0%)   3.5 KB (0%)   1 (1%)  1 (20%)     23 B (0%)",
+          t: "limit          500       200       5,000          8 MB       200       5         32 MB",
+          k: "dim",
           table: true,
         },
         {
-          t: "weeklyDigest  10 (2%)  0 (0%)  11 (0%)  31.4 KB (0%)   1 (1%)   0 (0%)  31.4 KB (0%)",
+          t: "moderate         1 <1%     1 <1%      14 <1%    3.5 KB <1%     1 <1%   1 20%      23 B <1%",
+          table: true,
+        },
+        {
+          t: "weeklyDigest    10  2%     0   –      11 <1%   31.4 KB <1%     1 <1%   0   –   31.4 KB <1%",
           table: true,
         },
       ],
     },
-    { termHl: [4, 5] },
+    { termHl: [5, 6] },
   ] satisfies Step[],
 };
 
@@ -343,7 +352,7 @@ export const agent = {
     { pause: 1200 },
     {
       agent:
-        "agent ▸ 20 posts × 1000 comments is over the read budget of 250. Showing 10 per post; the full thread can page in on demand.",
+        "agent ▸ 20 posts × 1000 comments is over the read limit of 250. Showing 10 per post; the full thread can page in on demand.",
     },
     { hl: [] },
     { edit: 32, from: "limit: 1000 ", to: "limit: 10 " },
@@ -351,11 +360,12 @@ export const agent = {
     { cmd: "$ aleph check app.ts" },
     {
       out: [
-        { t: "✔ valid: worst-case cost (share of the limit)", k: "ok" },
+        { t: "✔ valid. The most each route and handler can use in one run:", k: "ok" },
         { t: "" },
         { t: TABLE_HEAD, k: "dim", table: true },
+        { t: LIMIT_ROW, k: "dim", table: true },
         {
-          t: "get_posts    220 (88%)  0 (0%)  192 (10%)  769.6 KB (38%)   0 (0%)  0 (0%)  2.38 MB (30%)",
+          t: "get_posts     220 88%     0  –     192 10%   769.6 KB 38%      0  –     0 –   2.38 MB 30%",
           hl: true,
           table: true,
         },

@@ -4,9 +4,9 @@
  * - `<AlephProvider presets={...}>` holds the current caller (the dev server fakes auth with
  *   headers) and injects the example styles.
  * - `useAleph().call(method, path, { body, query, idempotencyKey })` calls the app through `/api`.
- * - `<Inspector />` shows each request's route, status, and actual cost against its static
+ * - `<Inspector />` shows each request's route, status, and actual usage against its static
  *   bounds, the async activity (handler runs, retries, deliveries, integration calls), and the
- *   app's cost report.
+ *   app's worst-case usage report.
  */
 import type { CheckReport, Cost } from "@aleph/manifest";
 import {
@@ -418,7 +418,7 @@ export function Inspector() {
         </ul>
       ) : report ? (
         <>
-          <p className="al-dim">Worst-case cost of one execution, computed before anything runs.</p>
+          <p className="al-dim">The most one execution can use, computed before anything runs.</p>
           <BoundsTable title="route" reports={report.routes} />
           {report.handlers ? <BoundsTable title="handler" reports={report.handlers} /> : null}
         </>

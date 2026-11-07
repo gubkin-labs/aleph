@@ -126,4 +126,4 @@ a.route("GET /orgs/:orgId/members/by-email/:email")
 npx aleph mcp app.ts
 ```
 
-This lists the routes exposed as MCP tools, with JSON Schema inputs. A tool call goes through the route, with the same auth, validation, and limits. That's what makes it safe to hand an agent: whatever it asks for, the cost is bounded.
+This lists the routes exposed as MCP tools, with JSON Schema inputs. A tool call goes through the route, with the same auth, validation, and limits. That's what makes it safe to hand an agent: whatever it asks for, its usage is bounded.
