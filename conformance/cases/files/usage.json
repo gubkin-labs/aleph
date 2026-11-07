@@ -1,0 +1,93 @@
+[
+  {
+    "route": "upload_photo",
+    "step": 0,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 452,
+      "ops": 8,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "upload_photo",
+    "step": 1,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 7,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "handler": "recordPhoto",
+    "step": 6,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 109,
+      "ops": 7,
+      "reads": 1,
+      "writes": 1
+    }
+  },
+  {
+    "route": "get_photo",
+    "step": 7,
+    "usage": {
+      "bytesRead": 81,
+      "calls": 0,
+      "effects": 0,
+      "memory": 600,
+      "ops": 20,
+      "reads": 1,
+      "writes": 0
+    }
+  },
+  {
+    "route": "get_photo",
+    "step": 10,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 4,
+      "ops": 11,
+      "reads": 1,
+      "writes": 0
+    }
+  },
+  {
+    "route": "delete_photo",
+    "step": 11,
+    "usage": {
+      "bytesRead": 81,
+      "calls": 0,
+      "effects": 1,
+      "memory": 29,
+      "ops": 17,
+      "reads": 1,
+      "writes": 2
+    }
+  },
+  {
+    "route": "get_photo",
+    "step": 13,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 4,
+      "ops": 11,
+      "reads": 1,
+      "writes": 0
+    }
+  }
+]

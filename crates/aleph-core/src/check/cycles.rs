@@ -232,3 +232,333 @@ fn component(edges: &[Vec<(usize, bool)>], start: usize) -> Vec<usize> {
         .filter(|&i| forward[i] && reach(i)[start])
         .collect()
 }
+
+#[cfg(test)]
+#[allow(clippy::needless_pass_by_value)]
+mod tests {
+    use serde_json::{Value as Json, json};
+
+    use super::*;
+
+    const NULL: Json = Json::Null;
+
+    fn lit(value: Json) -> Json {
+        json!({ "kind": "lit", "value": value })
+    }
+
+    fn let_(op: Json) -> Json {
+        json!({ "kind": "let", "var": 0, "op": op })
+    }
+
+    fn handler(id: &str, trigger: Json, body: Vec<Json>, max_depth: Option<u32>) -> Json {
+        let mut h = json!({
+            "id": id,
+            "trigger": trigger,
+            "plan": { "body": body, "output": lit(NULL) },
+        });
+        if let Some(depth) = max_depth {
+            h["maxDepth"] = json!(depth);
+        }
+        h
+    }
+
+    fn on_event(event: &str) -> Json {
+        json!({ "kind": "event", "event": event })
+    }
+
+    fn on_entity(entity: &str, change: &str) -> Json {
+        json!({ "kind": "entity", "entity": entity, "change": change })
+    }
+
+    fn on_queue(queue: &str) -> Json {
+        json!({ "kind": "queue", "queue": queue })
+    }
+
+    fn emit(event: &str) -> Json {
+        let_(json!({ "op": "emit", "event": event, "payload": {} }))
+    }
+
+    fn enqueue(queue: &str) -> Json {
+        let_(json!({ "op": "enqueue", "queue": queue, "payload": {} }))
+    }
+
+    /// The cycle check's diagnostics for these handlers (nothing else is validated).
+    fn check_handlers(handlers: Vec<Json>) -> Vec<Diagnostic> {
+        let mut base: Json = serde_json::from_str(include_str!(
+            "../../../../conformance/invalid/trigger-cycle.json"
+        ))
+        .unwrap();
+        let mut manifest = base["manifest"].take();
+        manifest["handlers"] = Json::Array(handlers);
+        let manifest: Manifest = serde_json::from_value(manifest).unwrap();
+        let mut diags = Vec::new();
+        check(&manifest, &mut diags);
+        diags
+    }
+
+    fn cycles(handlers: Vec<Json>) -> Vec<Diagnostic> {
+        let diags = check_handlers(handlers);
+        assert!(
+            diags.iter().all(|d| d.code == Code::TriggerCycle),
+            "{diags:#?}"
+        );
+        diags
+    }
+
+    #[test]
+    fn every_kind_of_write_sets_off_its_change_trigger() {
+        let cases = [
+            (
+                json!({ "op": "insert", "entity": "Post", "values": {} }),
+                "inserted",
+            ),
+            (
+                json!({ "op": "insertIfAbsent", "entity": "Post", "values": {} }),
+                "inserted",
+            ),
+            (
+                json!({ "op": "upsert", "entity": "Post", "values": {} }),
+                "inserted",
+            ),
+            (
+                json!({ "op": "upsert", "entity": "Post", "values": {} }),
+                "updated",
+            ),
+            (
+                json!({ "op": "update", "entity": "Post", "key": {}, "set": {} }),
+                "updated",
+            ),
+            (
+                json!({ "op": "delete", "entity": "Post", "key": {} }),
+                "deleted",
+            ),
+        ];
+        for (op, change) in cases {
+            let diags = cycles(vec![handler(
+                "onPost",
+                on_entity("Post", change),
+                vec![let_(op.clone())],
+                None,
+            )]);
+            assert_eq!(diags.len(), 1, "{op} on {change}: {diags:#?}");
+            assert_eq!(diags[0].path, "handlers[0]");
+        }
+    }
+
+    #[test]
+    fn a_write_only_sets_off_triggers_for_its_own_change_and_entity() {
+        let cases = [
+            (
+                json!({ "op": "insert", "entity": "Post", "values": {} }),
+                on_entity("Post", "updated"),
+            ),
+            (
+                json!({ "op": "insert", "entity": "Other", "values": {} }),
+                on_entity("Post", "inserted"),
+            ),
+            (
+                json!({ "op": "update", "entity": "Post", "key": {}, "set": {} }),
+                on_entity("Post", "deleted"),
+            ),
+            (
+                json!({ "op": "delete", "entity": "Post", "key": {} }),
+                on_entity("Post", "inserted"),
+            ),
+            (
+                json!({ "op": "emit", "event": "pong", "payload": {} }),
+                on_event("ping"),
+            ),
+        ];
+        for (op, trigger) in cases {
+            let diags = cycles(vec![handler(
+                "h",
+                trigger.clone(),
+                vec![let_(op.clone())],
+                None,
+            )]);
+            assert!(diags.is_empty(), "{op} under {trigger}: {diags:#?}");
+        }
+    }
+
+    #[test]
+    fn writes_nested_in_branches_and_loops_still_count() {
+        let inner = emit("ping");
+        let list = json!({ "kind": "input", "source": "payload", "name": "items" });
+        let nested = [
+            json!({ "kind": "if", "cond": lit(json!(true)), "then": [inner], "else": [] }),
+            json!({ "kind": "if", "cond": lit(json!(true)), "then": [], "else": [inner] }),
+            json!({ "kind": "forEach", "list": list, "item": 1, "body": [inner] }),
+            let_(
+                json!({ "op": "map", "list": list, "item": 1, "body": [inner], "yield": lit(NULL) }),
+            ),
+            let_(
+                json!({ "op": "filter", "list": list, "item": 1, "body": [inner], "keep": lit(json!(true)) }),
+            ),
+            let_(
+                json!({ "op": "loop", "max": 2, "state": {}, "var": 1, "body": [inner], "next": {} }),
+            ),
+        ];
+        for stmt in nested {
+            let diags = cycles(vec![handler(
+                "onPing",
+                on_event("ping"),
+                vec![stmt.clone()],
+                None,
+            )]);
+            assert_eq!(diags.len(), 1, "{stmt}: {diags:#?}");
+        }
+    }
+
+    #[test]
+    fn a_two_handler_cycle_is_named_in_order() {
+        let diags = cycles(vec![
+            handler("onPing", on_event("ping"), vec![emit("pong")], None),
+            handler("onPong", on_event("pong"), vec![emit("ping")], None),
+        ]);
+        assert_eq!(diags.len(), 1, "{diags:#?}");
+        assert!(
+            diags[0]
+                .message
+                .contains(r#"handlers "onPing" → "onPong" → "onPing" form a trigger cycle"#),
+            "{}",
+            diags[0].message
+        );
+        assert!(
+            diags[0].message.contains("declare maxDepth"),
+            "{}",
+            diags[0].message
+        );
+    }
+
+    #[test]
+    fn the_shortest_cycle_is_reported() {
+        // a → b → c → a and a → c → a: the report names the two-hop one.
+        let diags = cycles(vec![
+            handler("a", on_event("a"), vec![emit("b"), emit("c")], None),
+            handler("b", on_event("b"), vec![emit("c")], None),
+            handler("c", on_event("c"), vec![emit("a")], None),
+        ]);
+        assert_eq!(diags.len(), 1, "{diags:#?}");
+        assert!(
+            diags[0]
+                .message
+                .contains(r#"handlers "a" → "c" → "a" form"#),
+            "{}",
+            diags[0].message
+        );
+    }
+
+    #[test]
+    fn chains_without_a_way_back_are_not_cycles() {
+        let diags = cycles(vec![
+            handler("a", on_event("a"), vec![emit("b")], None),
+            handler("b", on_event("b"), vec![emit("c")], None),
+            handler("c", on_event("c"), vec![], None),
+        ]);
+        assert!(diags.is_empty(), "{diags:#?}");
+    }
+
+    #[test]
+    fn queues_cycle_through_each_other_but_may_continue_themselves() {
+        let diags = cycles(vec![
+            handler("jobA", on_queue("a"), vec![enqueue("b")], None),
+            handler("jobB", on_queue("b"), vec![enqueue("a")], None),
+        ]);
+        assert_eq!(diags.len(), 1, "{diags:#?}");
+
+        let diags = cycles(vec![handler(
+            "batch",
+            on_queue("a"),
+            vec![enqueue("a")],
+            None,
+        )]);
+        assert!(diags.is_empty(), "a continuation isn't a cycle: {diags:#?}");
+    }
+
+    #[test]
+    fn a_dead_letter_handler_that_re_enqueues_its_queue_is_a_cycle() {
+        let dead = |queue: &str| json!({ "kind": "deadLetter", "queue": queue });
+        let diags = cycles(vec![
+            handler("job", on_queue("a"), vec![], None),
+            handler("failed", dead("a"), vec![enqueue("a")], None),
+        ]);
+        assert_eq!(diags.len(), 1, "{diags:#?}");
+        assert_eq!(diags[0].path, "handlers[0]");
+
+        // Another queue's dead letters don't lead back.
+        let diags = cycles(vec![
+            handler("job", on_queue("a"), vec![], None),
+            handler("failed", dead("b"), vec![enqueue("a")], None),
+        ]);
+        assert!(diags.is_empty(), "{diags:#?}");
+    }
+
+    #[test]
+    fn max_depth_allows_a_cycle_only_when_every_member_declares_it() {
+        let both = cycles(vec![
+            handler("onPing", on_event("ping"), vec![emit("pong")], Some(3)),
+            handler("onPong", on_event("pong"), vec![emit("ping")], Some(3)),
+        ]);
+        assert!(both.is_empty(), "{both:#?}");
+
+        let one = cycles(vec![
+            handler("onPing", on_event("ping"), vec![emit("pong")], Some(3)),
+            handler("onPong", on_event("pong"), vec![emit("ping")], None),
+        ]);
+        assert_eq!(one.len(), 1, "{one:#?}");
+        assert_eq!(
+            one[0].path, "handlers[1]",
+            "points at the undeclared handler"
+        );
+    }
+
+    #[test]
+    fn handlers_off_the_cycle_need_no_max_depth() {
+        // ping ↔ pong declare maxDepth; `audit` hangs off the cycle and `kick` leads into it,
+        // but neither is on it, so neither needs one.
+        let diags = cycles(vec![
+            handler(
+                "onPing",
+                on_event("ping"),
+                vec![emit("pong"), emit("audit")],
+                Some(3),
+            ),
+            handler("onPong", on_event("pong"), vec![emit("ping")], Some(3)),
+            handler("audit", on_event("audit"), vec![], None),
+            handler("kick", on_event("kick"), vec![emit("ping")], None),
+        ]);
+        assert!(diags.is_empty(), "{diags:#?}");
+    }
+
+    #[test]
+    fn a_cycle_through_a_workflow_start_is_rejected_even_with_max_depth() {
+        let step = handler(
+            "step",
+            json!({ "kind": "workflow", "workflow": "flow", "step": "start" }),
+            vec![let_(json!({
+                "op": "startWorkflow", "workflow": "flow", "key": lit(json!("k")), "input": {}
+            }))],
+            Some(3),
+        );
+        let diags = cycles(vec![step]);
+        assert_eq!(diags.len(), 1, "{diags:#?}");
+        assert!(
+            diags[0].message.contains("new workflow instance"),
+            "{}",
+            diags[0].message
+        );
+    }
+
+    #[test]
+    fn max_depth_must_be_within_the_chain_limit() {
+        let ok = |depth| check_handlers(vec![handler("h", on_event("ping"), vec![], Some(depth))]);
+        assert_eq!(ok(1), []);
+        assert_eq!(ok(MAX_CHAIN_DEPTH), []);
+        for depth in [0, MAX_CHAIN_DEPTH + 1] {
+            let diags = ok(depth);
+            assert_eq!(diags.len(), 1, "{depth}: {diags:#?}");
+            assert_eq!(diags[0].code, Code::InvalidHandler);
+            assert_eq!(diags[0].path, "handlers[0].maxDepth");
+        }
+    }
+}
