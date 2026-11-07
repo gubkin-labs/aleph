@@ -585,3 +585,191 @@ fn straight_line_plans_use_exactly_their_bounds() {
         slack.join("\n")
     );
 }
+
+/// The harness manifest plus an index `byNameN` on (`name`, `n`) and a counter `all` of items.
+fn with_index_and_counter(plan_body: Vec<Json>) -> Json {
+    let mut m = manifest(plan_body, lit(json!(1)));
+    m["entities"]["Item"]["indexes"] = json!({ "byNameN": { "fields": ["name", "n"] } });
+    m["counters"] = json!({ "all": { "of": "Item", "groupBy": [] } });
+    m
+}
+
+fn query(extra: Json) -> Json {
+    let mut q =
+        json!({ "op": "query", "entity": "Item", "index": "byNameN", "limit": lit(json!(5)) });
+    for (k, v) in extra.as_object().unwrap() {
+        q[k] = v.clone();
+    }
+    q
+}
+
+#[test]
+fn any_of_takes_one_to_ten_values_and_no_cursor() {
+    let check = |extra: Json| codes(&with_index_and_counter(vec![let_(0, query(extra))]));
+    let values = |k: usize| Json::Array((0..k).map(|i| lit(json!(format!("v{i}")))).collect());
+    assert_eq!(check(json!({ "anyOf": values(1) })), ok());
+    assert_eq!(check(json!({ "anyOf": values(10) })), ok());
+    assert_eq!(check(json!({ "anyOf": values(0) })), only("invalid_prefix"));
+    assert_eq!(
+        check(json!({ "anyOf": values(11) })),
+        only("invalid_prefix")
+    );
+    assert_eq!(
+        check(json!({ "anyOf": values(2), "page": true })),
+        only("invalid_prefix")
+    );
+    // anyOf covers the field after the prefix, so a range bounds the one after that: with no
+    // prefix, `n`; after a prefix for `name` and anyOf for `n`, nothing is left to bound.
+    let range = json!({ "gt": lit(json!(1)) });
+    assert_eq!(check(json!({ "anyOf": values(2), "range": range })), ok());
+    assert_eq!(
+        check(json!({ "prefix": [lit(json!("a"))], "anyOf": values(2), "range": range })),
+        only("invalid_range")
+    );
+}
+
+#[test]
+fn a_range_has_at_most_one_bound_on_each_side() {
+    let check = |range: Json| {
+        codes(&with_index_and_counter(vec![let_(
+            0,
+            query(json!({ "range": range })),
+        )]))
+    };
+    let one = || lit(json!("a"));
+    assert_eq!(check(json!({ "gt": one(), "lt": one() })), ok());
+    assert_eq!(check(json!({ "gte": one(), "lte": one() })), ok());
+    assert_eq!(
+        check(json!({ "gt": one(), "gte": one() })),
+        only("invalid_range")
+    );
+    assert_eq!(
+        check(json!({ "lt": one(), "lte": one() })),
+        only("invalid_range")
+    );
+}
+
+#[test]
+fn counter_reads_need_one_key_value_per_group_field() {
+    let get = |key: Json| {
+        codes(&with_index_and_counter(vec![let_(
+            0,
+            json!({ "op": "counterGet", "counter": "all", "key": key }),
+        )]))
+    };
+    assert_eq!(get(json!([])), ok());
+    assert_eq!(get(json!([lit(json!(1))])), only("invalid_counter_key"));
+}
+
+#[test]
+fn payloads_may_omit_optional_fields_but_not_required_ones() {
+    let emit_with = |payload: Json| {
+        let mut m = manifest(
+            vec![let_(
+                0,
+                json!({ "op": "emit", "event": "ping", "payload": payload }),
+            )],
+            lit(json!(1)),
+        );
+        m["events"] = json!({ "ping": { "payload": {
+            "req": { "type": { "kind": "int" } },
+            "opt": { "type": { "kind": "int" }, "optional": true },
+        } } });
+        codes(&m)
+    };
+    assert_eq!(emit_with(json!({ "req": lit(json!(1)) })), ok());
+    assert_eq!(
+        emit_with(json!({ "req": lit(json!(1)), "opt": lit(json!(2)) })),
+        ok()
+    );
+    assert_eq!(
+        emit_with(json!({ "opt": lit(json!(2)) })),
+        only("invalid_payload")
+    );
+    assert_eq!(
+        emit_with(json!({ "req": lit(json!(1)), "nope": lit(json!(2)) })),
+        only("invalid_payload")
+    );
+}
+
+#[test]
+fn select_on_is_null_narrows_only_the_checked_value() {
+    // `name` of a row that may not exist is nullable; writing it to the required `name` field
+    // needs a fallback for exactly that value.
+    let maybe = || field(var(0), "name");
+    let other = || field(var(0), "id");
+    let fallback = || lit(json!("z"));
+    let is_null = |of: Json| json!({ "kind": "isNull", "of": of });
+    let select = |cond: Json, then: Json, otherwise: Json| json!({ "kind": "select", "cond": cond, "then": then, "else": otherwise });
+    let write = |name: Json| {
+        codes(&manifest(
+            vec![
+                let_(0, get(lit(json!("i0")))),
+                let_(
+                    1,
+                    insert(item(json!({ "id": lit(json!("i1")), "name": name }))),
+                ),
+            ],
+            lit(json!(1)),
+        ))
+    };
+    assert_eq!(write(maybe()), only("type_mismatch"));
+    assert_eq!(write(select(is_null(maybe()), fallback(), maybe())), ok());
+    assert_eq!(write(select(not_null(maybe()), maybe(), fallback())), ok());
+    // Checking one value says nothing about another.
+    assert_eq!(
+        write(select(is_null(other()), fallback(), maybe())),
+        only("type_mismatch")
+    );
+    assert_eq!(
+        write(select(not_null(other()), maybe(), fallback())),
+        only("type_mismatch")
+    );
+}
+
+#[test]
+fn inserting_over_an_expired_row_stays_within_bounds_exactly() {
+    // A TTL entity with an index and a counter: re-inserting a key whose row expired first
+    // purges the old row (its row, index entry, and counter), which the bounds must cover.
+    let insert_at = let_(
+        0,
+        insert(item(
+            json!({ "id": lit(json!("i0")), "at": { "kind": "now" } }),
+        )),
+    );
+    let mut m = with_index_and_counter(vec![insert_at]);
+    m["entities"]["Item"]["fields"]["at"] = json!({ "type": { "kind": "timestamp" } });
+    m["entities"]["Item"]["ttl"] = json!({ "field": "at", "ms": 10 });
+    let bounds = bounds(&m);
+
+    let valid = parse_and_validate(&m.to_string(), &Limits::ROUTE).unwrap();
+    let env = Arc::new(FixedEnv::new(1_000, 1));
+    let engine = Engine::new(valid, Arc::new(MemoryStore::new()), env.clone());
+    let tenant = TenantId::new("t").unwrap();
+    let request = Request {
+        method: Method::Post,
+        path: "/r".into(),
+        query: BTreeMap::new(),
+        body: Some(json!({ "n": 1, "name": "a" })),
+        caller: None,
+        ip: None,
+        idempotency_key: None,
+        headers: BTreeMap::new(),
+        raw_body: None,
+    };
+    let first = engine.handle(&tenant, &request);
+    assert_eq!(first.status, 200, "{:?}", first.body);
+    env.advance(100);
+    let second = engine.handle(&tenant, &request);
+    assert_eq!(second.status, 200, "{:?}", second.body);
+    assert!(
+        second.usage.fits_within(&bounds),
+        "{:?} over {bounds:?}",
+        second.usage
+    );
+    assert_eq!(second.usage.writes, bounds.writes, "{:?}", second.usage);
+    assert!(
+        second.usage.writes > first.usage.writes,
+        "the purge wrote too"
+    );
+}
