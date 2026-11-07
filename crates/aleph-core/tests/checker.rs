@@ -1451,3 +1451,23 @@ fn a_workflow_input_too_large_to_store_is_refused() {
     assert_eq!(start(size - 1, &"x".repeat(20)).0, 500);
     assert_eq!(start(size - 1, "x").0, 200, "a smaller input still fits");
 }
+
+#[test]
+fn upserting_an_existing_versioned_row_updates_it_and_bumps_the_version() {
+    // Each upsert gives version 99, which is ignored: the row's own version counts up.
+    let upsert = |var_id: u32, n: i64| {
+        let_(
+            var_id,
+            json!({ "op": "upsert", "entity": "Item", "values": item(json!({ "id": lit(json!("i0")), "n": lit(json!(n)), "version": lit(json!(99)) })) }),
+        )
+    };
+    let mut m = manifest(
+        vec![upsert(0, 1), upsert(1, 7)],
+        obj(json!({ "n": field(var(1), "n"), "version": field(var(1), "version") })),
+    );
+    m["entities"]["Item"]["versioned"] = json!(true);
+    m["entities"]["Item"]["fields"]["version"] = json!({ "type": { "kind": "int" } });
+    let r = run(&m, json!({ "n": 1, "name": "a" }));
+    assert_eq!(r.status, 200, "{:?}", r.body);
+    assert_eq!(r.body, json!({ "n": 7, "version": 2 }));
+}
