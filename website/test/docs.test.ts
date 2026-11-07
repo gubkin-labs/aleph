@@ -2,7 +2,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import { fileFor } from "../lib/content";
+import { fileFor, markdownFor } from "../lib/content";
 import { PAGES } from "../lib/nav";
 
 const content = join(import.meta.dirname, "..", "content", "docs");
@@ -31,6 +31,13 @@ describe("docs", () => {
         expect(slugs.has(href ?? ""), `${page.slug} links to ${href}`).toBe(true);
       }
     }
+  });
+
+  it("keeps code examples whole in the Markdown copy", () => {
+    // "Copy as Markdown" and llms-full.txt drop MDX import lines, but never ones inside code.
+    const quickstart = markdownFor("quickstart");
+    expect(quickstart).toContain('import { app, err, t } from "@aleph-lang/sdk";');
+    expect(markdownFor("")).toContain("export default a;");
   });
 
   it("starts every page with one title", () => {

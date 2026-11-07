@@ -11,12 +11,20 @@ export function fileFor(slug: string): string {
   return existsSync(join(ROOT, `${slug}.mdx`)) ? `${slug}.mdx` : `${slug}/index.mdx`;
 }
 
-/** A page's Markdown source, without MDX-only lines (imports and exports). */
+/**
+ * A page's Markdown source, without MDX-only lines: the page's own imports and exports, and scope
+ * markers. Lines inside code blocks are kept, so examples keep their `import` and `export default`.
+ */
 export function markdownFor(slug: string): string {
   const source = readFileSync(join(ROOT, fileFor(slug)), "utf8");
+  let inCode = false;
   return source
     .split("\n")
-    .filter((line) => !/^(import|export) /.test(line) && line !== "{/* scope */}")
+    .filter((line) => {
+      if (/^\s*(```|~~~)/.test(line)) inCode = !inCode;
+      if (inCode) return true;
+      return !/^(import|export) /.test(line) && line !== "{/* scope */}";
+    })
     .join("\n")
     .trim();
 }
