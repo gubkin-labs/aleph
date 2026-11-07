@@ -1,0 +1,262 @@
+[
+  {
+    "route": "openAccount",
+    "step": 0,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 212,
+      "ops": 5,
+      "reads": 1,
+      "writes": 2
+    }
+  },
+  {
+    "route": "openAccount",
+    "step": 1,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 212,
+      "ops": 5,
+      "reads": 1,
+      "writes": 2
+    }
+  },
+  {
+    "route": "openAccount",
+    "step": 2,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 212,
+      "ops": 5,
+      "reads": 1,
+      "writes": 2
+    }
+  },
+  {
+    "route": "deposit",
+    "step": 3,
+    "usage": {
+      "bytesRead": 172,
+      "calls": 0,
+      "effects": 0,
+      "memory": 509,
+      "ops": 31,
+      "reads": 3,
+      "writes": 3
+    }
+  },
+  {
+    "route": "deposit",
+    "step": 4,
+    "usage": {
+      "bytesRead": 89,
+      "calls": 0,
+      "effects": 0,
+      "memory": 106,
+      "ops": 12,
+      "reads": 1,
+      "writes": 0
+    }
+  },
+  {
+    "route": "transfer",
+    "step": 5,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 0,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "transfer",
+    "step": 6,
+    "usage": {
+      "bytesRead": 350,
+      "calls": 0,
+      "effects": 0,
+      "memory": 856,
+      "ops": 78,
+      "reads": 7,
+      "writes": 7
+    }
+  },
+  {
+    "route": "transfer",
+    "step": 7,
+    "usage": {
+      "bytesRead": 102,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 0,
+      "reads": 1,
+      "writes": 0
+    }
+  },
+  {
+    "route": "transfer",
+    "step": 8,
+    "usage": {
+      "bytesRead": 102,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 0,
+      "reads": 1,
+      "writes": 0
+    }
+  },
+  {
+    "route": "transfer",
+    "step": 9,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 4,
+      "reads": 1,
+      "writes": 0
+    }
+  },
+  {
+    "route": "transfer",
+    "step": 10,
+    "usage": {
+      "bytesRead": 176,
+      "calls": 0,
+      "effects": 0,
+      "memory": 212,
+      "ops": 34,
+      "reads": 3,
+      "writes": 0
+    }
+  },
+  {
+    "route": "transfer",
+    "step": 11,
+    "usage": {
+      "bytesRead": 176,
+      "calls": 0,
+      "effects": 0,
+      "memory": 212,
+      "ops": 23,
+      "reads": 3,
+      "writes": 0
+    }
+  },
+  {
+    "route": "transfer",
+    "step": 12,
+    "usage": {
+      "bytesRead": 174,
+      "calls": 0,
+      "effects": 0,
+      "memory": 212,
+      "ops": 29,
+      "reads": 3,
+      "writes": 0
+    }
+  },
+  {
+    "route": "transfer",
+    "step": 13,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 0,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "entries",
+    "step": 14,
+    "usage": {
+      "bytesRead": 386,
+      "calls": 0,
+      "effects": 0,
+      "memory": 885,
+      "ops": 18,
+      "reads": 3,
+      "writes": 0
+    }
+  },
+  {
+    "route": "entries",
+    "step": 15,
+    "usage": {
+      "bytesRead": 234,
+      "calls": 0,
+      "effects": 0,
+      "memory": 501,
+      "ops": 18,
+      "reads": 2,
+      "writes": 0
+    }
+  },
+  {
+    "route": "myAccounts",
+    "step": 16,
+    "usage": {
+      "bytesRead": 174,
+      "calls": 0,
+      "effects": 0,
+      "memory": 446,
+      "ops": 6,
+      "reads": 2,
+      "writes": 0
+    }
+  },
+  {
+    "route": "entriesBetween",
+    "step": 17,
+    "usage": {
+      "bytesRead": 235,
+      "calls": 0,
+      "effects": 0,
+      "memory": 501,
+      "ops": 20,
+      "reads": 2,
+      "writes": 0
+    }
+  },
+  {
+    "route": "deposit",
+    "step": 18,
+    "usage": {
+      "bytesRead": 172,
+      "calls": 0,
+      "effects": 0,
+      "memory": 509,
+      "ops": 31,
+      "reads": 3,
+      "writes": 3
+    }
+  },
+  {
+    "route": "chargeMany",
+    "step": 19,
+    "usage": {
+      "bytesRead": 178,
+      "calls": 0,
+      "effects": 0,
+      "memory": 796,
+      "ops": 179,
+      "reads": 2,
+      "writes": 1
+    }
+  }
+]

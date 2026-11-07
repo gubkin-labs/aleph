@@ -449,12 +449,62 @@ mod tests {
         assert!(!a.all().contains(&ab.row("E", &[KeyPart::Int(1)])));
     }
 
+    #[test]
+    fn ranges_exclude_their_end() {
+        let range = tenant("t").row_range("E", &[KeyPart::Str("p")]);
+        assert!(range.contains(&range.start));
+        assert!(!range.contains(&range.end));
+    }
+
+    #[test]
+    fn decimals_order_across_zero() {
+        let ks = tenant("t");
+        let key = |units| ks.row("E", &[KeyPart::Decimal(units)]);
+        assert!(key(i128::MIN) < key(-1));
+        assert!(key(-1) < key(0));
+        assert!(key(0) < key(1));
+        assert!(key(1) < key(i128::MAX));
+    }
+
+    #[test]
+    fn cursors_are_limited_to_4096_hex_digits() {
+        let range = tenant("t").row_range("E", &[KeyPart::Str("p")]);
+        // `01` bytes keep the resumed key inside the range, so only the length decides.
+        assert!(range.resume(&"01".repeat(2048), true).is_some());
+        assert!(range.resume(&"01".repeat(2048), false).is_some());
+        assert!(range.resume(&"01".repeat(2049), true).is_none());
+        assert!(range.resume(&"01".repeat(4000), true).is_none());
+        // An odd number of digits is malformed, however short.
+        assert!(range.resume("0", true).is_none());
+        assert!(range.resume("010", true).is_none());
+    }
+
+    #[test]
+    fn ids_and_keys_print_readably() {
+        let id = TenantId::new("acme").unwrap();
+        assert_eq!(id.to_string(), "acme");
+        assert_eq!(id.as_str(), "acme");
+        let key = Keyspace::new(&id).row("E", &[KeyPart::Int(1)]);
+        assert_eq!(
+            format!("{key:?}"),
+            r"Key(\x02acme\x00\x02r\x00\x02E\x00\x15\x80\x00\x00\x00\x00\x00\x00\x01)"
+        );
+    }
+
     proptest! {
         #[test]
         fn int_order_is_preserved(a: i64, b: i64) {
             let ks = tenant("t");
             let ka = ks.row("E", &[KeyPart::Int(a)]);
             let kb = ks.row("E", &[KeyPart::Int(b)]);
+            prop_assert_eq!(a.cmp(&b), ka.cmp(&kb));
+        }
+
+        #[test]
+        fn decimal_order_is_preserved(a: i128, b: i128) {
+            let ks = tenant("t");
+            let ka = ks.row("E", &[KeyPart::Decimal(a)]);
+            let kb = ks.row("E", &[KeyPart::Decimal(b)]);
             prop_assert_eq!(a.cmp(&b), ka.cmp(&kb));
         }
 
@@ -496,7 +546,8 @@ mod tests {
         }
 
         #[test]
-        fn bounded_ranges_match_comparisons(prefix in "[a-z]{1,3}", lo: i64, hi: i64, v: i64, lo_inc: bool, hi_inc: bool) {
+        // Small values, so `v` often lands exactly on a bound, where inclusivity matters.
+        fn bounded_ranges_match_comparisons(prefix in "[a-z]{1,3}", lo in -4i64..4, hi in -4i64..4, v in -5i64..5, lo_inc: bool, hi_inc: bool) {
             let ks = tenant("t");
             let range = ks.row_range("E", &[KeyPart::Str(&prefix)])
                 .bounded(Some((KeyPart::Int(lo), lo_inc)), Some((KeyPart::Int(hi), hi_inc)));

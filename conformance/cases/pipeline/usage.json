@@ -1,0 +1,314 @@
+[
+  {
+    "route": "uploadDoc",
+    "step": 1,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 1,
+      "memory": 338,
+      "ops": 6,
+      "reads": 1,
+      "writes": 3
+    }
+  },
+  {
+    "handler": "enqueueProcessing",
+    "step": 2,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 1,
+      "memory": 8,
+      "ops": 7,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "handler": "purgeFailed",
+    "step": 2,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 4,
+      "ops": 3,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "handler": "processDoc",
+    "step": 2,
+    "usage": {
+      "bytesRead": 284,
+      "calls": 1,
+      "effects": 2,
+      "memory": 990,
+      "ops": 40,
+      "reads": 2,
+      "writes": 4
+    }
+  },
+  {
+    "handler": "notify",
+    "step": 2,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 1,
+      "memory": 113,
+      "ops": 13,
+      "reads": 1,
+      "writes": 1
+    }
+  },
+  {
+    "route": "getDoc",
+    "step": 3,
+    "usage": {
+      "bytesRead": 341,
+      "calls": 0,
+      "effects": 0,
+      "memory": 791,
+      "ops": 14,
+      "reads": 2,
+      "writes": 0
+    }
+  },
+  {
+    "route": "adjustPages",
+    "step": 4,
+    "usage": {
+      "bytesRead": 678,
+      "calls": 0,
+      "effects": 0,
+      "memory": 365,
+      "ops": 18,
+      "reads": 2,
+      "writes": 0
+    }
+  },
+  {
+    "route": "adjustPages",
+    "step": 5,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 0,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "adjustPages",
+    "step": 6,
+    "usage": {
+      "bytesRead": 678,
+      "calls": 0,
+      "effects": 0,
+      "memory": 1095,
+      "ops": 19,
+      "reads": 2,
+      "writes": 2
+    }
+  },
+  {
+    "route": "uploadDoc",
+    "step": 8,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 1,
+      "memory": 342,
+      "ops": 6,
+      "reads": 1,
+      "writes": 3
+    }
+  },
+  {
+    "handler": "enqueueProcessing",
+    "step": 9,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 1,
+      "memory": 8,
+      "ops": 7,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "handler": "processFailed",
+    "step": 12,
+    "usage": {
+      "bytesRead": 144,
+      "calls": 0,
+      "effects": 1,
+      "memory": 288,
+      "ops": 16,
+      "reads": 2,
+      "writes": 4
+    }
+  },
+  {
+    "route": "getDoc",
+    "step": 13,
+    "usage": {
+      "bytesRead": 146,
+      "calls": 0,
+      "effects": 0,
+      "memory": 403,
+      "ops": 14,
+      "reads": 2,
+      "writes": 0
+    }
+  },
+  {
+    "route": "uploadDoc",
+    "step": 14,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 1,
+      "memory": 330,
+      "ops": 6,
+      "reads": 1,
+      "writes": 3
+    }
+  },
+  {
+    "route": "uploadDoc",
+    "step": 15,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 0,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "uploadDoc",
+    "step": 16,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 1,
+      "memory": 334,
+      "ops": 6,
+      "reads": 1,
+      "writes": 3
+    }
+  },
+  {
+    "handler": "enqueueProcessing",
+    "step": 18,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 1,
+      "memory": 8,
+      "ops": 7,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "handler": "enqueueProcessing",
+    "step": 18,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 1,
+      "memory": 8,
+      "ops": 7,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "handler": "processDoc",
+    "step": 18,
+    "usage": {
+      "bytesRead": 280,
+      "calls": 1,
+      "effects": 2,
+      "memory": 396,
+      "ops": 40,
+      "reads": 2,
+      "writes": 4
+    }
+  },
+  {
+    "handler": "notify",
+    "step": 18,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 1,
+      "memory": 113,
+      "ops": 13,
+      "reads": 1,
+      "writes": 1
+    }
+  },
+  {
+    "handler": "processDoc",
+    "step": 18,
+    "usage": {
+      "bytesRead": 276,
+      "calls": 1,
+      "effects": 2,
+      "memory": 392,
+      "ops": 40,
+      "reads": 2,
+      "writes": 4
+    }
+  },
+  {
+    "handler": "notify",
+    "step": 18,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 1,
+      "memory": 113,
+      "ops": 13,
+      "reads": 1,
+      "writes": 1
+    }
+  },
+  {
+    "handler": "purgeFailed",
+    "step": 19,
+    "usage": {
+      "bytesRead": 288,
+      "calls": 0,
+      "effects": 0,
+      "memory": 179,
+      "ops": 10,
+      "reads": 2,
+      "writes": 3
+    }
+  },
+  {
+    "route": "getDoc",
+    "step": 20,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 4,
+      "ops": 8,
+      "reads": 1,
+      "writes": 0
+    }
+  }
+]

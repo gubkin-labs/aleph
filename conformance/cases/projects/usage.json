@@ -1,0 +1,535 @@
+[
+  {
+    "route": "setPlan",
+    "step": 0,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 0,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "setPlan",
+    "step": 1,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 0,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "createProject",
+    "step": 2,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 296,
+      "ops": 22,
+      "reads": 3,
+      "writes": 3
+    }
+  },
+  {
+    "route": "createProject",
+    "step": 3,
+    "usage": {
+      "bytesRead": 1,
+      "calls": 0,
+      "effects": 0,
+      "memory": 294,
+      "ops": 22,
+      "reads": 3,
+      "writes": 3
+    }
+  },
+  {
+    "route": "createProject",
+    "step": 4,
+    "usage": {
+      "bytesRead": 1,
+      "calls": 0,
+      "effects": 0,
+      "memory": 296,
+      "ops": 22,
+      "reads": 3,
+      "writes": 3
+    }
+  },
+  {
+    "route": "createProject",
+    "step": 5,
+    "usage": {
+      "bytesRead": 1,
+      "calls": 0,
+      "effects": 0,
+      "memory": 24,
+      "ops": 16,
+      "reads": 2,
+      "writes": 0
+    }
+  },
+  {
+    "route": "setPlan",
+    "step": 6,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 60,
+      "ops": 5,
+      "reads": 1,
+      "writes": 1
+    }
+  },
+  {
+    "route": "createProject",
+    "step": 7,
+    "usage": {
+      "bytesRead": 30,
+      "calls": 0,
+      "effects": 0,
+      "memory": 322,
+      "ops": 23,
+      "reads": 3,
+      "writes": 3
+    }
+  },
+  {
+    "route": "createProject",
+    "step": 8,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 0,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "listProjects",
+    "step": 9,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 0,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "listProjects",
+    "step": 10,
+    "usage": {
+      "bytesRead": 511,
+      "calls": 0,
+      "effects": 0,
+      "memory": 1148,
+      "ops": 7,
+      "reads": 4,
+      "writes": 0
+    }
+  },
+  {
+    "route": "listProjects",
+    "step": 11,
+    "usage": {
+      "bytesRead": 511,
+      "calls": 0,
+      "effects": 0,
+      "memory": 1148,
+      "ops": 7,
+      "reads": 4,
+      "writes": 0
+    }
+  },
+  {
+    "route": "listProjects",
+    "step": 12,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 0,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "listProjects",
+    "step": 13,
+    "usage": {
+      "bytesRead": 256,
+      "calls": 0,
+      "effects": 0,
+      "memory": 770,
+      "ops": 7,
+      "reads": 2,
+      "writes": 0
+    }
+  },
+  {
+    "route": "listProjects",
+    "step": 14,
+    "usage": {
+      "bytesRead": 255,
+      "calls": 0,
+      "effects": 0,
+      "memory": 768,
+      "ops": 7,
+      "reads": 2,
+      "writes": 0
+    }
+  },
+  {
+    "route": "listProjects",
+    "step": 15,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 58,
+      "ops": 7,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "listProjects",
+    "step": 16,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 6,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "archiveProject",
+    "step": 17,
+    "usage": {
+      "bytesRead": 256,
+      "calls": 0,
+      "effects": 0,
+      "memory": 412,
+      "ops": 16,
+      "reads": 2,
+      "writes": 5
+    }
+  },
+  {
+    "route": "listProjects",
+    "step": 18,
+    "usage": {
+      "bytesRead": 130,
+      "calls": 0,
+      "effects": 0,
+      "memory": 332,
+      "ops": 7,
+      "reads": 1,
+      "writes": 0
+    }
+  },
+  {
+    "route": "listProjects",
+    "step": 19,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 0,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "createTask",
+    "step": 20,
+    "usage": {
+      "bytesRead": 130,
+      "calls": 0,
+      "effects": 0,
+      "memory": 138,
+      "ops": 13,
+      "reads": 1,
+      "writes": 0
+    }
+  },
+  {
+    "route": "createTask",
+    "step": 21,
+    "usage": {
+      "bytesRead": 127,
+      "calls": 0,
+      "effects": 0,
+      "memory": 395,
+      "ops": 19,
+      "reads": 2,
+      "writes": 2
+    }
+  },
+  {
+    "route": "createTask",
+    "step": 22,
+    "usage": {
+      "bytesRead": 127,
+      "calls": 0,
+      "effects": 0,
+      "memory": 395,
+      "ops": 19,
+      "reads": 2,
+      "writes": 2
+    }
+  },
+  {
+    "route": "createTask",
+    "step": 23,
+    "usage": {
+      "bytesRead": 127,
+      "calls": 0,
+      "effects": 0,
+      "memory": 383,
+      "ops": 19,
+      "reads": 2,
+      "writes": 2
+    }
+  },
+  {
+    "route": "completeTasks",
+    "step": 24,
+    "usage": {
+      "bytesRead": 517,
+      "calls": 0,
+      "effects": 0,
+      "memory": 2334,
+      "ops": 105,
+      "reads": 6,
+      "writes": 4
+    }
+  },
+  {
+    "route": "completeTasks",
+    "step": 25,
+    "usage": {
+      "bytesRead": 129,
+      "calls": 0,
+      "effects": 0,
+      "memory": 706,
+      "ops": 42,
+      "reads": 2,
+      "writes": 0
+    }
+  },
+  {
+    "route": "getProject",
+    "step": 26,
+    "usage": {
+      "bytesRead": 507,
+      "calls": 0,
+      "effects": 0,
+      "memory": 1167,
+      "ops": 30,
+      "reads": 5,
+      "writes": 0
+    }
+  },
+  {
+    "route": "watchProject",
+    "step": 27,
+    "usage": {
+      "bytesRead": 127,
+      "calls": 0,
+      "effects": 0,
+      "memory": 156,
+      "ops": 15,
+      "reads": 2,
+      "writes": 1
+    }
+  },
+  {
+    "route": "watchProject",
+    "step": 28,
+    "usage": {
+      "bytesRead": 198,
+      "calls": 0,
+      "effects": 0,
+      "memory": 156,
+      "ops": 15,
+      "reads": 2,
+      "writes": 0
+    }
+  },
+  {
+    "route": "archiveProject",
+    "step": 29,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 4,
+      "ops": 8,
+      "reads": 1,
+      "writes": 0
+    }
+  },
+  {
+    "route": "archiveProject",
+    "step": 30,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 0,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "createProject",
+    "step": 31,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 0,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": null,
+    "step": 32,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 0,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": null,
+    "step": 33,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 0,
+      "ops": 0,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "createProject",
+    "step": 34,
+    "usage": {
+      "bytesRead": 30,
+      "calls": 0,
+      "effects": 0,
+      "memory": 334,
+      "ops": 23,
+      "reads": 4,
+      "writes": 4
+    }
+  },
+  {
+    "route": "createProject",
+    "step": 35,
+    "usage": {
+      "bytesRead": 67,
+      "calls": 0,
+      "effects": 0,
+      "memory": 50,
+      "ops": 22,
+      "reads": 4,
+      "writes": 1
+    }
+  },
+  {
+    "route": "createProject",
+    "step": 36,
+    "usage": {
+      "bytesRead": 30,
+      "calls": 0,
+      "effects": 0,
+      "memory": 318,
+      "ops": 23,
+      "reads": 3,
+      "writes": 3
+    }
+  },
+  {
+    "route": "projectBySlug",
+    "step": 37,
+    "usage": {
+      "bytesRead": 134,
+      "calls": 0,
+      "effects": 0,
+      "memory": 287,
+      "ops": 13,
+      "reads": 1,
+      "writes": 0
+    }
+  },
+  {
+    "route": "projectBySlug",
+    "step": 38,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 2,
+      "ops": 11,
+      "reads": 0,
+      "writes": 0
+    }
+  },
+  {
+    "route": "archivedSince",
+    "step": 39,
+    "usage": {
+      "bytesRead": 130,
+      "calls": 0,
+      "effects": 0,
+      "memory": 296,
+      "ops": 7,
+      "reads": 1,
+      "writes": 0
+    }
+  },
+  {
+    "route": "archivedSince",
+    "step": 40,
+    "usage": {
+      "bytesRead": 0,
+      "calls": 0,
+      "effects": 0,
+      "memory": 20,
+      "ops": 7,
+      "reads": 0,
+      "writes": 0
+    }
+  }
+]

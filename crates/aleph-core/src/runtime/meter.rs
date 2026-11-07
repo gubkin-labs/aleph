@@ -107,4 +107,70 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn each_charge_counts_against_its_own_resource() {
+        let mut meter = Meter::new(Limits::ROUTE);
+        meter.op().unwrap();
+        meter.read(7).unwrap();
+        meter.read(0).unwrap();
+        meter.effect().unwrap();
+        meter.call().unwrap();
+        meter.memory(11).unwrap();
+        meter.write(3).unwrap();
+        assert_eq!(
+            meter.used(),
+            Cost {
+                reads: 2,
+                writes: 3,
+                ops: 1,
+                bytes_read: 7,
+                effects: 1,
+                calls: 1,
+                memory: 11,
+            }
+        );
+        assert_eq!(meter.limits(), &Limits::ROUTE);
+    }
+
+    #[test]
+    fn every_resource_has_a_limit_that_stops_it() {
+        type Charge = fn(&mut Meter) -> Result<(), OverBudget>;
+        let tight = Limits {
+            reads: 1,
+            writes: 1,
+            ops: 1,
+            bytes_read: 10,
+            effects: 1,
+            calls: 1,
+            memory: 10,
+            ..Limits::ROUTE
+        };
+        let cases: [(Resource, u64, Charge); 7] = [
+            (Resource::Ops, 1, Meter::op),
+            (Resource::Reads, 1, |m| m.read(0)),
+            (Resource::BytesRead, 10, |m| m.read(6)),
+            (Resource::Effects, 1, Meter::effect),
+            (Resource::Calls, 1, Meter::call),
+            (Resource::Memory, 10, |m| m.memory(6)),
+            (Resource::Writes, 1, |m| m.write(1)),
+        ];
+        for (resource, limit, charge) in cases {
+            let mut meter = Meter::new(Limits {
+                // Two reads would otherwise trip the reads limit before the bytes limit.
+                reads: if resource == Resource::BytesRead {
+                    2
+                } else {
+                    1
+                },
+                ..tight
+            });
+            assert_eq!(charge(&mut meter), Ok(()), "{resource:?}: first charge");
+            assert_eq!(
+                charge(&mut meter),
+                Err(OverBudget { resource, limit }),
+                "{resource:?}: second charge"
+            );
+        }
+    }
 }

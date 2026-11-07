@@ -2,7 +2,10 @@
 //! them through WASM), natively:
 //! 1. every case's `manifest.json` validates, and its analysis equals the golden `bounds.json`
 //! 2. every scenario step produces the expected response, with usage inside the route's bounds
-//! 3. every `invalid/*.json` manifest is rejected with exactly the expected diagnostic codes
+//! 3. every scenario step's exact usage (each request, and each handler run of a `process` step)
+//!    equals the golden `usage.json`, so the meter can't silently charge less (or more) than it
+//!    did; `UPDATE_GOLDEN=1 cargo test -p aleph-core --test conformance` rewrites it
+//! 4. every `invalid/*.json` manifest is rejected with exactly the expected diagnostic codes
 //!
 //! Keep `substitute`, `subset_mismatch`, and `value_at` in sync with `conformance/test/scenario.ts`.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, missing_docs)]
@@ -14,9 +17,11 @@ use std::sync::Arc;
 
 use aleph_core::check::CheckReport;
 use aleph_core::runtime::{MemorySecrets, MemorySink, MockIntegrations};
-use aleph_core::{Engine, FixedEnv, Limits, MemoryStore, Request, TenantId, parse_and_validate};
+use aleph_core::{
+    Cost, Engine, FixedEnv, Limits, MemoryStore, Request, TenantId, parse_and_validate,
+};
 use serde::Deserialize;
-use serde_json::Value as Json;
+use serde_json::{Value as Json, json};
 
 fn conformance_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../conformance")
@@ -221,6 +226,7 @@ fn scenarios_behave_as_expected_within_bounds() {
             .with_secrets(secrets.clone());
         let mut vars = BTreeMap::new();
         let mut extra = 0;
+        let mut usage = Vec::new();
 
         for (i, step) in scenario.steps.iter().enumerate() {
             let at = format!("{} step {i} {:?}", dir.display(), step.name);
@@ -249,7 +255,7 @@ fn scenarios_behave_as_expected_within_bounds() {
                 continue;
             }
             if step.process {
-                check_process(
+                let runs = check_process(
                     &engine,
                     &tenant,
                     &report,
@@ -259,6 +265,9 @@ fn scenarios_behave_as_expected_within_bounds() {
                     &vars,
                     &at,
                 );
+                for (handler, used) in runs {
+                    usage.push(json!({ "step": i, "handler": handler, "usage": used }));
+                }
                 continue;
             }
             let request = step
@@ -279,6 +288,7 @@ fn scenarios_behave_as_expected_within_bounds() {
             if let Some(replayed) = step.expect.replayed {
                 assert_eq!(response.replayed, replayed, "{at}: replayed");
             }
+            usage.push(json!({ "step": i, "route": response.route, "usage": response.usage }));
             if let Some(route) = &response.route {
                 let bounds = report.routes[route].bounds;
                 assert!(
@@ -298,6 +308,34 @@ fn scenarios_behave_as_expected_within_bounds() {
                 );
             }
         }
+        check_usage_golden(&dir.join("usage.json"), &Json::Array(usage));
+    }
+}
+
+/// Compares a case's exact per-step usage with its golden file, or rewrites it under
+/// `UPDATE_GOLDEN=1`. Fitting within the static bounds isn't enough: a meter that undercharges
+/// fits too, and then the runtime limits no longer stop what they should.
+fn check_usage_golden(path: &Path, actual: &Json) {
+    if std::env::var_os("UPDATE_GOLDEN").is_some() {
+        fs::write(
+            path,
+            format!("{}\n", serde_json::to_string_pretty(actual).unwrap()),
+        )
+        .unwrap();
+        return;
+    }
+    let golden: Json = serde_json::from_str(&read(path)).unwrap();
+    let (Json::Array(golden), Json::Array(actual)) = (&golden, actual) else {
+        panic!("{}: expected an array", path.display());
+    };
+    assert_eq!(golden.len(), actual.len(), "{}: step count", path.display());
+    for (g, a) in golden.iter().zip(actual) {
+        assert_eq!(
+            g,
+            a,
+            "{}: usage differs from the golden file",
+            path.display()
+        );
     }
 }
 
@@ -313,8 +351,13 @@ fn check_process(
     step: &Step,
     vars: &BTreeMap<String, String>,
     at: &str,
-) {
+) -> Vec<(String, Cost)> {
     let processed = engine.process(tenant, 1000);
+    let runs = processed
+        .runs
+        .iter()
+        .map(|run| (run.handler.clone(), run.usage))
+        .collect();
     for run in &processed.runs {
         let bounds = report.handlers[&run.handler].bounds;
         assert!(
@@ -352,6 +395,7 @@ fn check_process(
             panic!("{at}: {mismatch}\n{calls:?}");
         }
     }
+    runs
 }
 
 #[test]
