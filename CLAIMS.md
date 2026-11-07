@@ -17,8 +17,8 @@ intent or design; nothing here proves it yet.
 | A runtime meter enforces the same limits, and never trips for a valid plan | Homepage, docs: Bounded by construction | `tests/generated_plans.rs` (100,000 random plans on every `pnpm verify`: usage ≤ bounds), conformance `scenarios.json` (usage ≤ bounds per step) | Backed |
 | No loop can run away: every loop has a known maximum; no recursion | Homepage, docs: How Aleph programs work | `unbounded_list` checks; `$.loop` `max` and state-growth checks (`conformance/invalid/loop-errors.json`) | Backed |
 | Handlers can't set each other off without end | Docs: Background work | `src/check/cycles.rs`, `conformance/invalid/trigger-cycle.json`, `tests/runtime.rs` (`a_trigger_cycle_stops_at_its_declared_depth`) | Backed |
-| No app can take the CPU other apps need | Homepage (loop, cost model), docs: Shared infrastructure | Operations are bounded and metered. **Gap:** the meter counts operations, not time; the worst real CPU time of a route at the limits isn't measured yet | Partial |
-| No app can take the memory other apps need | Homepage, docs: Shared infrastructure | The meter charges each value's size. **Gap:** real allocation against the charged bytes isn't measured | Partial |
+| No app can take the CPU other apps need | Homepage (loop, cost model), docs: Shared infrastructure | Operations are bounded and metered, and the costly ones (`matches`, copies, `in`) are charged for their real work: `tests/usage.rs` runs on every `pnpm verify`. `benches/adversarial.rs` measures it: the slowest route that passes `aleph check` takes about 3 ms (about 1.7 µs per op). **Gap:** the timing is a benchmark, not checked on every run; it assumes the platform caps request bodies (about 1 MB) | Partial |
+| No app can take the memory other apps need | Homepage, docs: Shared infrastructure | Every value read, copied, or built is charged its in-memory size, statically and by the meter (`tests/usage.rs`, conformance `usage.json` goldens). `benches/adversarial.rs` measures peak heap within each route's bound (at most 4.3 MB). **Gap:** peak heap is measured by a benchmark, not on every run | Partial |
 | No request can flood the shared database | Docs: Shared infrastructure | Reads, writes, and bytes read are bounded and metered (rows above) | Backed |
 | One app can't read or write another app's data | Homepage, docs: Shared infrastructure | Key encoding property tests in `src/keys.rs` (prefixes, cursors that can't escape their range); `tests/generated_plans.rs` checks no run touches another tenant | Backed |
 | Files can't be reached from another app, or beyond what their signed URL allows | Docs: Files | `src/runtime/blobs.rs` tests (tampered tenant, bucket, type, size, expiry, or access is rejected); `conformance/cases/files` (another user's key, wrong type, too large, tampered, expired); file metadata keys come from `Keyspace` | Backed |
@@ -41,8 +41,8 @@ intent or design; nothing here proves it yet.
 | Claim | Where | Evidence | Status |
 |---|---|---|---|
 | No garbage-collection pauses, steady latency under load | Homepage (run on Rust) | The core is Rust; `benches/routes.rs` times single requests. **Gap:** no load test | Partial |
-| Memory small enough to pack thousands of apps into one process | Homepage (run on Rust) | Not measured | Not yet |
-| A new version loads in milliseconds; no cold starts | Homepage (run on Rust) | Not measured | Not yet |
+| Memory small enough to pack thousands of apps into one process | Homepage (run on Rust) | `benches/load.rs`: 77–215 KB of heap per loaded conformance app, so 10,000 apps take about 1–2 GB. **Gap:** measured on five apps, not a large fleet | Partial |
+| A new version loads in milliseconds; no cold starts | Homepage (run on Rust) | `benches/load.rs`: validating and loading a conformance manifest takes 0.12–0.35 ms; 100× the ledger's routes (1.1 MB) takes 14–68 ms. **Gap:** assumes the platform caps manifest size | Partial |
 | Requests are microseconds of CPU | Docs: Shared infrastructure | `benches/routes.rs` on the conformance apps. **Gap:** not at the limits | Partial |
 | A platform can offer much better pricing than a dedicated deployment | Homepage (safe to share), docs: Shared infrastructure | Follows from sharing; no cost model or measured density yet | Not yet |
 

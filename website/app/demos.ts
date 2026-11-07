@@ -22,15 +22,15 @@ const LIST_POSTS = [
 ];
 
 const TABLE_HEAD =
-  "route           reads   writes         ops     bytes read   effects   calls        memory";
+  "route           reads   writes         ops     bytes read   effects   calls         memory";
 const LIMIT_ROW =
-  "limit         250        50      2,000           2 MB         50        3        8 MB";
+  "limit         250        50      2,000           2 MB         50        3         8 MB";
 const ADD_ROW =
-  "add_comment     1 <1%     1 2%       8 <1%     3.5 KB <1%      1 2%     0 –    7.1 KB <1%";
+  "add_comment     1 <1%     1 2%       8 <1%     3.5 KB <1%      1 2%     0 –    14.2 KB <1%";
 const CREATE_ROW =
-  "create_post     1 <1%     1 2%     489 24%     3.1 KB <1%      0  –     0 –   34.3 KB <1%";
+  "create_post     1 <1%     1 2%     489 24%     3.1 KB <1%      0  –     0 –   138.0 KB  2%";
 const GET_ROW =
-  "get_posts     120 48%     0  –     192 10%   416.1 KB 20%      0  –     0 –   1.34 MB 17%";
+  "get_posts     120 48%     0  –     192 10%   416.1 KB 20%      0  –     0 –    3.02 MB 38%";
 
 const overBudget = (route: string, line: number, n: number, what: string, limit: number) => [
   {
@@ -114,7 +114,7 @@ export const loop = {
     { clear: true },
     { cmd: "$ aleph check app.ts" },
     { hl: [41], tone: "err", mark: "100)" },
-    { out: [...overBudget("create_post", 44, 40809, "ops", 2000), { t: "" }, { t: "1 problem" }] },
+    { out: [...overBudget("create_post", 44, 40809, "ops", 2000), { t: "" }, { t: "2 problems" }] },
   ] satisfies Step[],
 };
 
@@ -327,11 +327,11 @@ export const more = {
           table: true,
         },
         {
-          t: "moderate         1 <1%     1 <1%      14 <1%    3.5 KB <1%     1 <1%   1 20%      23 B <1%",
+          t: "moderate         1 <1%     1 <1%      14 <1%    3.5 KB <1%     1 <1%   1 20%   13.6 KB <1%",
           table: true,
         },
         {
-          t: "weeklyDigest    10  2%     0   –      11 <1%   31.4 KB <1%     1 <1%   0   –   31.4 KB <1%",
+          t: "weeklyDigest    10  2%     0   –      11 <1%   31.4 KB <1%     1 <1%   0   –   64.2 KB <1%",
           table: true,
         },
       ],
@@ -365,7 +365,7 @@ export const agent = {
         { t: TABLE_HEAD, k: "dim", table: true },
         { t: LIMIT_ROW, k: "dim", table: true },
         {
-          t: "get_posts     220 88%     0  –     192 10%   769.6 KB 38%      0  –     0 –   2.38 MB 30%",
+          t: "get_posts     220 88%     0  –     192 10%   769.6 KB 38%      0  –     0 –    5.05 MB 63%",
           hl: true,
           table: true,
         },

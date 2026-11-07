@@ -88,8 +88,8 @@ $ aleph check app.ts
 
 route                       reads   writes         ops   bytes read   effects   calls         memory
 limit                      250       50      2,000          2 MB         50       3         8 MB
-get_orgs_orgId_projects     20 8%     0  –       6 <1%   24.0 KB 1%       0 –     0 –   112.1 KB  1%
-post_orgs_orgId_projects     3 1%     3 6%      12 <1%   65.2 KB 3%       0 –     0 –     2.4 KB <1%
+get_orgs_orgId_projects     20 8%     0  –       6 <1%   24.0 KB 1%       0 –     0 –   197.5 KB  2%
+post_orgs_orgId_projects     3 1%     3 6%      12 <1%   65.2 KB 3%       0 –     0 –     6.0 KB <1%
 ```
 
 The core rejects anything over the limits, such as an unbounded query or a loop that could write too much,
