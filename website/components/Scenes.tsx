@@ -230,3 +230,286 @@ export function GeneratedScene() {
     </svg>
   );
 }
+
+/** An open-ended language needs a reviewer; a small vocabulary can be checked mechanically. */
+export function TradeoffScene() {
+  const choices = [
+    { t: "any library", x: 30, y: 70 },
+    { t: "raw SQL", x: 168, y: 70 },
+    { t: "unbounded loop", x: 54, y: 100 },
+    { t: "threads", x: 186, y: 100 },
+    { t: "eval()", x: 30, y: 130 },
+    { t: "network call", x: 112, y: 130 },
+    { t: "fs access", x: 44, y: 160 },
+    { t: "custom auth", x: 150, y: 160 },
+    { t: "any query", x: 80, y: 190 },
+  ];
+  const vocab = ["route", "access", "entity", "query", "effect"];
+  return (
+    <svg
+      viewBox="0 0 560 270"
+      className="scene"
+      role="img"
+      aria-label="A general-purpose language allows any library, query, or loop, so every app needs its own review; Aleph's five building blocks are checked before they ship"
+    >
+      <text x="16" y="26" className="s-label">
+        general-purpose
+      </text>
+      <rect x="16" y="40" width="254" height="172" rx="6" className="s-card" />
+      {choices.map((c, i) => (
+        <text
+          key={c.t}
+          x={c.x}
+          y={c.y}
+          className="s-tiny s-choice"
+          style={{ animationDelay: `${(i * 0.53) % 3}s` }}
+        >
+          {c.t}
+        </text>
+      ))}
+      <text x="16" y="240" className="s-tiny s-muted">
+        anything goes, so every app needs
+      </text>
+      <text x="16" y="256" className="s-tiny s-muted">
+        its own servers, review, guardrails
+      </text>
+
+      <text x="296" y="26" className="s-label">
+        aleph
+      </text>
+      {vocab.map((v, i) => {
+        const y = 44 + i * 34;
+        const d = `M396 ${y + 13} C 418 ${y + 13}, 418 126, 440 126`;
+        return (
+          <g key={v}>
+            <rect x="296" y={y} width="100" height="26" rx="13" className="s-pill" />
+            <text x="346" y={y + 17} className="s-tiny" textAnchor="middle">
+              {v}
+            </text>
+            <path d={d} className="s-edge" />
+            <path
+              d={d}
+              pathLength={1}
+              className="s-flow"
+              style={{ animationDelay: `${i * 0.18}s` }}
+            />
+          </g>
+        );
+      })}
+      <rect
+        x="440"
+        y="102"
+        width="104"
+        height="48"
+        rx="6"
+        className="s-card s-strong-card s-out"
+        style={{ animationDelay: "0.5s" }}
+      />
+      <text x="492" y="123" className="s-tiny s-ok-text" textAnchor="middle">
+        ✔ trusted
+      </text>
+      <text x="492" y="139" className="s-tiny s-muted" textAnchor="middle">
+        by default
+      </text>
+      <text x="296" y="240" className="s-tiny s-muted">
+        five building blocks, each one
+      </text>
+      <text x="296" y="256" className="s-tiny s-muted">
+        bounded and checked before it ships
+      </text>
+    </svg>
+  );
+}
+
+/** app.ts compiles to a manifest, which a shared platform runs next to other apps. */
+export function HowScene() {
+  const tiles = Array.from({ length: 9 }, (_, i) => i);
+  return (
+    <svg
+      viewBox="0 18 560 228"
+      className="scene"
+      role="img"
+      aria-label="You write app.ts; Aleph compiles it to manifest.json; a platform runs it beside other apps on one core and one database. OpenAPI, a typed client, and MCP tools are derived from the manifest too."
+    >
+      <text x="64" y="88" className="s-tiny s-muted" textAnchor="middle">
+        you write
+      </text>
+      <rect x="16" y="100" width="96" height="44" rx="6" className="s-card s-strong-card" />
+      <text x="64" y="126" className="s-file" textAnchor="middle">
+        app.ts
+      </text>
+      <path d="M112 122 L150 122" className="s-edge" />
+      <path d="M112 122 L150 122" pathLength={1} className="s-flow" />
+
+      <text x="215" y="88" className="s-tiny s-muted" textAnchor="middle">
+        aleph builds
+      </text>
+      <rect x="150" y="100" width="130" height="44" rx="6" className="s-card" />
+      <text x="215" y="119" className="s-file" textAnchor="middle">
+        manifest.json
+      </text>
+      <text x="215" y="135" className="s-tiny s-muted" textAnchor="middle">
+        data, not code
+      </text>
+
+      <path d="M280 122 L316 122" className="s-edge" />
+      <path
+        d="M280 122 L316 122"
+        pathLength={1}
+        className="s-flow"
+        style={{ animationDelay: "0.5s" }}
+      />
+      <path d="M215 144 L215 194" className="s-edge" />
+      <path
+        d="M215 144 L215 194"
+        pathLength={1}
+        className="s-flow"
+        style={{ animationDelay: "0.8s" }}
+      />
+      <text x="215" y="212" className="s-tiny s-muted" textAnchor="middle">
+        also derived:
+      </text>
+      <text x="215" y="230" className="s-tiny" textAnchor="middle">
+        OpenAPI · typed client · MCP
+      </text>
+
+      <text x="316" y="30" className="s-label">
+        platform
+      </text>
+      <rect x="316" y="40" width="228" height="176" rx="6" className="s-card" />
+      {tiles.map((i) => {
+        const x = 330 + (i % 3) * 70;
+        const y = 54 + Math.floor(i / 3) * 38;
+        const mine = i === 4;
+        return (
+          <g key={i}>
+            <rect
+              x={x}
+              y={y}
+              width="62"
+              height="30"
+              rx="4"
+              className={mine ? "s-app s-mine" : "s-app"}
+            />
+            <text
+              x={x + 31}
+              y={y + 19}
+              className={mine ? "s-tiny" : "s-tiny s-muted"}
+              textAnchor="middle"
+            >
+              {mine ? "your app" : "app"}
+            </text>
+          </g>
+        );
+      })}
+      <line x1="330" y1="180" x2="530" y2="180" className="s-edge" />
+      <text x="430" y="203" className="s-tiny s-muted" textAnchor="middle">
+        one core · one database
+      </text>
+    </svg>
+  );
+}
+
+/** A request commits as one transaction and its effects go out once; a crash leaves nothing. */
+export function TransactionScene() {
+  const effects = ["event", "email", "job"];
+  const lane = (y: number, delay: number, rollback = false) => (
+    <>
+      <rect x="16" y={y - 14} width="84" height="28" rx="14" className="s-pill" />
+      <text x="58" y={y + 4} className="s-tiny" textAnchor="middle">
+        request
+      </text>
+      <path d={`M100 ${y} L130 ${y}`} className="s-edge" />
+      <path
+        d={`M100 ${y} L130 ${y}`}
+        pathLength={1}
+        className="s-flow"
+        style={{ animationDelay: `${delay}s` }}
+      />
+      <rect x="130" y={y - 22} width="150" height="44" rx="6" className="s-card" />
+      <text x="205" y={y - 4} className="s-tiny s-muted" textAnchor="middle">
+        one transaction
+      </text>
+      {[0, 1, 2].map((k) => (
+        <rect
+          key={k}
+          x={176 + k * 22}
+          y={y + 4}
+          width="14"
+          height="8"
+          rx="2"
+          className={rollback ? "s-write s-rollback" : "s-write"}
+          style={rollback ? undefined : { animationDelay: `${delay + 0.3 + k * 0.15}s` }}
+        />
+      ))}
+      <path d={`M280 ${y} L310 ${y}`} className="s-edge" />
+      <path
+        d={`M280 ${y} L310 ${y}`}
+        pathLength={1}
+        className="s-flow"
+        style={{ animationDelay: `${delay + 0.6}s` }}
+      />
+    </>
+  );
+  return (
+    <svg
+      viewBox="0 0 560 230"
+      className="scene"
+      role="img"
+      aria-label="A request runs as one transaction; after it commits, its event, email, and job each go out exactly once. A request that crashes is rolled back and sends nothing."
+    >
+      {lane(64, 0)}
+      <rect x="310" y="50" width="80" height="28" rx="14" className="s-pill s-ok-pill" />
+      <text x="350" y="68" className="s-tiny s-ok-text" textAnchor="middle">
+        ✔ commit
+      </text>
+      {effects.map((e, i) => {
+        const y = 22 + i * 30;
+        const d = `M390 64 C 414 64, 414 ${y + 11}, 438 ${y + 11}`;
+        return (
+          <g key={e}>
+            <path d={d} className="s-edge" />
+            <path
+              d={d}
+              pathLength={1}
+              className="s-flow"
+              style={{ animationDelay: `${1.1 + i * 0.12}s` }}
+            />
+            <rect
+              x="438"
+              y={y}
+              width="106"
+              height="22"
+              rx="4"
+              className="s-card s-out"
+              style={{ animationDelay: `${1.1 + i * 0.12}s` }}
+            />
+            <text x="450" y={y + 15} className="s-tiny">
+              {e}
+            </text>
+            <text x="532" y={y + 15} className="s-tiny s-muted" textAnchor="end">
+              ×1
+            </text>
+          </g>
+        );
+      })}
+
+      {lane(166, 1, true)}
+      <g className="s-crash">
+        <rect x="310" y="152" width="80" height="28" rx="14" className="s-pill s-err-pill" />
+        <text x="350" y="170" className="s-tiny s-err-text" textAnchor="middle">
+          ✕ crash
+        </text>
+        <text x="410" y="162" className="s-tiny s-err-text">
+          rolled back,
+        </text>
+        <text x="410" y="178" className="s-tiny s-err-text">
+          nothing sent
+        </text>
+      </g>
+      <text x="16" y="222" className="s-tiny s-muted">
+        no half-written state, no retry logic to write
+      </text>
+    </svg>
+  );
+}

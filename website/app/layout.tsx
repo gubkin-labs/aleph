@@ -13,9 +13,12 @@ const serif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Aleph: declarative backends with known costs", template: "%s · Aleph" },
+  title: {
+    default: "Aleph: a trusted, declarative language for server-side apps",
+    template: "%s · Aleph",
+  },
   description:
-    "Aleph is an open-source declarative language for backends. Every request's cost is known before it runs, so many apps can safely share the same servers and database.",
+    "Aleph is a trusted, declarative language for server-side applications. You write the routes, access rules, and queries; Aleph takes care of everything else.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

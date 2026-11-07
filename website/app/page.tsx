@@ -1,15 +1,39 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Demo, Panel } from "@/components/Demo";
 import { Install } from "@/components/Install";
-import { GeneratedScene, IsolationScene, SharedScene } from "@/components/Scenes";
+import {
+  HowScene,
+  IsolationScene,
+  SharedScene,
+  TradeoffScene,
+  TransactionScene,
+} from "@/components/Scenes";
 import { agent, cost, evolve, examples } from "./demos";
 
+/** What a backend usually needs and an Aleph author doesn't write. Each is struck out in turn. */
+const HANDLED = [
+  "servers",
+  "scaling",
+  "connection pools",
+  "transactions",
+  "retries",
+  "exactly-once events",
+  "input validation",
+  "auth middleware",
+  "migrations",
+  "tenant isolation",
+  "API docs",
+  "client SDK",
+];
+
 function Section({
+  eyebrow,
   panel,
   title,
   children,
 }: {
+  eyebrow?: string;
   panel: ReactNode;
   title: ReactNode;
   children: ReactNode;
@@ -18,6 +42,7 @@ function Section({
     <section className="row">
       <div className="row-panel">{panel}</div>
       <div className="row-text">
+        {eyebrow && <p className="eyebrow">{eyebrow}</p>}
         <h2>{title}</h2>
         {children}
       </div>
@@ -33,39 +58,121 @@ export default function Home() {
           ℵ
         </div>
         <h1>
-          Cheap to start. <em>Safe at scale.</em>
+          The future of generated code is <em>declarative.</em>
         </h1>
         <p className="lead">
-          Aleph is a declarative language for backends. Every request’s cost is known before it
-          runs, so apps can safely share servers and databases, and every change is checked before
-          it ships.
+          Aleph is a trusted, declarative language for server-side applications. You write the
+          routes, access rules, and queries. Aleph takes care of everything else.
         </p>
+        <ul className="handled" aria-label="Handled by Aleph">
+          {HANDLED.map((h, i) => (
+            <li key={h} style={{ "--i": i } as CSSProperties}>
+              {h}
+            </li>
+          ))}
+          <li className="handled-yours" style={{ "--i": HANDLED.length } as CSSProperties}>
+            your business logic
+          </li>
+        </ul>
         <Install />
       </section>
 
-      <section className="audiences">
-        <div>
-          <h3>For a startup</h3>
-          <ul>
-            <li>
-              No <strong>$100 a month</strong> idle stack before your first user. Apps share
-              capacity and pay for the requests they serve.
-            </li>
-            <li>Nothing to set up: no servers, pipelines, or libraries to keep upgraded.</li>
-            <li>Your coding agent can build the backend and check its own work.</li>
-          </ul>
-        </div>
-        <div>
-          <h3>For an enterprise</h3>
-          <ul>
-            <li>Run hundreds of services on shared infrastructure without noisy neighbors.</li>
-            <li>
-              Every route’s cost is bounded and every schema change is classified before deploy.
-            </li>
-            <li>No third-party code runs in production, and apps are isolated by construction.</li>
-          </ul>
-        </div>
-      </section>
+      <Section
+        eyebrow="Why Aleph"
+        title={
+          <>
+            Less flexibility, <em>on purpose.</em>
+          </>
+        }
+        panel={
+          <Panel
+            title="what a language allows"
+            caption="A narrow language can be checked by a machine instead of reviewed by a person."
+          >
+            <TradeoffScene />
+          </Panel>
+        }
+      >
+        <p>
+          General-purpose languages let an app do anything. So every app needs its own servers, its
+          own review, and its own guardrails, and someone has to set up and maintain all of it.
+        </p>
+        <p>
+          Aleph makes the opposite trade. It gives up some flexibility for shared building blocks
+          for what every backend needs, predictable behavior, and code that’s trusted by default.
+          When agents write the code, that trade matters more than ever: a narrow language is easy
+          to check and hard to get wrong. <Link href="/docs/why-declarative/">Why declarative</Link>
+        </p>
+      </Section>
+
+      <Section
+        eyebrow="How it works"
+        title="You write the logic. The platform runs it."
+        panel={
+          <Panel
+            title="from app.ts to production"
+            caption="The manifest is the only thing that ships. Everything else is derived from it."
+          >
+            <HowScene />
+          </Panel>
+        }
+      >
+        <ol className="steps">
+          <li>
+            <strong>Describe your app in TypeScript.</strong> Routes, who can call them, the data,
+            and the queries. No server, ORM, or auth library to set up.
+          </li>
+          <li>
+            <strong>Aleph compiles it into a manifest.</strong> Data, not code: exactly what each
+            route can do, and the most it can ever cost.
+          </li>
+          <li>
+            <strong>A platform runs the manifest.</strong> One small, audited core interprets it, so
+            your code never runs in production.
+          </li>
+        </ol>
+        <p>
+          Because of those guardrails, many apps can run in the same process and share the same
+          database, and a platform pays for capacity once instead of once per app.
+        </p>
+      </Section>
+
+      <header className="group">
+        <p className="eyebrow">Advantages</p>
+        <h2>What the trade buys you</h2>
+      </header>
+
+      <Section
+        title="Safe to share, so cheap to run"
+        panel={
+          <div className="panels">
+            <Panel
+              title="many apps, one runtime"
+              caption="Each request stays under its own ceiling, so no app can slow down the rest."
+            >
+              <SharedScene />
+            </Panel>
+            <Panel
+              title="one database, many apps"
+              caption="Every key is built inside the app's own prefix. Plans never see raw keys."
+            >
+              <IsolationScene />
+            </Panel>
+          </div>
+        }
+      >
+        <p>
+          A backend usually gets its own server, database, and cache, sized for its busiest hour and
+          idle the rest of the day. It needs them to itself because, in a shared setup, one runaway
+          query or one bug can hurt everyone.
+        </p>
+        <p>
+          Aleph rules both out. Every route has a bounded cost, and there’s no expression that names
+          another app’s data, so cross-app access can’t be written at all. Apps can safely share
+          servers and a database, and you stop paying for idle capacity.{" "}
+          <Link href="/docs/shared-infrastructure/">How sharing works</Link>
+        </p>
+      </Section>
 
       <Section
         title="Know the cost before you deploy"
@@ -78,129 +185,65 @@ export default function Home() {
         }
       >
         <p>
-          You describe routes, data, and logic in ordinary TypeScript. Aleph records the description
-          instead of running it, and works out the most each route can ever read, write, compute,
-          and hold in memory.
+          Aleph works out the most each route can ever read, write, compute, and hold in memory. A
+          route that could go over its budget is rejected before it ships, with a message saying
+          which bound to change.
         </p>
-        <p>
-          A route that could go over its limit is rejected before it ships, with a message saying
-          which bound to change. The same limits are metered while it runs, so a budget is a
-          guarantee, not an estimate.
-        </p>
+        <p>The same limits are enforced while it runs, so a budget is a guarantee, not a guess.</p>
       </Section>
 
       <Section
-        title="Safe to share, so cheap to run"
+        title="Correct by default"
         panel={
           <Panel
-            title="many apps, one runtime"
-            caption="Each request stays under its own ceiling, so no app can slow down the rest."
+            title="every request is one transaction"
+            caption="Effects are queued inside the transaction and sent only after it commits."
           >
-            <SharedScene />
+            <TransactionScene />
           </Panel>
         }
       >
         <p>
-          A backend usually gets its own server, database, and cache, sized for its busiest hour and
-          idle the rest of the day. It needs them to itself because, in a shared setup, one runaway
-          query slows everyone down.
+          Every request runs as one serializable transaction. Events, emails, and jobs go out
+          exactly once, and only after it commits.
         </p>
         <p>
-          In Aleph that can’t happen. So a runtime can pack many apps into the same processes and
-          the same database, the way static sites share a CDN. A startup stops paying for idle
-          capacity; a platform team consolidates hundreds of internal services.{" "}
-          <Link href="/docs/shared-infrastructure/">How sharing works</Link>
-        </p>
-      </Section>
-
-      <Section
-        title="Isolated by construction"
-        panel={
-          <Panel
-            title="one database, many apps"
-            caption="The core builds every key inside the app's own prefix. Plans never see raw keys."
-          >
-            <IsolationScene />
-          </Panel>
-        }
-      >
-        <p>
-          Sharing a database is only acceptable if one app can never read another’s data. In Aleph
-          that isn’t a permission check that could be misconfigured: there’s no expression that
-          names another app’s keys, so cross-app access can’t be written at all.
-        </p>
-        <p>
-          And no author code runs in production. A manifest is data, interpreted by one small,
-          audited core, so there’s no sandbox to escape and no dependency tree to patch.{" "}
-          <Link href="/docs/running/isolation/">Tenants and isolation</Link>
-        </p>
-      </Section>
-
-      <Section
-        title="Nothing to operate"
-        panel={
-          <Panel
-            title="one description, everything derived"
-            caption="The manifest is the only thing that ships. Everything else comes from it."
-          >
-            <GeneratedScene />
-          </Panel>
-        }
-      >
-        <p>
-          The app compiles into a manifest: a versioned description that any Aleph runtime can run.
-          There are no servers to size, no Dockerfiles or deploy pipelines, and no ORM, queue
-          client, or auth library to wire up and keep upgraded.
-        </p>
-        <p>
-          The same description produces an OpenAPI spec, a typed client, and MCP tools for agents,
-          so the docs, the client, and the backend can’t drift apart.
+          There are no half-written states to clean up, no retry logic to write, and no message that
+          was sent for a change that never happened.
         </p>
       </Section>
 
       <Section
         title="Change it without fear"
         panel={
-          <Demo
-            title="compare with what's deployed"
-            {...evolve}
-            caption="Narrowing a field could break stored rows, so it's blocked. Adding one is fine."
-          />
+          <div className="panels">
+            <Demo
+              title="compare with what's deployed"
+              {...evolve}
+              caption="Narrowing a field could break stored rows, so it's blocked. Adding one is fine."
+            />
+            <Demo
+              title="examples are the tests"
+              {...examples}
+              caption="Each example runs on a fresh store and checks the route stayed within its bound."
+            />
+          </div>
         }
       >
         <p>
-          Every request runs as one serializable transaction, and events, emails, and jobs go out
-          exactly once, only after it commits. There are no half-written states to clean up.
+          Every schema change is compared with what’s deployed and classified as safe, needing a
+          backfill, or breaking. Breaking changes are blocked until they’re deprecated properly,
+          whoever wrote them.
         </p>
         <p>
-          When the schema changes, Aleph compares it with what’s deployed and classifies every
-          change as safe, needing a backfill, or breaking. Breaking changes are blocked until
-          they’re deprecated properly, whoever wrote them.
+          Examples written next to a route (given this data and this request, expect this response)
+          document it and run as its tests. <code>aleph dev</code> serves the app locally with the
+          same core that runs it in production.
         </p>
       </Section>
 
       <Section
-        title="Examples are the tests"
-        panel={
-          <Demo
-            title="test, then serve locally"
-            {...examples}
-            caption="Each example runs on a fresh store and checks the route stayed within its bound."
-          />
-        }
-      >
-        <p>
-          Write examples next to a route: given this data and this request, expect this response.
-          They document the route and run as its tests.
-        </p>
-        <p>
-          <code>aleph dev</code> serves the app on your machine with the same core that runs it in
-          production, and every response reports what it actually used.
-        </p>
-      </Section>
-
-      <Section
-        title="Agents fix their own mistakes"
+        title="Built for agents"
         panel={
           <Demo
             title="an agent at work"
@@ -210,13 +253,12 @@ export default function Home() {
         }
       >
         <p>
-          Coding agents struggle most with the big picture: architecture, infrastructure, and which
-          library to reach for. In Aleph those choices don’t exist. There’s one small, typed
-          vocabulary.
+          A small, typed vocabulary means there are no architecture, infrastructure, or library
+          choices for an agent to get wrong.
         </p>
         <p>
-          When an agent writes something too expensive or unsafe, the checker says exactly what and
-          where, and the agent can fix it before anyone reviews it.
+          When it does slip, the checker names the route, the line, and the bound, so the agent
+          fixes its own mistake before anyone reviews it.
         </p>
       </Section>
 
