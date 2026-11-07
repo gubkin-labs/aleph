@@ -1,0 +1,58 @@
+{
+  "expect": ["type_mismatch"],
+  "manifest": {
+    "formatVersion": "0.2",
+    "app": { "name": "bad" },
+    "entities": {
+      "Order": {
+        "key": ["id"],
+        "fields": {
+          "id": { "type": { "kind": "string", "max": 8 } },
+          "line": {
+            "type": {
+              "kind": "object",
+              "fields": { "sku": { "type": { "kind": "string", "max": 8 } } }
+            }
+          }
+        },
+        "indexes": {}
+      }
+    },
+    "routes": [
+      {
+        "id": "place",
+        "method": "POST",
+        "path": "/orders",
+        "auth": { "kind": "public" },
+        "input": {
+          "body": {
+            "id": { "type": { "kind": "string", "max": 8 } }
+          }
+        },
+        "plan": {
+          "body": [
+            {
+              "kind": "let",
+              "var": 0,
+              "op": {
+                "op": "insert",
+                "entity": "Order",
+                "values": {
+                  "id": { "kind": "input", "source": "body", "name": "id" },
+                  "line": {
+                    "kind": "object",
+                    "fields": {
+                      "sku": { "kind": "lit", "value": "BK-1" },
+                      "unitPrice": { "kind": "lit", "value": 20 }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "output": { "kind": "lit", "value": null }
+        }
+      }
+    ]
+  }
+}

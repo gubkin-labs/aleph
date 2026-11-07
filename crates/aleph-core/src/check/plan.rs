@@ -532,9 +532,34 @@ impl<'a> Checker<'a> {
             );
             return;
         }
+        // An enum value with a case the field doesn't allow fails every time it's written.
+        if let (Ty::Enum(values), FieldType::Enum { values: allowed }) = (ty.non_null(), &field.ty)
+            && let Some(extra) = values.iter().find(|v| !allowed.contains(v))
+        {
+            self.diag(
+                Code::TypeMismatch,
+                path,
+                format!(
+                    "the value may be {extra:?}, which isn't one of the field's values {allowed:?}. \
+                     Add it to the field's enum, or map it to an allowed value first"
+                ),
+            );
+            return;
+        }
         // Inside objects and lists, every declared field and item must fit too.
         match (ty.non_null(), &field.ty) {
             (Ty::Object(found), FieldType::Object { fields }) => {
+                // The runtime rejects undeclared fields, so one here fails every write.
+                if let Some(extra) = found.keys().find(|name| !fields.contains_key(*name)) {
+                    self.diag(
+                        Code::TypeMismatch,
+                        &format!("{path}.{extra}"),
+                        format!(
+                            "the object has field {extra:?}, which the field's object type doesn't \
+                             declare. Declare it, or leave it out of the value"
+                        ),
+                    );
+                }
                 for (name, inner) in fields {
                     match found.get(name) {
                         Some(found) => self.check_write(found, inner, &format!("{path}.{name}")),
