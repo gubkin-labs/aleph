@@ -61,7 +61,7 @@ while read -r file; do
     echo "$name@$VERSION is already on npm, skipping"
     continue
   fi
-  npm publish "release/$file" --access public --tag "$TAG"
+  npm publish "./release/$file" --access public --tag "$TAG"
 done <release/publish-order.txt
 
 step "Tagging and creating the GitHub release"

@@ -80,7 +80,7 @@ jobs:
               echo "$name@$VERSION is already on npm, skipping"
               continue
             fi
-            npm publish "release/$file" --access public --provenance --tag "$TAG"
+            npm publish "./release/$file" --access public --provenance --tag "$TAG"
           done < release/publish-order.txt
 
       - name: Create the GitHub release
