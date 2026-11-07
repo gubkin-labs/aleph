@@ -259,7 +259,51 @@ key: { [key in string]: Expr },
 /**
  * Message values.
  */
-message: { [key in string]: Expr }, } | { "op": "call", 
+message: { [key in string]: Expr }, } | { "op": "uploadUrl", 
+/**
+ * The bucket.
+ */
+bucket: string, 
+/**
+ * The file's key within the bucket (at most 512 characters).
+ */
+key: Expr, 
+/**
+ * The content type the client must upload, for example `image/png`.
+ */
+contentType: Expr, 
+/**
+ * How long the URL lasts, in seconds (1 to 7 days; default 15 minutes).
+ */
+expiresS?: number, } | { "op": "downloadUrl", 
+/**
+ * The bucket.
+ */
+bucket: string, 
+/**
+ * The file's key.
+ */
+key: Expr, 
+/**
+ * How long the URL lasts, in seconds (1 to 7 days; default 15 minutes).
+ */
+expiresS?: number, } | { "op": "getBlob", 
+/**
+ * The bucket.
+ */
+bucket: string, 
+/**
+ * The file's key.
+ */
+key: Expr, } | { "op": "deleteBlob", 
+/**
+ * The bucket.
+ */
+bucket: string, 
+/**
+ * The file's key.
+ */
+key: Expr, } | { "op": "call", 
 /**
  * The integration.
  */

@@ -17,6 +17,10 @@ Aleph separates **describing** a backend from **running** it. The language (the 
 **Isolation**
 - Builds every key inside the tenant's keyspace.
 
+**Files**
+- Signs upload and download URLs for buckets, and checks them: signature, expiry, content type, and size.
+- Records finished uploads and runs their `onUpload` handlers.
+
 **Testing**
 - Runs route examples, as `aleph test` does.
 
@@ -28,7 +32,10 @@ Aleph separates **describing** a backend from **running** it. The language (the 
 | Callers | Who is calling, already authenticated (`Caller`) | Headers like `x-aleph-user` |
 | Integrations | Calls (`Integrations`) and deliveries (`Sink`) | Mocks you set, and an activity log |
 | Secrets | Secret values by name (`Secrets`) | `--secret NAME=value` |
+| File storage | Somewhere to keep file bytes, and a gateway that serves signed URLs (`BlobSigner`) | Files in memory (or next to `--data`), served under `/_aleph/blobs/` |
 | Time and ids | A clock and an id source (`Env`) | The system clock |
+
+A blob gateway is small, because the core decides everything: give the engine a `BlobSigner` with the gateway's base URL and a signing secret. On an upload, call `check_upload` before accepting the bytes, store them, then `receive_upload`. On a download, call `authorize_download` and serve the bytes with the file's content type. Delete a file's bytes when a `deleteBlob` delivery arrives. Where the bytes live (object storage, disk) is up to the runtime.
 
 The core never runs author TypeScript, and a runtime doesn't need to either. It consumes the manifest alone. An app update is a new manifest, not a new build.
 

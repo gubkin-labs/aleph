@@ -20,9 +20,10 @@
 | `a.event(name, { payload })` | `.emit(payload)` |
 | `a.queue(name, { payload, retries?, backoff?, maxBackoff? })` | `.enqueue(payload, { delay?, key? })`, `.cancel(key)` |
 | `a.channel(name, { key, message })` | `.publish(key, message)` |
+| `a.bucket(name, { maxBytes, contentTypes? })` | `.uploadUrl(key, { contentType, expiresIn? })`, `.downloadUrl(key, { expiresIn? })`, `.get(key)`, `.delete(key)`. See [Files](/docs/files/) |
 | `a.integration(name, { provider, config?, operations })` | `.call(op, input)`, `.send(op, input)` |
 | `a.workflow(name, def)` | `.step(name, fn, options?)`, `.start(key, input)`, `.signal(key, name, payload)`, `.get(key)`, `.cancel(key)` |
-| `a.onEvent`, `a.onInsert`, `a.onUpdate`, `a.onDelete`, `a.onQueue`, `a.onDeadLetter` | Handlers: `(id, source, fn, options?)`, with options `errors` and `maxDepth` (for an intended [trigger cycle](/docs/background-work/#trigger-cycles)) |
+| `a.onEvent`, `a.onInsert`, `a.onUpdate`, `a.onDelete`, `a.onQueue`, `a.onDeadLetter`, `a.onUpload` | Handlers: `(id, source, fn, options?)`, with options `errors` and `maxDepth` (for an intended [trigger cycle](/docs/background-work/#trigger-cycles)) |
 | `a.every(id, interval \| "mon 09:00", fn, { tz?, scan?, offset? })`, `a.cron(id, expr, fn, { tz?, scan? })` | Schedules |
 | `a.caller.id`, `a.caller.profile` | The caller |
 | `a.users.get(userId)` | A user from the directory |

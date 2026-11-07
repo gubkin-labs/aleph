@@ -1,0 +1,119 @@
+{
+  "entities": {
+    "Photo": {
+      "maxRowBytes": 4692
+    }
+  },
+  "routes": {
+    "delete_photo": {
+      "bounds": {
+        "reads": 1,
+        "writes": 2,
+        "ops": 17,
+        "bytesRead": 4692,
+        "effects": 1,
+        "calls": 0,
+        "memory": 1307
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "deleted": {
+            "kind": "string",
+            "maxLength": 321
+          }
+        }
+      }
+    },
+    "get_photo": {
+      "bounds": {
+        "reads": 1,
+        "writes": 0,
+        "ops": 20,
+        "bytesRead": 3196,
+        "effects": 0,
+        "calls": 0,
+        "memory": 71962
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "download": {
+            "kind": "object",
+            "fields": {
+              "expiresAt": {
+                "kind": "int"
+              },
+              "url": {
+                "kind": "string",
+                "maxLength": 8192
+              }
+            }
+          },
+          "file": {
+            "kind": "nullable",
+            "of": {
+              "kind": "object",
+              "fields": {
+                "contentType": {
+                  "kind": "string",
+                  "maxLength": 255
+                },
+                "key": {
+                  "kind": "string",
+                  "maxLength": 512
+                },
+                "size": {
+                  "kind": "int"
+                },
+                "uploadedAt": {
+                  "kind": "int"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "upload_photo": {
+      "bounds": {
+        "reads": 0,
+        "writes": 0,
+        "ops": 8,
+        "bytesRead": 0,
+        "effects": 0,
+        "calls": 0,
+        "memory": 69738
+      },
+      "output": {
+        "kind": "object",
+        "fields": {
+          "expiresAt": {
+            "kind": "int"
+          },
+          "key": {
+            "kind": "string",
+            "maxLength": 512
+          },
+          "url": {
+            "kind": "string",
+            "maxLength": 8192
+          }
+        }
+      }
+    }
+  },
+  "handlers": {
+    "recordPhoto": {
+      "bounds": {
+        "reads": 1,
+        "writes": 1,
+        "ops": 7,
+        "bytesRead": 4692,
+        "effects": 0,
+        "calls": 0,
+        "memory": 4696
+      }
+    }
+  }
+}

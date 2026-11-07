@@ -14,9 +14,11 @@ use std::sync::Arc;
 
 use aleph_core::check::CheckReport;
 use aleph_core::runtime::{MemorySecrets, MemorySink, MockIntegrations};
-use aleph_core::{Engine, FixedEnv, Limits, MemoryStore, Request, TenantId, parse_and_validate};
+use aleph_core::{
+    BlobSigner, Engine, FixedEnv, Limits, MemoryStore, Request, TenantId, parse_and_validate,
+};
 use serde::Deserialize;
-use serde_json::Value as Json;
+use serde_json::{Value as Json, json};
 
 fn conformance_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../conformance")
@@ -48,10 +50,27 @@ struct Step {
     seed: Option<SeedStep>,
     #[serde(default)]
     process: bool,
+    upload: Option<UploadStep>,
+    download: Option<DownloadStep>,
     #[serde(default)]
     expect: Expectation,
     #[serde(default)]
     capture: BTreeMap<String, String>,
+}
+
+/// A client uploading a file to a signed URL, through the blob gateway.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UploadStep {
+    url: String,
+    size: u64,
+    content_type: String,
+}
+
+/// A client downloading a file from a signed URL, through the blob gateway.
+#[derive(Deserialize)]
+struct DownloadStep {
+    url: String,
 }
 
 #[derive(Deserialize)]
@@ -109,6 +128,13 @@ fn unordered_mismatch(expected: &[Json], actual: &[Json], path: &str) -> Option<
         remaining.remove(index);
     }
     None
+}
+
+fn substitute_str(value: &str, vars: &BTreeMap<String, String>) -> String {
+    match substitute(&Json::String(value.to_owned()), vars) {
+        Json::String(s) => s,
+        _ => unreachable!(),
+    }
 }
 
 fn substitute(value: &Json, vars: &BTreeMap<String, String>) -> Json {
@@ -218,7 +244,9 @@ fn scenarios_behave_as_expected_within_bounds() {
         let engine = Engine::new(valid, Arc::new(MemoryStore::new()), env.clone())
             .with_sink(sink.clone())
             .with_integrations(integrations.clone())
-            .with_secrets(secrets.clone());
+            .with_secrets(secrets.clone())
+            // The same base and key as the WASM dev engine, so URLs match.
+            .with_blobs(BlobSigner::new("/_aleph/blobs", b"aleph-dev-blob-signing-key").unwrap());
         let mut vars = BTreeMap::new();
         let mut extra = 0;
 
@@ -261,6 +289,10 @@ fn scenarios_behave_as_expected_within_bounds() {
                 );
                 continue;
             }
+            if step.upload.is_some() || step.download.is_some() {
+                check_blob_step(&engine, step, &vars, &at);
+                continue;
+            }
             let request = step
                 .request
                 .as_ref()
@@ -298,6 +330,37 @@ fn scenarios_behave_as_expected_within_bounds() {
                 );
             }
         }
+    }
+}
+
+/// Runs an `upload` or `download` step through the blob gateway, and checks its answer like a
+/// response: 200 with the file's metadata, or the gateway's error status.
+fn check_blob_step(engine: &Engine, step: &Step, vars: &BTreeMap<String, String>, at: &str) {
+    let result = match (&step.upload, &step.download) {
+        (Some(upload), _) => engine
+            .receive_upload(
+                &substitute_str(&upload.url, vars),
+                upload.size,
+                &upload.content_type,
+            )
+            .map(|(_, info)| info),
+        (_, Some(download)) => engine
+            .authorize_download(&substitute_str(&download.url, vars))
+            .map(|(_, info)| info),
+        _ => unreachable!("not a blob step"),
+    };
+    // The gateway's answer, as the TS runner sees it.
+    let (status, body) = match result {
+        Ok(info) => (200, serde_json::to_value(info).unwrap()),
+        Err(rejection) => (rejection.status, json!({ "message": rejection.message })),
+    };
+    if let Some(expected) = step.expect.status {
+        assert_eq!(status, expected, "{at}: {body}");
+    }
+    if let Some(expected) = &step.expect.body
+        && let Some(mismatch) = subset_mismatch(&substitute(expected, vars), &body, "body")
+    {
+        panic!("{at}: {mismatch}\n{body}");
     }
 }
 

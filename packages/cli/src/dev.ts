@@ -8,9 +8,10 @@
  * - `x-aleph-profile: {"email":"ada@example.com"}` (the caller's profile fields)
  * - `idempotency-key: <key>`
  */
-import { existsSync, mkdirSync, readFileSync, watch, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, rmSync, watch, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { DevEngine, validate } from "@aleph-lang/core";
 import type {
   Caller,
@@ -152,6 +153,33 @@ export interface DevServerOptions {
 
 const MAX_ACTIVITY = 500;
 
+/** Where the dev engine's signed file URLs point (the same base the core signs them with). */
+const BLOB_PREFIX = "/_aleph/blobs/";
+
+/** Lets a frontend on another port upload and download files directly. */
+const BLOB_CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, PUT, OPTIONS",
+  "access-control-allow-headers": "content-type",
+};
+
+/** The bucket and key a blob URL's path names, as one string, or `undefined`. */
+function blobId(pathname: string): string | undefined {
+  const [, bucket, key, extra] = pathname.slice(BLOB_PREFIX.length).split("/");
+  if (!bucket || !key || extra !== undefined) return undefined;
+  try {
+    return `${decodeURIComponent(bucket)}\n${decodeURIComponent(key)}`;
+  } catch {
+    return undefined;
+  }
+}
+
+async function readBytes(req: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks);
+}
+
 /**
  * Starts the dev server. Resolves once it's listening.
  *
@@ -162,6 +190,9 @@ const MAX_ACTIVITY = 500;
  * - `POST /__aleph/process`: run due async work now
  * - `POST /__aleph/seed` `{ Entity: rows, users?: { id: profile } }`
  * - `POST /__aleph/reset`: drop all data
+ *
+ * and the signed file URLs that buckets hand out, under `/_aleph/blobs/` (`PUT` to upload, `GET`
+ * to download), like the platform's blob gateway.
  */
 export async function startDevServer(
   initialManifest: string,
@@ -213,6 +244,32 @@ export async function startDevServer(
     writeFileSync(options.dataFile, engine.snapshot());
   }
 
+  // Uploaded files' bytes, by bucket and key. The engine keeps their metadata; with
+  // `dataFile`, the bytes are kept in a folder next to it.
+  const blobs = new Map<string, Buffer>();
+  const blobDir = options.dataFile ? `${options.dataFile}.files` : undefined;
+  const blobFile = (id: string) =>
+    blobDir && join(blobDir, createHash("sha256").update(id).digest("hex"));
+  function storeBlob(id: string, bytes: Buffer): void {
+    blobs.set(id, bytes);
+    const file = blobFile(id);
+    if (blobDir && file) {
+      mkdirSync(blobDir, { recursive: true });
+      writeFileSync(file, bytes);
+    }
+  }
+  function loadBlob(id: string): Buffer | undefined {
+    const cached = blobs.get(id);
+    if (cached) return cached;
+    const file = blobFile(id);
+    return file && existsSync(file) ? readFileSync(file) : undefined;
+  }
+  function deleteBlob(id: string): void {
+    blobs.delete(id);
+    const file = blobFile(id);
+    if (file) rmSync(file, { force: true });
+  }
+
   configure(engine);
   if (options.dataFile && existsSync(options.dataFile)) {
     engine.restore(readFileSync(options.dataFile, "utf8"));
@@ -241,6 +298,9 @@ export async function startDevServer(
       log(`  ↳ retried ${report.retried} (with backoff)`);
     }
     for (const delivery of engine.takeDeliveries()) {
+      if (delivery.kind === "deleteBlob") {
+        deleteBlob(`${delivery.target}\n${(delivery.data as { key: string }).key}`);
+      }
       record({ kind: "delivery", delivery });
       const target = `${delivery.target}${delivery.operation ? `.${delivery.operation}` : ""}`;
       log(`  ↳ ${delivery.kind} ${target} ${JSON.stringify(delivery.data)}`);
@@ -276,6 +336,8 @@ export async function startDevServer(
       }
       case "POST /__aleph/reset":
         engine.restore("[]");
+        blobs.clear();
+        if (blobDir) rmSync(blobDir, { recursive: true, force: true });
         persist();
         return { ok: true };
       default:
@@ -283,10 +345,69 @@ export async function startDevServer(
     }
   }
 
+  /** Serves signed file URLs, like the platform's blob gateway. */
+  function serveBlob(req: IncomingMessage, res: ServerResponse, method: string, url: URL): void {
+    const signed = `${url.pathname}${url.search}`;
+    const id = blobId(url.pathname);
+    if (method === "OPTIONS") {
+      res.writeHead(204, BLOB_CORS);
+      res.end();
+      return;
+    }
+    if (!id || (method !== "PUT" && method !== "GET")) {
+      send(
+        res,
+        405,
+        { error: "method_not_allowed", message: "file URLs take PUT or GET" },
+        BLOB_CORS,
+      );
+      return;
+    }
+    if (method === "GET") {
+      const result = engine.authorizeDownload(signed);
+      const bytes = result.ok ? loadBlob(id) : undefined;
+      if (!result.ok) {
+        send(res, result.status, { error: "download_refused", message: result.message }, BLOB_CORS);
+      } else if (!bytes) {
+        send(res, 404, { error: "not_found", message: "this file's bytes are gone" }, BLOB_CORS);
+      } else {
+        res.writeHead(200, {
+          "content-type": result.info.contentType,
+          "content-length": String(bytes.length),
+          ...BLOB_CORS,
+        });
+        res.end(bytes);
+      }
+      return;
+    }
+    readBytes(req)
+      .then((bytes) => {
+        const contentType = req.headers["content-type"] ?? "";
+        const result = engine.receiveUpload(signed, bytes.length, contentType);
+        if (!result.ok) {
+          log(`PUT ${url.pathname} → ${result.status}: ${result.message}`);
+          send(res, result.status, { error: "upload_refused", message: result.message }, BLOB_CORS);
+          return;
+        }
+        storeBlob(id, bytes);
+        log(`PUT ${url.pathname} → stored ${bytes.length} bytes (${result.info.contentType})`);
+        persist();
+        send(res, 200, result.info, BLOB_CORS);
+        processDue();
+      })
+      .catch((error: unknown) => {
+        send(res, 500, { error: "dev_server_error", message: String(error) }, BLOB_CORS);
+      });
+  }
+
   const server = createServer((req, res) => {
     const started = performance.now();
     const url = new URL(req.url ?? "/", "http://localhost");
     const method = (req.method ?? "GET").toUpperCase();
+    if (url.pathname.startsWith(BLOB_PREFIX)) {
+      serveBlob(req, res, method, url);
+      return;
+    }
     if (!METHODS.has(method)) {
       send(res, 405, { error: "method_not_allowed", message: `${method} isn't supported` });
       return;

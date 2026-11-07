@@ -8,7 +8,7 @@ use super::{
 };
 use crate::diagnostics::{Diagnostic, DiagnosticCode as Code};
 use crate::limits::{Cost, Limits, Resource};
-use crate::manifest::{CronScan, Field, Handler, Manifest, OpMode, QueueDecl, Trigger};
+use crate::manifest::{BucketDecl, CronScan, Field, Handler, Manifest, OpMode, QueueDecl, Trigger};
 
 /// Checks every declaration and handler, and records handler bounds in `reports`.
 pub(crate) fn check_all(
@@ -137,6 +137,12 @@ fn trigger_payload(
             }
             None => missing("queue", queue),
         },
+        Trigger::Upload { bucket } => {
+            if !m.buckets.contains_key(bucket) {
+                return missing("bucket", bucket);
+            }
+            Some((plan::blob_info_fields(), Cost::ZERO))
+        }
         Trigger::Entity { entity, .. } => {
             if !m.entities.contains_key(entity) {
                 return missing("entity", entity);
@@ -302,6 +308,19 @@ fn check_fields(fields: &BTreeMap<String, Field>, path: &str, diags: &mut Vec<Di
     }
 }
 
+/// Whether `value` is a content type like `image/png`, or a family like `image/*`.
+fn valid_content_type(value: &str) -> bool {
+    let token = |s: &str| {
+        !s.is_empty()
+            && s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"!#$&-^_.+".contains(&b))
+    };
+    value.len() <= BucketDecl::MAX_CONTENT_TYPE_LEN as usize
+        && value
+            .split_once('/')
+            .is_some_and(|(family, sub)| token(family) && (sub == "*" || token(sub)))
+}
+
 /// Validates events, queues, channels, and integrations.
 fn check_workflows(m: &Manifest, diags: &mut Vec<Diagnostic>) {
     for (name, decl) in &m.workflows {
@@ -384,6 +403,32 @@ fn check_declarations(m: &Manifest, diags: &mut Vec<Diagnostic>) {
                 format!("{path}.key"),
                 "channel key fields must be required scalars",
             ));
+        }
+    }
+    for (name, bucket) in &m.buckets {
+        let path = format!("buckets.{name}");
+        check_name(name, &path, diags);
+        if !(1..=BucketDecl::MAX_BYTES).contains(&bucket.max_bytes) {
+            diags.push(Diagnostic::new(
+                Code::InvalidDeclaration,
+                format!("{path}.maxBytes"),
+                format!(
+                    "maxBytes must be between 1 and {} (100 MiB), got {}",
+                    BucketDecl::MAX_BYTES,
+                    bucket.max_bytes
+                ),
+            ));
+        }
+        for (i, content_type) in bucket.content_types.iter().enumerate() {
+            if !valid_content_type(content_type) {
+                diags.push(Diagnostic::new(
+                    Code::InvalidDeclaration,
+                    format!("{path}.contentTypes[{i}]"),
+                    format!(
+                        "{content_type:?} isn't a content type: write it like \"image/png\", or \"image/*\" for a whole family"
+                    ),
+                ));
+            }
         }
     }
     for (name, integration) in &m.integrations {

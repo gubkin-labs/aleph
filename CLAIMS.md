@@ -21,6 +21,8 @@ intent or design; nothing here proves it yet.
 | No app can take the memory other apps need | Homepage, docs: Shared infrastructure | The meter charges each value's size. **Gap:** real allocation against the charged bytes isn't measured | Partial |
 | No request can flood the shared database | Docs: Shared infrastructure | Reads, writes, and bytes read are bounded and metered (rows above) | Backed |
 | One app can't read or write another app's data | Homepage, docs: Shared infrastructure | Key encoding property tests in `src/keys.rs` (prefixes, cursors that can't escape their range); `tests/generated_plans.rs` checks no run touches another tenant | Backed |
+| Files can't be reached from another app, or beyond what their signed URL allows | Docs: Files | `src/runtime/blobs.rs` tests (tampered tenant, bucket, type, size, expiry, or access is rejected); `conformance/cases/files` (another user's key, wrong type, too large, tampered, expired); file metadata keys come from `Keyspace` | Backed |
+| File uploads and deletes keep within their bounds | Docs: Files | `conformance/cases/files` scenario: usage ≤ bounds on every route and the upload handler | Backed |
 | The core never panics on any manifest | Docs: Shared infrastructure ("the core never trusts its input") | Validation of mutated conformance manifests in `tests/generated_plans.rs`. **Gap:** no coverage-guided fuzzing yet | Partial |
 
 ## Correctness

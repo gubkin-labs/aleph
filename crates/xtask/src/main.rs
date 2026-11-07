@@ -14,7 +14,9 @@ use std::process::ExitCode;
 use aleph_core::check::CheckReport;
 use aleph_core::evolution::EvolutionReport;
 use aleph_core::examples::ExampleResult;
-use aleph_core::runtime::{Delivery, ProcessReport, RecordedCall};
+use aleph_core::runtime::{
+    BlobGrant, BlobInfo, BlobRejection, Delivery, ProcessReport, RecordedCall,
+};
 use aleph_core::{Diagnostic, Limits, Manifest, Request, Response};
 use ts_rs::{Config, TS};
 
@@ -64,6 +66,9 @@ fn codegen(check: bool) -> Result<(), String> {
     Delivery::export_all(&cfg).map_err(|e| e.to_string())?;
     RecordedCall::export_all(&cfg).map_err(|e| e.to_string())?;
     ProcessReport::export_all(&cfg).map_err(|e| e.to_string())?;
+    BlobGrant::export_all(&cfg).map_err(|e| e.to_string())?;
+    BlobInfo::export_all(&cfg).map_err(|e| e.to_string())?;
+    BlobRejection::export_all(&cfg).map_err(|e| e.to_string())?;
     EvolutionReport::export_all(&cfg).map_err(|e| e.to_string())?;
     ExampleResult::export_all(&cfg).map_err(|e| e.to_string())?;
 

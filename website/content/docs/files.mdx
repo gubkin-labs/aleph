@@ -1,0 +1,105 @@
+# Files
+
+A **bucket** holds uploaded files: avatars, attachments, documents. File bytes never pass through your routes. A route hands the client a short-lived **signed URL**, the client uploads straight to it, and when the upload finishes, the bucket's `onUpload` handlers run with the file's metadata.
+
+## Declare a bucket
+
+```ts
+const Avatars = a.bucket("avatars", {
+  maxBytes: "5MB",                                        // at most 100MB
+  contentTypes: ["image/png", "image/jpeg", "image/webp"], // or "image/*"; omit to allow any
+});
+```
+
+## Upload
+
+A route signs an upload URL for one file. Choose the key so it names what the file is, and check who's asking before you sign:
+
+```ts
+a.route("POST /me/avatar")
+  .body({ contentType: t.string().max(255) })
+  .handle(($, { body }) =>
+    Avatars.uploadUrl($.fmt`${$.caller}/avatar`, { contentType: body.contentType }),
+  ); // { url, key, expiresAt }
+```
+
+The client then uploads the bytes to that URL with the same content type:
+
+```ts nocheck
+const { url } = await api.postMeAvatar({ contentType: file.type });
+await fetch(new URL(url, apiBaseUrl), {
+  method: "PUT",
+  headers: { "content-type": file.type },
+  body: file,
+});
+```
+
+A signed URL allows exactly one thing: uploading a file to that key, with that content type, up to the bucket's `maxBytes`, until `expiresAt`. URLs last 15 minutes unless you pass `expiresIn` (up to `"7d"`). Uploading to a key that already has a file replaces it. The upload is refused with:
+- `403` if the URL was changed, signed for another app, or has expired
+- `413` if the file is over `maxBytes`
+- `415` if its content type isn't the one the URL was signed for
+
+Asking for a URL with a content type the bucket doesn't allow fails the route with `400 invalid_input`. When the type is a constant, `aleph check` catches it before deploy.
+
+## When an upload finishes
+
+`onUpload` handlers run after each finished upload, with the file's `key`, `size` (in bytes), `contentType`, and `uploadedAt`. They're bounded like any handler, and a good place to record the file as a row:
+
+```ts
+const Avatar = a.entity("Avatar", {
+  key: ["key"],
+  fields: { key: t.string().max(512), size: t.int().min(0), uploadedAt: t.timestamp() },
+});
+
+a.onUpload("saveAvatar", Avatars, (_, { payload }) => {
+  Avatar.upsert({ key: payload.key, size: payload.size, uploadedAt: payload.uploadedAt });
+});
+```
+
+## Download and read
+
+```ts
+a.route("GET /me/avatar")
+  .errors({ none: err.notFound("No avatar yet") })
+  .handle(($, { errors }) => {
+    const key = $.fmt`${$.caller}/avatar`;
+    const file = Avatars.get(key);                     // metadata, or null
+    $.ensure(file.key.isSet(), errors.none);
+    return { url: Avatars.downloadUrl(key, { expiresIn: "1h" }).url, size: file.size };
+  });
+```
+
+`get` reads the file's metadata (`null` if there's no such file). `downloadUrl` signs a URL without checking the file exists, so `get` first when it matters.
+
+## Delete
+
+```ts
+a.route("DELETE /me/avatar").handle(($) => {
+  Avatars.delete($.fmt`${$.caller}/avatar`);
+});
+```
+
+The metadata goes in the route's transaction. The bytes are deleted after it commits, like any other effect, so a request that fails halfway deletes nothing.
+
+## Who can reach a file
+
+- **Your route decides.** A URL is signed only after the route's auth rules and logic ran, so build the key from what the caller may touch (`$.caller`, an org they're a member of).
+- **A URL is a key to one file.** Anyone holding it can use it until it expires, so keep expiries short and don't log them.
+- **Apps can't reach each other's files.** URLs are signed for one app's data, and file metadata lives in its keyspace, like its rows.
+
+## Usage
+
+| Operation | What it uses |
+|---|---|
+| `uploadUrl`, `downloadUrl` | Operations only: signing a URL doesn't touch storage |
+| `get` | 1 read |
+| `delete` | 1 write and 1 effect |
+| An `onUpload` handler | Its own run, bounded by the [job limits](/docs/reference/limits/) |
+
+The bytes themselves don't count toward a route's limits, because they never pass through it.
+
+## Locally
+
+`aleph dev` serves the signed URLs itself, under `/_aleph/blobs/` on the dev server: `PUT` uploads, `GET` downloads, with CORS so a frontend on another port can use them. Files stay in memory, or next to the data file with `--data` (in `<data>.files/`). Signed URLs in development are paths on the dev server, so resolve them against its address, as `new URL(url, apiBaseUrl)` does above.
+
+Route examples (`aleph test`) don't upload files yet.

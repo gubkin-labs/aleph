@@ -121,6 +121,54 @@ describe("build", () => {
     expect(inner.map((s) => (s.kind === "let" ? s.op.op : s.kind))).toEqual(["eval"]);
   });
 
+  it("records a bucket, its signed URLs, file reads and deletes, and upload handlers", () => {
+    const { a, Todo } = todoApp();
+    const Files = a.bucket("files", {
+      maxBytes: "2MB",
+      contentTypes: ["image/*", "application/pdf"],
+    });
+    a.route("POST /files/:name").handle(($, { params }) =>
+      Files.uploadUrl(params.name, { contentType: "image/png", expiresIn: "5m" }),
+    );
+    a.route("GET /files/:name").handle((_, { params }) => ({
+      file: Files.get(params.name),
+      download: Files.downloadUrl(params.name),
+    }));
+    a.route("DELETE /files/:name").handle((_, { params }) => Files.delete(params.name));
+    a.onUpload("noteUpload", Files, (_, { payload }) => {
+      Todo.insert({ ownerId: "system", title: payload.key });
+    });
+    const m = a.build();
+    expect(m.buckets).toEqual({
+      files: { maxBytes: 2 * 1024 * 1024, contentTypes: ["image/*", "application/pdf"] },
+    });
+    const ops = m.routes.flatMap((r) =>
+      r.plan.body.flatMap((s) => (s.kind === "let" ? [s.op] : [])),
+    );
+    expect(ops.map((op) => op.op)).toEqual(["uploadUrl", "getBlob", "downloadUrl", "deleteBlob"]);
+    expect(ops[0]).toMatchObject({ bucket: "files", expiresS: 300 });
+    expect(ops[2]).not.toHaveProperty("expiresS");
+    expect(m.handlers?.[0]?.trigger).toEqual({ kind: "upload", bucket: "files" });
+  });
+
+  it("refuses bad bucket sizes, bad expiries, and file deletes in a loop", () => {
+    const a = app("x");
+    expect(() => a.bucket("big", { maxBytes: "200MB" })).toThrow(/1 byte to 100MB/);
+    expect(() => a.bucket("odd", { maxBytes: "5 megs" as never })).toThrow(/invalid size/);
+    const Files = a.bucket("files", { maxBytes: 1000 });
+    expect(() =>
+      a
+        .route("POST /a")
+        .handle(() => Files.uploadUrl("k", { contentType: "a/b", expiresIn: "30d" })),
+    ).toThrow(/1 second to 7 days/);
+    expect(() =>
+      a
+        .route("POST /b")
+        .body({ keys: t.array(t.string().max(10), 5) })
+        .handle((_, { body }) => body.keys.map((k) => Files.delete(k))),
+    ).toThrow(/inside map\/filter\/loop/);
+  });
+
   it("refuses writes in a loop body, reads in its while, and a bad max", () => {
     const { a, Todo } = todoApp();
     expect(() =>

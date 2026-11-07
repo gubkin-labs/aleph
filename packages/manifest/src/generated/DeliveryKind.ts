@@ -2,4 +2,4 @@
 /**
  * What a delivery is.
  */
-export type DeliveryKind = "send" | "publish";
+export type DeliveryKind = "send" | "publish" | "deleteBlob";

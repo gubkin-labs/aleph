@@ -78,7 +78,7 @@ export class Recorder {
 
   /** Records `op`, binds its result to a new variable, and returns a reference to it. */
   let(op: Op): ExprNode {
-    const writes = ["insert", "upsert", "insertIfAbsent", "update", "delete"];
+    const writes = ["insert", "upsert", "insertIfAbsent", "update", "delete", "deleteBlob"];
     const effects = ["emit", "enqueue", "publish", "send"];
     if (this.#pureDepth > 0 && (writes.includes(op.op) || effects.includes(op.op))) {
       throw new AlephBuildError(

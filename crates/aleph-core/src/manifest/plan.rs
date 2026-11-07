@@ -433,6 +433,49 @@ pub enum Op {
         /// Message values.
         message: BTreeMap<String, Expr>,
     },
+    /// A signed URL a client can upload one file to, for `expiresS` seconds. Evaluates to
+    /// `{ url, key, expiresAt }`. The upload must have `contentType` and fit the bucket's limits;
+    /// when it finishes, the bucket's `upload` handlers run.
+    UploadUrl {
+        /// The bucket.
+        bucket: String,
+        /// The file's key within the bucket (at most 512 characters).
+        key: Box<Expr>,
+        /// The content type the client must upload, for example `image/png`.
+        content_type: Box<Expr>,
+        /// How long the URL lasts, in seconds (1 to 7 days; default 15 minutes).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        expires_s: Option<u32>,
+    },
+    /// A signed URL a client can download one file from, for `expiresS` seconds. Evaluates to
+    /// `{ url, expiresAt }`. It doesn't check the file exists: read it with `getBlob` for that.
+    DownloadUrl {
+        /// The bucket.
+        bucket: String,
+        /// The file's key.
+        key: Box<Expr>,
+        /// How long the URL lasts, in seconds (1 to 7 days; default 15 minutes).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "codegen", ts(optional))]
+        expires_s: Option<u32>,
+    },
+    /// Read a file's metadata: `{ key, size, contentType, uploadedAt }`, or `null` if there's no
+    /// such file.
+    GetBlob {
+        /// The bucket.
+        bucket: String,
+        /// The file's key.
+        key: Box<Expr>,
+    },
+    /// Delete a file. Its metadata goes now; its bytes are deleted after commit. Evaluates to
+    /// `null`.
+    DeleteBlob {
+        /// The bucket.
+        bucket: String,
+        /// The file's key.
+        key: Box<Expr>,
+    },
     /// Run an integration call and evaluate to its (validated) output. Journaled.
     Call {
         /// The integration.
@@ -473,6 +516,7 @@ impl Op {
                 | Self::CancelWorkflow { .. }
                 | Self::Publish { .. }
                 | Self::Send { .. }
+                | Self::DeleteBlob { .. }
         )
     }
 
@@ -486,6 +530,7 @@ impl Op {
                 | Self::Update { .. }
                 | Self::Delete { .. }
                 | Self::StartWorkflow { .. }
+                | Self::DeleteBlob { .. }
         )
     }
 }

@@ -108,6 +108,9 @@ pub enum DeliveryKind {
     Send,
     /// A realtime channel message (`publish`).
     Publish,
+    /// Delete a file's bytes from a bucket (`deleteBlob`). `target` is the bucket and `data` is
+    /// `{ key }`; the file's metadata is already gone.
+    DeleteBlob,
 }
 
 /// A message for the outside world: an integration effect or a channel message.

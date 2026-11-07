@@ -4,6 +4,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 
+use super::blobs::{BlobAccess, BlobGrant};
 use super::builtins;
 use super::effects::{Delivery, DeliveryKind, Integrations, Journal, OutboxItem, Pending};
 use super::env::Env;
@@ -11,8 +12,8 @@ use super::input::{Inputs, conform, missing};
 use super::meter::{Meter, OverBudget};
 use crate::keys::{Key, KeyPart, Keyspace, TenantId};
 use crate::manifest::{
-    AggOp, BinaryOp, Change, Counter, Entity, Expr, Field, FieldType, IndexPart, InputSource,
-    Manifest, Op, Order, Plan, QueryRange, Stmt, StrOp, StrTest, Trigger, VarId,
+    AggOp, BinaryOp, BucketDecl, Change, Counter, Entity, Expr, Field, FieldType, IndexPart,
+    InputSource, Manifest, Op, Order, Plan, QueryRange, Stmt, StrOp, StrTest, Trigger, VarId,
 };
 use crate::store::{Direction, StoreError, Transaction};
 use crate::value::Value;
@@ -89,6 +90,8 @@ pub(crate) struct Exec<'a> {
     pub(crate) errors: &'a BTreeMap<String, crate::manifest::ErrorDecl>,
     pub(crate) tenant: &'a TenantId,
     pub(crate) integrations: &'a dyn Integrations,
+    /// Signs blob URLs; `None` if the runtime has no file storage.
+    pub(crate) blobs: Option<&'a super::BlobSigner>,
     pub(crate) journal: &'a mut Journal,
     /// Effects buffered until commit.
     pub(crate) effects: Vec<Pending>,
@@ -663,6 +666,91 @@ impl<'a> Exec<'a> {
                 )?;
                 Ok(Value::Null)
             }
+            Op::UploadUrl {
+                bucket,
+                key,
+                content_type,
+                expires_s,
+            } => {
+                let max_bytes = self.bucket(bucket)?.max_bytes;
+                let key = self.blob_key(key)?;
+                let content_type = self
+                    .eval_opt_string(content_type)?
+                    .unwrap_or_default()
+                    .trim()
+                    .to_ascii_lowercase();
+                if content_type.len() > BucketDecl::MAX_CONTENT_TYPE_LEN as usize
+                    || !self.bucket(bucket)?.allows(&content_type)
+                {
+                    return Err(ExecError::BadInput(format!(
+                        "bucket {bucket:?} doesn't accept {content_type:?} files"
+                    )));
+                }
+                let grant = BlobGrant {
+                    access: BlobAccess::Upload,
+                    tenant: self.tenant.as_str().to_owned(),
+                    bucket: bucket.clone(),
+                    key: key.clone(),
+                    content_type: Some(content_type),
+                    max_bytes: Some(max_bytes),
+                    expires_at: self.expires_at(*expires_s),
+                };
+                let url = self.sign_blob(&grant)?;
+                Ok(Value::Object(BTreeMap::from([
+                    ("url".to_owned(), Value::String(url)),
+                    ("key".to_owned(), Value::String(key)),
+                    ("expiresAt".to_owned(), Value::Int(grant.expires_at)),
+                ])))
+            }
+            Op::DownloadUrl {
+                bucket,
+                key,
+                expires_s,
+            } => {
+                self.bucket(bucket)?;
+                let key = self.blob_key(key)?;
+                let grant = BlobGrant {
+                    access: BlobAccess::Download,
+                    tenant: self.tenant.as_str().to_owned(),
+                    bucket: bucket.clone(),
+                    key,
+                    content_type: None,
+                    max_bytes: None,
+                    expires_at: self.expires_at(*expires_s),
+                };
+                let url = self.sign_blob(&grant)?;
+                Ok(Value::Object(BTreeMap::from([
+                    ("url".to_owned(), Value::String(url)),
+                    ("expiresAt".to_owned(), Value::Int(grant.expires_at)),
+                ])))
+            }
+            Op::GetBlob { bucket, key } => {
+                self.bucket(bucket)?;
+                let key = self.blob_key(key)?;
+                let found = super::blobs::read_info(&mut *self.tx, self.keys, bucket, &key)?;
+                self.meter.read(found.as_ref().map_or(0, |(_, len)| *len))?;
+                Ok(found.map_or(Value::Null, |(info, _)| info.to_value()))
+            }
+            Op::DeleteBlob { bucket, key } => {
+                self.bucket(bucket)?;
+                let key = self.blob_key(key)?;
+                self.tx.delete(self.keys.blob(bucket, &key));
+                self.meter.write(1)?;
+                let delivery = Delivery {
+                    kind: DeliveryKind::DeleteBlob,
+                    target: bucket.clone(),
+                    operation: None,
+                    data: serde_json::json!({ "key": key }),
+                };
+                self.release(
+                    0,
+                    OutboxItem::Deliver {
+                        delivery,
+                        attempt: 0,
+                    },
+                )?;
+                Ok(Value::Null)
+            }
             Op::Call {
                 integration,
                 operation,
@@ -829,6 +917,39 @@ impl<'a> Exec<'a> {
             self.release(0, OutboxItem::Run { handler: handler.id.clone(), payload, attempt: 0, job: None, chain: 0, turns: 0 })?;
         }
         Ok(())
+    }
+
+    fn bucket(&self, name: &str) -> R<&'a BucketDecl> {
+        self.manifest
+            .buckets
+            .get(name)
+            .ok_or_else(|| runtime(format!("unknown bucket {name}")))
+    }
+
+    /// Evaluates a file key, rejecting one no file could have.
+    fn blob_key(&mut self, key: &'a Expr) -> R<String> {
+        let key = self.eval_opt_string(key)?.unwrap_or_default();
+        super::blobs::check_key(&key).map_err(ExecError::BadInput)?;
+        Ok(key)
+    }
+
+    /// When a signed URL lasting `expires_s` seconds (or the default) expires.
+    fn expires_at(&self, expires_s: Option<u32>) -> i64 {
+        let seconds = expires_s
+            .unwrap_or(BucketDecl::DEFAULT_EXPIRES_S)
+            .clamp(1, BucketDecl::MAX_EXPIRES_S);
+        self.now.saturating_add(i64::from(seconds) * 1000)
+    }
+
+    fn sign_blob(&self, grant: &BlobGrant) -> R<String> {
+        let signer = self
+            .blobs
+            .ok_or_else(|| runtime("this runtime has no file storage configured"))?;
+        let url = signer.sign(grant);
+        if url.len() > BucketDecl::MAX_URL_LEN as usize {
+            return Err(runtime("the signed URL is longer than its static bound"));
+        }
+        Ok(url)
     }
 
     fn entity(&self, name: &str) -> R<&'a Entity> {

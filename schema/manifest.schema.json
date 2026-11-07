@@ -16,6 +16,13 @@
         "roles": []
       }
     },
+    "buckets": {
+      "description": "File buckets, by name.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/BucketDecl"
+      }
+    },
     "channels": {
       "description": "Declared realtime channels, by name.",
       "type": "object",
@@ -320,6 +327,29 @@
           "type": "string",
           "const": "divCeil"
         }
+      ]
+    },
+    "BucketDecl": {
+      "description": "A bucket of files (blobs). Clients upload and download through short-lived signed URLs, so\nfile bytes never pass through a plan; plans see each file's metadata.",
+      "type": "object",
+      "properties": {
+        "contentTypes": {
+          "description": "Allowed content types, exact (`image/png`) or by family (`image/*`). Empty allows any.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "maxBytes": {
+          "description": "The largest file an upload may store, in bytes (at most [`BucketDecl::MAX_BYTES`]).",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "maxBytes"
       ]
     },
     "Change": {
@@ -3137,6 +3167,125 @@
           ]
         },
         {
+          "description": "A signed URL a client can upload one file to, for `expiresS` seconds. Evaluates to\n`{ url, key, expiresAt }`. The upload must have `contentType` and fit the bucket's limits;\nwhen it finishes, the bucket's `upload` handlers run.",
+          "type": "object",
+          "properties": {
+            "bucket": {
+              "description": "The bucket.",
+              "type": "string"
+            },
+            "contentType": {
+              "description": "The content type the client must upload, for example `image/png`.",
+              "$ref": "#/$defs/Expr"
+            },
+            "expiresS": {
+              "description": "How long the URL lasts, in seconds (1 to 7 days; default 15 minutes).",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0
+            },
+            "key": {
+              "description": "The file's key within the bucket (at most 512 characters).",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "type": "string",
+              "const": "uploadUrl"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "bucket",
+            "key",
+            "contentType"
+          ]
+        },
+        {
+          "description": "A signed URL a client can download one file from, for `expiresS` seconds. Evaluates to\n`{ url, expiresAt }`. It doesn't check the file exists: read it with `getBlob` for that.",
+          "type": "object",
+          "properties": {
+            "bucket": {
+              "description": "The bucket.",
+              "type": "string"
+            },
+            "expiresS": {
+              "description": "How long the URL lasts, in seconds (1 to 7 days; default 15 minutes).",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0
+            },
+            "key": {
+              "description": "The file's key.",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "type": "string",
+              "const": "downloadUrl"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "bucket",
+            "key"
+          ]
+        },
+        {
+          "description": "Read a file's metadata: `{ key, size, contentType, uploadedAt }`, or `null` if there's no\nsuch file.",
+          "type": "object",
+          "properties": {
+            "bucket": {
+              "description": "The bucket.",
+              "type": "string"
+            },
+            "key": {
+              "description": "The file's key.",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "type": "string",
+              "const": "getBlob"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "bucket",
+            "key"
+          ]
+        },
+        {
+          "description": "Delete a file. Its metadata goes now; its bytes are deleted after commit. Evaluates to\n`null`.",
+          "type": "object",
+          "properties": {
+            "bucket": {
+              "description": "The bucket.",
+              "type": "string"
+            },
+            "key": {
+              "description": "The file's key.",
+              "$ref": "#/$defs/Expr"
+            },
+            "op": {
+              "type": "string",
+              "const": "deleteBlob"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "op",
+            "bucket",
+            "key"
+          ]
+        },
+        {
           "description": "Run an integration call and evaluate to its (validated) output. Journaled.",
           "type": "object",
           "properties": {
@@ -4165,6 +4314,25 @@
           "required": [
             "kind",
             "queue"
+          ]
+        },
+        {
+          "description": "A file finished uploading to a bucket. The payload is the file's metadata:\n`{ key, size, contentType, uploadedAt }`.",
+          "type": "object",
+          "properties": {
+            "bucket": {
+              "description": "The bucket.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "upload"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "bucket"
           ]
         },
         {

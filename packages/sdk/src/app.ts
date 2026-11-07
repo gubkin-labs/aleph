@@ -7,6 +7,7 @@ import {
   type Route,
   type Verify,
 } from "@aleph-lang/manifest";
+import { type BlobInfoFields, Bucket, type BucketDef, uploadPayload } from "./blobs.js";
 import {
   type Accessor,
   type ComputedGroup,
@@ -151,6 +152,7 @@ export class App<R extends string = string, S extends string = string, P extends
   readonly #events = new Map<string, Spec>();
   readonly #queues = new Map<string, Spec>();
   readonly #channels = new Map<string, Spec>();
+  readonly #buckets = new Map<string, Spec>();
   readonly #integrations = new Map<string, Spec>();
   readonly #workflows = new Map<string, Spec>();
   readonly #routes: Route[] = [];
@@ -309,6 +311,17 @@ export class App<R extends string = string, S extends string = string, P extends
     return channel;
   }
 
+  /**
+   * Declares a bucket of files. Plans hand out signed URLs (`uploadUrl`, `downloadUrl`) and read
+   * or delete files' metadata; the bytes go straight between the client and the storage.
+   */
+  bucket(name: string, def: BucketDef): Bucket {
+    this.#claim(this.#buckets, "bucket", name);
+    const bucket = new Bucket(name, def);
+    this.#buckets.set(name, bucket);
+    return bucket;
+  }
+
   /** Declares an integration with typed operations. */
   integration<const O extends Record<string, OperationDef>>(
     name: string,
@@ -424,6 +437,23 @@ export class App<R extends string = string, S extends string = string, P extends
     recordHandler(this.#handlerSink(), id, trigger, payload, fn, options);
   }
 
+  /** Runs `fn` after each upload to `bucket` finishes, with the file's metadata. */
+  onUpload<E extends string = never>(
+    id: string,
+    bucket: Bucket,
+    fn: HandlerFn<InputValues<BlobInfoFields>, E>,
+    options?: HandlerOptions<E>,
+  ): void {
+    recordHandler(
+      this.#handlerSink(),
+      id,
+      { kind: "upload", bucket: bucket.name },
+      uploadPayload(),
+      fn,
+      options,
+    );
+  }
+
   /** Runs `fn` for each job on `queue`. A failed job is retried with backoff. */
   onQueue<P extends Fields, E extends string = never>(
     id: string,
@@ -509,6 +539,7 @@ export class App<R extends string = string, S extends string = string, P extends
     if (this.#events.size > 0) manifest.events = specs(this.#events);
     if (this.#queues.size > 0) manifest.queues = specs(this.#queues);
     if (this.#channels.size > 0) manifest.channels = specs(this.#channels);
+    if (this.#buckets.size > 0) manifest.buckets = specs(this.#buckets);
     if (this.#integrations.size > 0) manifest.integrations = specs(this.#integrations);
     if (this.#workflows.size > 0) manifest.workflows = specs(this.#workflows);
     if (this.#handlers.length > 0) manifest.handlers = structuredClone(this.#handlers);

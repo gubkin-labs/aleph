@@ -31,6 +31,9 @@ pub use limits::{Cost, Limits, Resource};
 pub use manifest::Manifest;
 #[cfg(not(target_arch = "wasm32"))]
 pub use runtime::SystemEnv;
-pub use runtime::{ApiKey, Caller, Engine, Env, FixedEnv, Request, Response};
+pub use runtime::{
+    ApiKey, BlobAccess, BlobGrant, BlobInfo, BlobRejection, BlobSigner, Caller, Engine, Env,
+    FixedEnv, Request, Response,
+};
 pub use store::{MemoryStore, Store};
 pub use value::Value;

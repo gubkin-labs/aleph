@@ -28,6 +28,14 @@ export {
   type WebhookOptions,
 } from "./app.js";
 export {
+  type BlobInfo,
+  Bucket,
+  type BucketDef,
+  type DownloadUrl,
+  type Size,
+  type UploadUrl,
+} from "./blobs.js";
+export {
   type Accessor,
   type ComputedGroup,
   Counter,

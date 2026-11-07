@@ -1,0 +1,115 @@
+{
+  "seed": 9,
+  "startMs": 1700000000000,
+  "stepMs": 1000,
+  "steps": [
+    {
+      "name": "ask for an upload URL for a PNG",
+      "request": {
+        "method": "POST",
+        "path": "/photos/p1/upload",
+        "caller": { "userId": "ada" },
+        "body": { "contentType": "image/png" }
+      },
+      "expect": { "status": 200, "body": { "key": "ada/p1", "expiresAt": 1700000600000 } },
+      "capture": { "upload": "body.url" }
+    },
+    {
+      "name": "a type the bucket doesn't allow gets no URL",
+      "request": {
+        "method": "POST",
+        "path": "/photos/p2/upload",
+        "caller": { "userId": "ada" },
+        "body": { "contentType": "text/html" }
+      },
+      "expect": { "status": 400, "body": { "error": "invalid_input" } }
+    },
+    {
+      "name": "uploading a different type than the URL allows is refused",
+      "upload": { "url": "{{upload}}", "size": 2048, "contentType": "image/jpeg" },
+      "expect": { "status": 415 }
+    },
+    {
+      "name": "uploading more than the bucket's limit is refused",
+      "upload": { "url": "{{upload}}", "size": 6000000, "contentType": "image/png" },
+      "expect": { "status": 413 }
+    },
+    {
+      "name": "a tampered URL is refused",
+      "upload": {
+        "url": "{{upload}}&max=999999999",
+        "size": 2048,
+        "contentType": "image/png"
+      },
+      "expect": { "status": 403 }
+    },
+    {
+      "name": "the upload is accepted and recorded",
+      "upload": { "url": "{{upload}}", "size": 2048, "contentType": "image/png" },
+      "expect": {
+        "status": 200,
+        "body": { "key": "ada/p1", "size": 2048, "contentType": "image/png" }
+      }
+    },
+    {
+      "name": "the upload handler records the photo",
+      "process": true,
+      "expect": { "report": { "ran": 1, "failures": [] } }
+    },
+    {
+      "name": "read the photo and a download URL",
+      "request": { "method": "GET", "path": "/photos/p1", "caller": { "userId": "ada" } },
+      "expect": {
+        "status": 200,
+        "body": {
+          "file": { "key": "ada/p1", "size": 2048, "contentType": "image/png" },
+          "download": { "expiresAt": 1700003607000 }
+        }
+      },
+      "capture": { "download": "body.download.url" }
+    },
+    {
+      "name": "the download URL finds the file",
+      "download": { "url": "{{download}}" },
+      "expect": { "status": 200, "body": { "key": "ada/p1", "contentType": "image/png" } }
+    },
+    {
+      "name": "an upload URL can't be used to download",
+      "download": { "url": "{{upload}}" },
+      "expect": { "status": 403 }
+    },
+    {
+      "name": "another user's key is a different file",
+      "request": { "method": "GET", "path": "/photos/p1", "caller": { "userId": "bob" } },
+      "expect": { "status": 404, "body": { "error": "missing" } }
+    },
+    {
+      "name": "delete the photo",
+      "request": { "method": "DELETE", "path": "/photos/p1", "caller": { "userId": "ada" } },
+      "expect": { "status": 200, "body": { "deleted": "ada/p1" } }
+    },
+    {
+      "name": "the file's bytes are deleted after commit",
+      "process": true,
+      "expect": {
+        "deliveries": [{ "kind": "deleteBlob", "target": "photos", "data": { "key": "ada/p1" } }]
+      }
+    },
+    {
+      "name": "the photo is gone",
+      "request": { "method": "GET", "path": "/photos/p1", "caller": { "userId": "ada" } },
+      "expect": { "status": 404 }
+    },
+    {
+      "name": "its download URL finds nothing",
+      "download": { "url": "{{download}}" },
+      "expect": { "status": 404 }
+    },
+    {
+      "name": "and after an hour the URL has expired",
+      "advanceMs": 3600000,
+      "download": { "url": "{{download}}" },
+      "expect": { "status": 403 }
+    }
+  ]
+}

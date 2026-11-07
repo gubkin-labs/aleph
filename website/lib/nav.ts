@@ -98,6 +98,11 @@ export const NAV: Section[] = [
         description: "Events, queues, schedules, and durable multi-step workflows.",
       },
       {
+        slug: "files",
+        title: "Files",
+        description: "Buckets of uploaded files, signed URLs, and upload handlers.",
+      },
+      {
         slug: "integrations",
         title: "Integrations and API surface",
         description: "Outbound calls, webhooks, OpenAPI, MCP, and typed clients.",

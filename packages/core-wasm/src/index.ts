@@ -6,6 +6,7 @@
  */
 import { createRequire } from "node:module";
 import type {
+  BlobInfo,
   CheckReport,
   Delivery,
   Diagnostic,
@@ -30,8 +31,15 @@ interface WasmDevEngine {
   seed(entity: string, rowsJson: string, nowMs: number): number;
   snapshot(): string;
   restore(snapshotJson: string): void;
+  receiveUpload(url: string, size: number, contentType: string, nowMs: number): string;
+  authorizeDownload(url: string, nowMs: number): string;
   free(): void;
 }
+
+/** What a blob gateway decided: the file's metadata, or why it refused (an HTTP status). */
+export type BlobResult =
+  | { ok: true; info: BlobInfo }
+  | { ok: false; status: number; message: string };
 
 interface WasmBindings {
   formatVersion(): string;
@@ -199,6 +207,25 @@ export class DevEngine {
   /** Replaces the stored data with a {@link DevEngine.snapshot}. */
   restore(snapshot: string): void {
     this.#engine.restore(snapshot);
+  }
+
+  /**
+   * Accepts an upload to a signed URL, as a blob gateway would: checks the URL, the content
+   * type, and the size, then records the file (its bucket's upload handlers run on the next
+   * `process`). Store the bytes only when this returns `ok`.
+   */
+  receiveUpload(
+    url: string,
+    size: number,
+    contentType: string,
+    nowMs: number = Date.now(),
+  ): BlobResult {
+    return JSON.parse(this.#engine.receiveUpload(url, size, contentType, nowMs)) as BlobResult;
+  }
+
+  /** Checks a signed download URL and returns the file's metadata (or why it's refused). */
+  authorizeDownload(url: string, nowMs: number = Date.now()): BlobResult {
+    return JSON.parse(this.#engine.authorizeDownload(url, nowMs)) as BlobResult;
   }
 
   /** Releases the WASM memory held by this engine. */

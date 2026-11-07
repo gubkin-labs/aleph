@@ -7,7 +7,7 @@ Aleph is pre-1.0. This page is the honest list of what exists in the language to
 | Area | What exists |
 |---|---|
 | **Auth** | Per-route rules: public, signed-in, org members by role, API keys by scope. Caller profiles and a user directory |
-| **Data** | Entities with ordered keys; unique, partial, and computed indexes; prefix, range, and `anyOf` queries; cursor pagination; counters (count, sum, min/max, distinct, sharded, time-bucketed); invariants; versioned rows; row expiry; parent/child relations with cascading deletes; schema evolution checks |
+| **Data** | Entities with ordered keys; unique, partial, and computed indexes; prefix, range, and `anyOf` queries; cursor pagination; counters (count, sum, min/max, distinct, sharded, time-bucketed); invariants; versioned rows; row expiry; parent/child relations with cascading deletes; schema evolution checks; file buckets with signed upload and download URLs, size and type limits, and upload handlers |
 | **Compute** | Routes with full HTTP control; bounded logic, including loops that carry state; events, entity triggers, queues with retries and dead letters, keyed and delayed jobs, interval and calendar schedules, batch scans; durable workflows |
 | **Integrations** | Declared calls (journaled) and sends (after commit); signed webhooks (HMAC, Stripe, GitHub) with dedupe |
 | **API surface** | Inferred and declared response types, typed clients, OpenAPI, MCP tools |
@@ -20,7 +20,7 @@ Aleph is pre-1.0. This page is the honest list of what exists in the language to
 | Area | Planned |
 |---|---|
 | **Auth** | Declaring sign-in methods (email and password, magic links, OAuth) and org management in the manifest. Today the runtime authenticates callers and passes them in |
-| **Data** | Blob storage (declared buckets with size and type limits); materialized views beyond counters; "drop after N days" for deprecated fields |
+| **Data** | Materialized views beyond counters; "drop after N days" for deprecated fields |
 | **Compute** | Streaming responses (for LLM routes); delivering realtime channel messages to subscribers (publishing exists) |
 | **Integrations** | Declared hosts with timeouts for generic HTTP; OAuth connections on behalf of users; built-in providers (email, payments) |
 | **Capabilities** | Native capabilities (LLM calls with tools, vector search, full-text search) and reusable components (chat, notifications, subscriptions, audit log) |

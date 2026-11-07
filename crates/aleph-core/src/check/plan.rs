@@ -12,7 +12,7 @@ use super::{EntityInfo, Ty, unknown_entity, unknown_field};
 use crate::diagnostics::{Diagnostic, DiagnosticCode as Code};
 use crate::limits::Cost;
 use crate::manifest::{
-    AggOp, BinaryOp, Change, Entity, ErrorDecl, Expr, Field, FieldType, Handler, Input,
+    AggOp, BinaryOp, BucketDecl, Change, Entity, ErrorDecl, Expr, Field, FieldType, Handler, Input,
     InputSource, Manifest, Op, OpMode, Route, RowPredicate, Stmt, StrOp, Trigger, VarId,
     WorkflowDecl,
 };
@@ -1173,6 +1173,74 @@ impl<'a> Checker<'a> {
                             ..Cost::ZERO
                         },
                 )
+            }
+            Op::UploadUrl {
+                bucket,
+                key,
+                content_type,
+                expires_s,
+            } => {
+                let decl = self.bucket(bucket, path);
+                let mut cost = own + self.string(key, &format!("{path}.key")).1;
+                cost += self.string(content_type, &format!("{path}.contentType")).1;
+                if let (
+                    Some(decl),
+                    Expr::Lit {
+                        value: crate::manifest::Literal::String(literal),
+                    },
+                ) = (decl, content_type.as_ref())
+                    && !decl.allows(literal)
+                {
+                    self.diag(
+                        Code::InvalidExpression,
+                        &format!("{path}.contentType"),
+                        format!(
+                            "bucket {bucket:?} doesn't accept {literal:?} files (it allows {:?})",
+                            decl.content_types
+                        ),
+                    );
+                }
+                self.expires(*expires_s, path);
+                let fields = BTreeMap::from([
+                    ("url".into(), Ty::string(u64::from(BucketDecl::MAX_URL_LEN))),
+                    ("key".into(), Ty::string(u64::from(BucketDecl::MAX_KEY_LEN))),
+                    ("expiresAt".into(), Ty::Int { max: None }),
+                ]);
+                (Ty::Object(fields), cost)
+            }
+            Op::DownloadUrl {
+                bucket,
+                key,
+                expires_s,
+            } => {
+                self.bucket(bucket, path);
+                let cost = own + self.string(key, &format!("{path}.key")).1;
+                self.expires(*expires_s, path);
+                let fields = BTreeMap::from([
+                    ("url".into(), Ty::string(u64::from(BucketDecl::MAX_URL_LEN))),
+                    ("expiresAt".into(), Ty::Int { max: None }),
+                ]);
+                (Ty::Object(fields), cost)
+            }
+            Op::GetBlob { bucket, key } => {
+                self.bucket(bucket, path);
+                let cost = own + self.string(key, &format!("{path}.key")).1;
+                let read = Cost {
+                    reads: 1,
+                    bytes_read: crate::runtime::MAX_BLOB_INFO_BYTES,
+                    ..Cost::ZERO
+                };
+                (Ty::Object(blob_info_fields()).nullable(), cost + read)
+            }
+            Op::DeleteBlob { bucket, key } => {
+                self.bucket(bucket, path);
+                let cost = own + self.string(key, &format!("{path}.key")).1;
+                let write = Cost {
+                    writes: 1,
+                    effects: 1,
+                    ..Cost::ZERO
+                };
+                (Ty::Null, cost + write)
             }
             Op::Call {
                 integration,
@@ -2370,6 +2438,36 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// The declared bucket, or a diagnostic.
+    fn bucket(&mut self, bucket: &str, path: &str) -> Option<&'a BucketDecl> {
+        let decl = self.m.buckets.get(bucket);
+        if decl.is_none() {
+            self.unknown(
+                Code::UnknownBucket,
+                &format!("{path}.bucket"),
+                "bucket",
+                bucket,
+                self.m.buckets.keys(),
+            );
+        }
+        decl
+    }
+
+    fn expires(&mut self, expires_s: Option<u32>, path: &str) {
+        if let Some(seconds) = expires_s
+            && !(1..=BucketDecl::MAX_EXPIRES_S).contains(&seconds)
+        {
+            self.diag(
+                Code::InvalidExpression,
+                &format!("{path}.expiresS"),
+                format!(
+                    "a signed URL lasts 1 second to 7 days ({} seconds), got {seconds}",
+                    BucketDecl::MAX_EXPIRES_S
+                ),
+            );
+        }
+    }
+
     fn string(&mut self, expr: &Expr, path: &str) -> (Ty, Cost) {
         let (ty, cost) = self.expr(expr, path);
         if !ty.is_stringish() {
@@ -2445,4 +2543,22 @@ fn widen_ints(ty: Ty) -> Ty {
         ),
         other => other,
     }
+}
+
+/// A stored file's metadata, as plans and `upload` handlers see it.
+pub(crate) fn blob_info_fields() -> BTreeMap<String, Ty> {
+    BTreeMap::from([
+        ("key".into(), Ty::string(u64::from(BucketDecl::MAX_KEY_LEN))),
+        (
+            "size".into(),
+            Ty::Int {
+                max: i64::try_from(BucketDecl::MAX_BYTES).ok(),
+            },
+        ),
+        (
+            "contentType".into(),
+            Ty::string(u64::from(BucketDecl::MAX_CONTENT_TYPE_LEN)),
+        ),
+        ("uploadedAt".into(), Ty::Int { max: None }),
+    ])
 }

@@ -100,6 +100,7 @@ Every loop has a known maximum: a list loop runs over a query's `limit`, an arra
   - counters, which are kept up to date as rows change
   - a workflow instance's typed state, carried from step to step
   - the payloads of queued jobs and events
+  - files in [buckets](/docs/files/): plans see their metadata, and clients move the bytes through signed URLs
 - **A request's inputs** are its path parameters, query, body, and headers, plus the authenticated **caller** (`$.caller`). A handler's input is its trigger's payload.
 - **Time and ids come from the runtime.** `$.now()` gives the request's time, and fields declared `t.id().generated()` get new ids, so tests can pin both.
 

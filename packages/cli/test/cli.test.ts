@@ -226,6 +226,59 @@ describe("aleph dev", () => {
   });
 });
 
+describe("aleph dev files", () => {
+  it("serves signed upload and download URLs, and deletes files' bytes", async () => {
+    const manifest = readFileSync(join(cases, "files", "manifest.json"), "utf8");
+    const lines: string[] = [];
+    const server = await startDevServer(manifest, { port: 0, log: (l) => lines.push(l) });
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("no port");
+      const base = `http://127.0.0.1:${address.port}`;
+      const as = { "x-aleph-user": "ada", "content-type": "application/json" };
+      const signed = (await (
+        await fetch(`${base}/photos/p1/upload`, {
+          method: "POST",
+          headers: as,
+          body: JSON.stringify({ contentType: "image/png" }),
+        })
+      ).json()) as { url: string };
+      expect(signed.url).toMatch(/^\/_aleph\/blobs\/dev\/photos\/ada%2Fp1\?access=upload/);
+
+      const bytes = new Uint8Array([137, 80, 78, 71, 1, 2, 3]);
+      const wrongType = await fetch(`${base}${signed.url}`, {
+        method: "PUT",
+        headers: { "content-type": "image/gif" },
+        body: bytes,
+      });
+      expect(wrongType.status).toBe(415);
+      const put = await fetch(`${base}${signed.url}`, {
+        method: "PUT",
+        headers: { "content-type": "image/png" },
+        body: bytes,
+      });
+      expect(put.status).toBe(200);
+      expect(await put.json()).toMatchObject({ key: "ada/p1", size: 7, contentType: "image/png" });
+      expect(lines.join("\n")).toMatch(/ran recordPhoto/);
+
+      const photo = (await (
+        await fetch(`${base}/photos/p1`, { headers: { "x-aleph-user": "ada" } })
+      ).json()) as { download: { url: string } };
+      const download = await fetch(`${base}${photo.download.url}`);
+      expect(download.status).toBe(200);
+      expect(download.headers.get("content-type")).toBe("image/png");
+      expect(new Uint8Array(await download.arrayBuffer())).toEqual(bytes);
+      const preflight = await fetch(`${base}${signed.url}`, { method: "OPTIONS" });
+      expect(preflight.headers.get("access-control-allow-methods")).toMatch(/PUT/);
+
+      await fetch(`${base}/photos/p1`, { method: "DELETE", headers: { "x-aleph-user": "ada" } });
+      expect((await fetch(`${base}${photo.download.url}`)).status).toBe(404);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+});
+
 describe("aleph test", () => {
   it("runs every route example and reports each", async () => {
     const { io, out } = capture();

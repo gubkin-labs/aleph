@@ -12,6 +12,7 @@ use crate::limits::Cost;
 use crate::manifest::{Auth, Method};
 use crate::store::{CommitError, Store};
 
+mod blobs;
 mod builtins;
 mod cron;
 mod effects;
@@ -24,6 +25,8 @@ mod time;
 mod webhook;
 mod workflow;
 
+pub(crate) use blobs::MAX_BLOB_INFO_BYTES;
+pub use blobs::{BlobAccess, BlobGrant, BlobInfo, BlobRejection, BlobSigner};
 pub use effects::{
     Delivery, DeliveryKind, Integrations, MemorySink, MockIntegrations, NoIntegrations, NullSink,
     RecordedCall, Sink,
@@ -277,6 +280,7 @@ pub struct Engine {
     sink: Arc<dyn Sink>,
     integrations: Arc<dyn Integrations>,
     secrets: Arc<dyn Secrets>,
+    blobs: Option<BlobSigner>,
     patterns: Vec<RoutePattern>,
     limits: crate::limits::Limits,
     rate_limiter: RateLimiter,
@@ -415,6 +419,7 @@ impl Engine {
             sink: Arc::new(NullSink),
             integrations: Arc::new(NoIntegrations),
             secrets: Arc::new(MemorySecrets::new()),
+            blobs: None,
             patterns,
             limits,
             rate_limiter: RateLimiter::default(),
@@ -519,6 +524,7 @@ impl Engine {
             errors: &errors,
             tenant,
             integrations: self.integrations.as_ref(),
+            blobs: self.blobs.as_ref(),
             journal: &mut journal,
             effects: Vec::new(),
             tx: &mut *tx,
@@ -829,8 +835,7 @@ impl Engine {
         replay: Option<&Replay>,
     ) -> Response {
         let env = self.env.as_ref();
-        let limits = self.limits;
-        let max_attempts = limits.max_conflict_retries.saturating_add(1);
+        let max_attempts = self.limits.max_conflict_retries.saturating_add(1);
         let mut usage = Cost::default();
         let mut journal = effects::Journal::default();
         let queue = self.write_queues.stripe(keys.tenant(), &route.id);
@@ -842,7 +847,7 @@ impl Engine {
                 turn = Some(queue.take_turn());
             }
             let mut tx = self.store.begin();
-            let mut meter = Meter::new(limits);
+            let mut meter = Meter::new(self.limits);
             journal.rewind();
             let mut logs = Vec::new();
             let response = match attempt_once(&mut *tx, &mut meter, replay, now, |tx, meter| {
@@ -852,6 +857,7 @@ impl Engine {
                     errors: &route.errors,
                     tenant: keys.tenant(),
                     integrations: self.integrations.as_ref(),
+                    blobs: self.blobs.as_ref(),
                     journal: &mut journal,
                     effects: Vec::new(),
                     tx,

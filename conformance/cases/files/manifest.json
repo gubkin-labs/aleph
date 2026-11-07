@@ -1,0 +1,387 @@
+{
+  "app": {
+    "name": "files"
+  },
+  "auth": {
+    "apiKeyScopes": [],
+    "roles": []
+  },
+  "buckets": {
+    "photos": {
+      "contentTypes": [
+        "image/*"
+      ],
+      "maxBytes": 5242880
+    }
+  },
+  "counters": {},
+  "entities": {
+    "Photo": {
+      "fields": {
+        "contentType": {
+          "type": {
+            "kind": "string",
+            "max": 255,
+            "min": 0
+          }
+        },
+        "key": {
+          "type": {
+            "kind": "string",
+            "max": 512,
+            "min": 0
+          }
+        },
+        "size": {
+          "type": {
+            "kind": "int",
+            "max": 5242880,
+            "min": 0
+          }
+        },
+        "uploadedAt": {
+          "type": {
+            "kind": "timestamp"
+          }
+        }
+      },
+      "indexes": {},
+      "key": [
+        "key"
+      ]
+    }
+  },
+  "formatVersion": "0.2",
+  "handlers": [
+    {
+      "errors": {},
+      "id": "recordPhoto",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Photo",
+              "op": "upsert",
+              "values": {
+                "contentType": {
+                  "kind": "input",
+                  "name": "contentType",
+                  "source": "payload"
+                },
+                "key": {
+                  "kind": "input",
+                  "name": "key",
+                  "source": "payload"
+                },
+                "size": {
+                  "kind": "input",
+                  "name": "size",
+                  "source": "payload"
+                },
+                "uploadedAt": {
+                  "kind": "input",
+                  "name": "uploadedAt",
+                  "source": "payload"
+                }
+              }
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "kind": "lit",
+          "value": null
+        }
+      },
+      "trigger": {
+        "bucket": "photos",
+        "kind": "upload"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {},
+      "id": "upload_photo",
+      "input": {
+        "body": {
+          "contentType": {
+            "type": {
+              "kind": "string",
+              "max": 255,
+              "min": 0
+            }
+          }
+        },
+        "params": {
+          "photoId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 0
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "POST",
+      "path": "/photos/:photoId/upload",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "bucket": "photos",
+              "contentType": {
+                "kind": "input",
+                "name": "contentType",
+                "source": "body"
+              },
+              "expiresS": 600,
+              "key": {
+                "kind": "concat",
+                "parts": [
+                  {
+                    "kind": "caller"
+                  },
+                  {
+                    "kind": "lit",
+                    "value": "/"
+                  },
+                  {
+                    "kind": "input",
+                    "name": "photoId",
+                    "source": "params"
+                  }
+                ]
+              },
+              "op": "uploadUrl"
+            },
+            "var": 0
+          }
+        ],
+        "output": {
+          "id": 0,
+          "kind": "var"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {
+        "missing": {
+          "message": "No such photo",
+          "status": 404
+        }
+      },
+      "id": "get_photo",
+      "input": {
+        "body": {},
+        "params": {
+          "photoId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 0
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "GET",
+      "path": "/photos/:photoId",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "bucket": "photos",
+              "key": {
+                "kind": "concat",
+                "parts": [
+                  {
+                    "kind": "caller"
+                  },
+                  {
+                    "kind": "lit",
+                    "value": "/"
+                  },
+                  {
+                    "kind": "input",
+                    "name": "photoId",
+                    "source": "params"
+                  }
+                ]
+              },
+              "op": "getBlob"
+            },
+            "var": 0
+          },
+          {
+            "cond": {
+              "arg": {
+                "kind": "isNull",
+                "of": {
+                  "kind": "field",
+                  "name": "key",
+                  "of": {
+                    "id": 0,
+                    "kind": "var"
+                  }
+                }
+              },
+              "kind": "not"
+            },
+            "error": "missing",
+            "kind": "ensure"
+          },
+          {
+            "kind": "let",
+            "op": {
+              "bucket": "photos",
+              "expiresS": 3600,
+              "key": {
+                "kind": "concat",
+                "parts": [
+                  {
+                    "kind": "caller"
+                  },
+                  {
+                    "kind": "lit",
+                    "value": "/"
+                  },
+                  {
+                    "kind": "input",
+                    "name": "photoId",
+                    "source": "params"
+                  }
+                ]
+              },
+              "op": "downloadUrl"
+            },
+            "var": 1
+          }
+        ],
+        "output": {
+          "fields": {
+            "download": {
+              "id": 1,
+              "kind": "var"
+            },
+            "file": {
+              "id": 0,
+              "kind": "var"
+            }
+          },
+          "kind": "object"
+        }
+      }
+    },
+    {
+      "auth": {
+        "kind": "signedIn"
+      },
+      "errors": {},
+      "id": "delete_photo",
+      "input": {
+        "body": {},
+        "params": {
+          "photoId": {
+            "type": {
+              "kind": "string",
+              "max": 64,
+              "min": 0
+            }
+          }
+        },
+        "query": {}
+      },
+      "method": "DELETE",
+      "path": "/photos/:photoId",
+      "plan": {
+        "body": [
+          {
+            "kind": "let",
+            "op": {
+              "bucket": "photos",
+              "key": {
+                "kind": "concat",
+                "parts": [
+                  {
+                    "kind": "caller"
+                  },
+                  {
+                    "kind": "lit",
+                    "value": "/"
+                  },
+                  {
+                    "kind": "input",
+                    "name": "photoId",
+                    "source": "params"
+                  }
+                ]
+              },
+              "op": "deleteBlob"
+            },
+            "var": 0
+          },
+          {
+            "kind": "let",
+            "op": {
+              "entity": "Photo",
+              "key": {
+                "key": {
+                  "kind": "concat",
+                  "parts": [
+                    {
+                      "kind": "caller"
+                    },
+                    {
+                      "kind": "lit",
+                      "value": "/"
+                    },
+                    {
+                      "kind": "input",
+                      "name": "photoId",
+                      "source": "params"
+                    }
+                  ]
+                }
+              },
+              "op": "delete"
+            },
+            "var": 1
+          }
+        ],
+        "output": {
+          "fields": {
+            "deleted": {
+              "kind": "concat",
+              "parts": [
+                {
+                  "kind": "caller"
+                },
+                {
+                  "kind": "lit",
+                  "value": "/"
+                },
+                {
+                  "kind": "input",
+                  "name": "photoId",
+                  "source": "params"
+                }
+              ]
+            }
+          },
+          "kind": "object"
+        }
+      }
+    }
+  ]
+}

@@ -29,6 +29,13 @@ export interface Step {
   mock?: { integration: string; operation: string; response?: unknown; error?: string };
   /** Runs due async work: cron ticks, handlers, deliveries. */
   process?: boolean;
+  /**
+   * A client uploading a file to a signed URL, through the blob gateway. The gateway's answer
+   * is checked like a response: status 200 with the file's metadata, or an error status.
+   */
+  upload?: { url: string; size: number; contentType: string };
+  /** A client downloading a file from a signed URL, through the blob gateway. */
+  download?: { url: string };
   expect?: {
     status?: number;
     /** A subset of the response body: objects match by the listed keys, arrays item by item. */

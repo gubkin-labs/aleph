@@ -289,9 +289,12 @@ Manifest format `0.2` (language v0.3 features are additive). The core and SDK co
 
   Source maps make diagnostics point at your code.
 
-Platform-side capabilities aren't here yet: streaming LLM routes,
-blob storage, search and vector indexes, channel subscriptions, and real providers behind
-integrations. See the tickets in `aleph-infra/todo/platform`.
+- **Files:** buckets with size and content-type limits, signed upload and download URLs checked
+  by the core, file metadata reads and deletes, and `onUpload` handlers. `aleph dev` serves the
+  URLs locally.
+
+Platform-side capabilities aren't here yet: streaming LLM routes, search and vector indexes,
+channel subscriptions, a production blob gateway, and real providers behind integrations. See the tickets in `aleph-infra/todo/platform`.
 
 ## License
 

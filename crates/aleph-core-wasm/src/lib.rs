@@ -136,10 +136,14 @@ impl DevEngine {
         let integrations = Arc::new(MockIntegrations::new());
         let secrets = Arc::new(MemorySecrets::new());
         let store = Arc::new(MemoryStore::new());
+        // Local only: `aleph dev` serves these URLs itself, under /_aleph/blobs.
+        let blobs = aleph_core::BlobSigner::new(DEV_BLOB_BASE, DEV_BLOB_SECRET)
+            .map_err(|e| JsError::new(&e))?;
         let engine = Engine::new(valid, store.clone(), env.clone())
             .with_sink(sink.clone())
             .with_integrations(integrations.clone())
-            .with_secrets(secrets.clone());
+            .with_secrets(secrets.clone())
+            .with_blobs(blobs);
         let tenant = TenantId::new("dev").map_err(|e| JsError::new(&e.to_string()))?;
         Ok(Self {
             engine,
@@ -244,12 +248,55 @@ impl DevEngine {
         to_json(&self.integrations.take_calls())
     }
 
+    /// Accepts an upload of `size` bytes of `content_type` to a signed URL at time `now_ms`, as
+    /// a blob gateway would: `{ ok: true, info }` once recorded (the bucket's upload handlers
+    /// then run on `process`), or `{ ok: false, status, message }`. Store the bytes only on `ok`.
+    #[wasm_bindgen(js_name = receiveUpload)]
+    pub fn receive_upload(&self, url: &str, size: f64, content_type: &str, now_ms: f64) -> String {
+        self.env.set_now(ms(now_ms));
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "sizes are whole, non-negative JS numbers"
+        )]
+        let size = size.max(0.0) as u64;
+        blob_result(
+            self.engine
+                .receive_upload(url, size, content_type)
+                .map(|(_, info)| info),
+        )
+    }
+
+    /// Checks a signed download URL at time `now_ms`: `{ ok: true, info }` with the file's
+    /// metadata (serve its bytes with `info.contentType`), or `{ ok: false, status, message }`.
+    #[wasm_bindgen(js_name = authorizeDownload)]
+    pub fn authorize_download(&self, url: &str, now_ms: f64) -> String {
+        self.env.set_now(ms(now_ms));
+        blob_result(self.engine.authorize_download(url).map(|(_, info)| info))
+    }
+
     /// Handles a request (JSON) at time `now_ms` and returns the response (JSON).
     pub fn handle(&self, request_json: &str, now_ms: f64) -> Result<String, JsError> {
         let request: Request = serde_json::from_str(request_json)
             .map_err(|e| JsError::new(&format!("invalid request: {e}")))?;
         self.env.set_now(ms(now_ms));
         Ok(to_json(&self.engine.handle(&self.tenant, &request)))
+    }
+}
+
+/// Where `aleph dev` serves blob URLs.
+const DEV_BLOB_BASE: &str = "/_aleph/blobs";
+/// The dev engine's blob signing key. Local only: dev URLs never leave the developer's machine.
+const DEV_BLOB_SECRET: &[u8] = b"aleph-dev-blob-signing-key";
+
+fn blob_result(result: Result<aleph_core::BlobInfo, aleph_core::BlobRejection>) -> String {
+    match result {
+        Ok(info) => to_json(&serde_json::json!({ "ok": true, "info": info })),
+        Err(rejection) => to_json(&serde_json::json!({
+            "ok": false,
+            "status": rejection.status,
+            "message": rejection.message,
+        })),
     }
 }
 

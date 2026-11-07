@@ -136,6 +136,29 @@ describe.each(cases)("case %s", (name) => {
         }
         return;
       }
+      if (step.upload || step.download) {
+        const result = step.upload
+          ? engine.receiveUpload(
+              substitute(step.upload.url, vars) as string,
+              step.upload.size,
+              step.upload.contentType,
+              now,
+            )
+          : engine.authorizeDownload(substitute(step.download?.url, vars) as string, now);
+        // The gateway's answer, as the Rust runner sees it.
+        const [status, body] = result.ok
+          ? [200, result.info]
+          : [result.status, { message: result.message }];
+        const expectation = step.expect ?? {};
+        if (expectation.status !== undefined) {
+          expect(status, `${where}: ${JSON.stringify(body)}`).toBe(expectation.status);
+        }
+        if (expectation.body !== undefined) {
+          const mismatch = subsetMismatch(substitute(expectation.body, vars), body);
+          expect(mismatch, `${where}: ${JSON.stringify(body)}`).toBeUndefined();
+        }
+        return;
+      }
       const request = substitute(step.request, vars) as Request;
       const response: Response = engine.handle(request, now);
       const expectation = step.expect ?? {};

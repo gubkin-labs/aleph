@@ -18,8 +18,8 @@ mod expr;
 mod plan;
 
 pub use effects::{
-    Change, ChannelDecl, CronScan, CronSchedule, EventDecl, Handler, Integration, IntegrationOp,
-    OpMode, QueueDecl, Trigger, WorkflowDecl,
+    BucketDecl, Change, ChannelDecl, CronScan, CronSchedule, EventDecl, Handler, Integration,
+    IntegrationOp, OpMode, QueueDecl, Trigger, WorkflowDecl,
 };
 
 pub use expr::{
@@ -73,6 +73,13 @@ pub struct Manifest {
         ts(as = "Option<BTreeMap<String, ChannelDecl>>", optional)
     )]
     pub channels: BTreeMap<String, ChannelDecl>,
+    /// File buckets, by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cfg_attr(
+        feature = "codegen",
+        ts(as = "Option<BTreeMap<String, BucketDecl>>", optional)
+    )]
+    pub buckets: BTreeMap<String, BucketDecl>,
     /// Declared integrations, by name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[cfg_attr(

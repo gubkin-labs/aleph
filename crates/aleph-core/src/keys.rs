@@ -30,6 +30,7 @@ const SCHEDULES: &str = "s";
 const USERS: &str = "u";
 const JOBS: &str = "j";
 const WORKFLOWS: &str = "w";
+const BLOBS: &str = "b";
 
 /// A tenant (app) identifier: 1–64 characters of `[A-Za-z0-9_-]`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -365,6 +366,15 @@ impl Keyspace {
     pub fn workflow(&self, workflow: &str, key: &str) -> Key {
         self.key(
             &[KeyPart::Str(WORKFLOWS), KeyPart::Str(workflow)],
+            &[KeyPart::Str(key)],
+            &[],
+        )
+    }
+
+    /// The key of a stored file's metadata.
+    pub fn blob(&self, bucket: &str, key: &str) -> Key {
+        self.key(
+            &[KeyPart::Str(BLOBS), KeyPart::Str(bucket)],
             &[KeyPart::Str(key)],
             &[],
         )

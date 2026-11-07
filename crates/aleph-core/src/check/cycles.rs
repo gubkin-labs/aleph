@@ -88,7 +88,7 @@ impl<'a> Fires<'a> {
             Trigger::Workflow { workflow, .. } => {
                 self.workflows.contains(workflow.as_str()).then_some(true)
             }
-            Trigger::DeadLetter { .. } | Trigger::Cron { .. } => None,
+            Trigger::DeadLetter { .. } | Trigger::Cron { .. } | Trigger::Upload { .. } => None,
         }
     }
 }

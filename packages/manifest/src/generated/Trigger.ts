@@ -29,7 +29,11 @@ change: Change, } | { "kind": "queue",
 /**
  * The queue.
  */
-queue: string, } | { "kind": "deadLetter", 
+queue: string, } | { "kind": "upload", 
+/**
+ * The bucket.
+ */
+bucket: string, } | { "kind": "deadLetter", 
 /**
  * The queue.
  */

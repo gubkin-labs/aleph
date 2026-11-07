@@ -60,6 +60,7 @@ pub enum DiagnosticCode {
     InvalidExpression,
     OverBudget,
     TriggerCycle,
+    UnknownBucket,
 }
 
 /// A problem found in a manifest.

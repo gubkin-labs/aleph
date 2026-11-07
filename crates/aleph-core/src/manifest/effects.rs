@@ -64,6 +64,51 @@ pub struct ChannelDecl {
     pub message: BTreeMap<String, Field>,
 }
 
+/// A bucket of files (blobs). Clients upload and download through short-lived signed URLs, so
+/// file bytes never pass through a plan; plans see each file's metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BucketDecl {
+    /// The largest file an upload may store, in bytes (at most [`BucketDecl::MAX_BYTES`]).
+    #[cfg_attr(feature = "codegen", ts(type = "number"))]
+    pub max_bytes: u64,
+    /// Allowed content types, exact (`image/png`) or by family (`image/*`). Empty allows any.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "codegen", ts(as = "Option<Vec<String>>", optional))]
+    pub content_types: Vec<String>,
+}
+
+impl BucketDecl {
+    /// The largest file any bucket may allow: 100 MiB.
+    pub const MAX_BYTES: u64 = 100 * 1024 * 1024;
+    /// The longest file key.
+    pub const MAX_KEY_LEN: u32 = 512;
+    /// The longest content type.
+    pub const MAX_CONTENT_TYPE_LEN: u32 = 255;
+    /// The longest signed URL the core produces.
+    pub const MAX_URL_LEN: u32 = 8192;
+    /// How long a signed URL lasts unless the plan says otherwise: 15 minutes.
+    pub const DEFAULT_EXPIRES_S: u32 = 900;
+    /// The longest a signed URL may last: 7 days.
+    pub const MAX_EXPIRES_S: u32 = 7 * 24 * 3600;
+
+    /// Whether the bucket accepts files of `content_type`.
+    pub fn allows(&self, content_type: &str) -> bool {
+        let content_type = content_type.trim().to_ascii_lowercase();
+        self.content_types.is_empty()
+            || self.content_types.iter().any(|allowed| {
+                let allowed = allowed.to_ascii_lowercase();
+                match allowed.strip_suffix("/*") {
+                    Some(family) => content_type
+                        .split_once('/')
+                        .is_some_and(|(f, sub)| f == family && !sub.is_empty()),
+                    None => content_type == allowed,
+                }
+            })
+    }
+}
+
 /// A declared integration: the only way plans reach the outside world.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "codegen", derive(schemars::JsonSchema, ts_rs::TS))]
@@ -182,6 +227,12 @@ pub enum Trigger {
     Queue {
         /// The queue.
         queue: String,
+    },
+    /// A file finished uploading to a bucket. The payload is the file's metadata:
+    /// `{ key, size, contentType, uploadedAt }`.
+    Upload {
+        /// The bucket.
+        bucket: String,
     },
     /// A job that failed every retry.
     DeadLetter {
