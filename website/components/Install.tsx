@@ -2,10 +2,15 @@
 
 import { useState } from "react";
 
+// Alpha releases are tarballs on GitHub, not npm packages yet.
+const RELEASE = "https://github.com/gubkin-labs/aleph/releases/latest/download";
+const SDK = `${RELEASE}/aleph-sdk.tgz`;
+const CLI = `${RELEASE}/aleph-cli.tgz`;
+
 const TABS: [string, string][] = [
-  ["npm", "npm install @aleph/sdk && npm install -D @aleph/cli"],
-  ["pnpm", "pnpm add @aleph/sdk && pnpm add -D @aleph/cli"],
-  ["bun", "bun add @aleph/sdk && bun add -d @aleph/cli"],
+  ["npm", `npm install ${SDK} && npm install -D ${CLI}`],
+  ["pnpm", `pnpm add ${SDK} && pnpm add -D ${CLI}`],
+  ["bun", `bun add ${SDK} && bun add -d ${CLI}`],
   [
     "from source",
     "git clone https://github.com/gubkin-labs/aleph.git && cd aleph && pnpm install && pnpm build",
@@ -51,11 +56,10 @@ export function Install() {
           [ {copied ? "copied" : "copy"} ]
         </button>
       </div>
-      {tab < 3 && (
-        <p className="install-note">
-          TBD: the packages aren't on npm yet. Use “from source” for now.
-        </p>
-      )}
+      <p className="install-note">
+        Alpha: not ready for production, and it will change between releases. Installs from the
+        latest GitHub release.
+      </p>
     </div>
   );
 }

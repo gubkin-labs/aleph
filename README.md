@@ -5,6 +5,24 @@ The SDK compiles that into a versioned **manifest**, and a platform runs the man
 infrastructure. Every operation is bounded, so thousands of apps can share the same processes and
 databases safely.
 
+> [!WARNING]
+> **Alpha.** Aleph is an early alpha and isn't ready for production. The language, the manifest
+> format, and the packages will change without notice between releases.
+
+## Install
+
+The packages aren't on npm yet. Install them from the latest [GitHub release](https://github.com/gubkin-labs/aleph/releases), in a
+project on Node.js 24 or later:
+
+```bash
+npm install https://github.com/gubkin-labs/aleph/releases/latest/download/aleph-sdk.tgz
+npm install --save-dev https://github.com/gubkin-labs/aleph/releases/latest/download/aleph-cli.tgz
+```
+
+Then follow the [quickstart](https://aleph-lang.vercel.app/docs/quickstart/).
+
+## What's here
+
 This repository is the open-source half of Aleph:
 
 | Path | What it is |
@@ -203,6 +221,19 @@ pnpm verify       # every check: rustfmt, clippy, cargo test, codegen check, Bio
 ```
 
 There's no hosted CI for now: run `pnpm verify` before pushing.
+
+### Releasing
+
+Releases are manual. In GitHub, open **Actions → Release → Run workflow** and enter a version like
+`0.1.0-alpha.1`. The workflow runs the same checks as `pnpm verify`, packs `@aleph/manifest`,
+`@aleph/core`, `@aleph/sdk`, and `@aleph/cli` into tarballs (`scripts/release-pack.mjs`), and
+publishes them on a GitHub release tagged `v<version>`, marked as the latest. Each tarball depends on
+the others from the same release, so installing the SDK and the CLI by URL brings matching versions
+of the rest. To try the tarballs locally first:
+
+```bash
+pnpm build && node scripts/release-pack.mjs --version 0.0.0-local --base-url "file:$PWD/release"
+```
 
 | Task | Command |
 |---|---|

@@ -4,16 +4,16 @@ In five minutes: write a small backend, see its worst-case usage, add an example
 
 ## Install
 
-Aleph is two npm packages: the SDK you write apps with, and the CLI that checks, tests, and serves them. Both bundle the WebAssembly build of the core, so there's nothing else to install.
+<Alpha />
+
+Aleph is two packages: the SDK you write apps with, and the CLI that checks, tests, and serves them. They aren't on npm yet, so install them from the latest [GitHub release](https://github.com/gubkin-labs/aleph/releases). The CLI brings the WebAssembly build of the core with it, so there's nothing else to install.
 
 ```bash
-npm install @aleph/sdk
-npm install --save-dev @aleph/cli
+npm install https://github.com/gubkin-labs/aleph/releases/latest/download/aleph-sdk.tgz
+npm install --save-dev https://github.com/gubkin-labs/aleph/releases/latest/download/aleph-cli.tgz
 ```
 
-<Tbd>
-The packages aren't published to npm yet. Until they are, use them from a clone of the repository (below). Publishing is a manual step for the maintainers: the `@aleph` npm scope, the package versions, and a release workflow.
-</Tbd>
+`latest` is the newest release when you install. To pin one, use its version instead, like `https://github.com/gubkin-labs/aleph/releases/download/v0.1.0-alpha.1/aleph-sdk.tgz`. pnpm and bun take the same URLs.
 
 Requirements:
 - **Node.js 24 or newer.** The CLI loads `app.ts` with Node's built-in TypeScript support, so there's no separate build step.

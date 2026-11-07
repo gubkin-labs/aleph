@@ -15,3 +15,4 @@ website/next-env.d.ts
 website/test/.samples-*/
 website/test/snippets/generated/
 website/tsconfig.tsbuildinfo
+release/
