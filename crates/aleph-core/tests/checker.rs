@@ -1318,3 +1318,136 @@ fn int_range_bounds_on_a_decimal_index_compare_as_decimals() {
     );
     assert_eq!(in_range(json!({ "lt": lit(json!(2)) })), json!(["p1"]));
 }
+
+/// Queues `a` and `b` (payload `i`), each with a handler that runs `body(queue)`.
+fn two_queues(body: impl Fn(&str) -> Vec<Json>, max_depth: Option<u32>) -> Json {
+    let mut m = manifest(
+        vec![let_(
+            0,
+            json!({ "op": "enqueue", "queue": "a", "payload": { "i": lit(json!(0)) } }),
+        )],
+        lit(json!(1)),
+    );
+    let payload = json!({ "payload": { "i": { "type": { "kind": "int" } } } });
+    m["queues"] = json!({ "a": payload, "b": payload });
+    let handler = |queue: &str| {
+        let mut h = json!({
+            "id": format!("job_{queue}"),
+            "trigger": { "kind": "queue", "queue": queue },
+            "errors": {},
+            "plan": { "body": body(queue), "output": lit(Json::Null) },
+        });
+        if let Some(depth) = max_depth {
+            h["maxDepth"] = json!(depth);
+        }
+        h
+    };
+    m["handlers"] = json!([handler("a"), handler("b")]);
+    m
+}
+
+/// Enqueues `queue` with `i + 1` while `i < until`.
+fn enqueue_next(queue: &str, until: i64) -> Json {
+    let i = || json!({ "kind": "input", "source": "payload", "name": "i" });
+    json!({
+        "kind": "if",
+        "cond": bin("lt", i(), lit(json!(until))),
+        "then": [let_(1, json!({ "op": "enqueue", "queue": queue, "payload": { "i": bin("add", i(), lit(json!(1))) } }))],
+        "else": [],
+    })
+}
+
+#[test]
+fn queues_that_enqueue_each_other_stop_at_their_declared_depth() {
+    // a → b → a → ... with a guard that would only stop after 20 hops, and maxDepth 3: each
+    // hand-off to the other queue is a new hop, not a continuation.
+    let m = two_queues(
+        |queue| vec![enqueue_next(if queue == "a" { "b" } else { "a" }, 20)],
+        Some(3),
+    );
+    assert_eq!(codes(&m), ok());
+    let (engine, tenant, _) = engine_for(&m);
+    assert_eq!(post(&engine, &tenant).status, 200);
+    let report = engine.process(&tenant, 100);
+    assert_eq!(report.ran, 3, "{report:#?}");
+    assert!(
+        report
+            .failures
+            .iter()
+            .any(|f| f.contains("trigger chain too deep")),
+        "{report:#?}"
+    );
+}
+
+#[test]
+fn a_queue_continues_itself_at_most_max_continuations_times() {
+    let limit = aleph_core::limits::MAX_CONTINUATIONS;
+    let m = two_queues(
+        |queue| vec![enqueue_next(queue, i64::from(limit) + 100)],
+        None,
+    );
+    let (engine, tenant, _) = engine_for(&m);
+    assert_eq!(post(&engine, &tenant).status, 200);
+    let report = engine.process(&tenant, limit + 100);
+    assert_eq!(
+        report.ran,
+        limit + 1,
+        "the first run and {limit} continuations"
+    );
+    assert_eq!(report.failures.len(), 1, "{:?}", report.failures);
+}
+
+#[test]
+fn a_workflow_input_too_large_to_store_is_refused() {
+    let mut m = manifest(
+        vec![let_(
+            0,
+            json!({
+                "op": "startWorkflow", "workflow": "w", "key": lit(json!("k")),
+                "input": { "note": json!({ "kind": "input", "source": "body", "name": "name" }) },
+            }),
+        )],
+        lit(json!(1)),
+    );
+    m["workflows"] = json!({ "w": {
+        "input": { "note": { "type": { "kind": "string", "min": 1, "max": 20 } } },
+        "start": "a",
+    } });
+    m["handlers"] = json!([{
+        "id": "w_a",
+        "trigger": { "kind": "workflow", "workflow": "w", "step": "a" },
+        "errors": {},
+        "plan": { "body": [{ "kind": "complete" }], "output": lit(Json::Null) },
+    }]);
+    let valid = parse_and_validate(&m.to_string(), &Limits::ROUTE).unwrap();
+    let tenant = TenantId::new("t").unwrap();
+    let start = |max_row_bytes: u64, note: &str| {
+        let store = Arc::new(MemoryStore::new());
+        let engine = Engine::new(valid.clone(), store.clone(), Arc::new(FixedEnv::new(1, 1)))
+            .with_runtime_limits(Limits {
+                max_row_bytes,
+                ..Limits::ROUTE
+            });
+        let status = engine
+            .handle(&tenant, &request_for(json!({ "n": 1, "name": note })))
+            .status;
+        let key = aleph_core::keys::Keyspace::new(&tenant).workflow("w", "k");
+        let stored = store
+            .entries()
+            .into_iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v.len());
+        (status, stored)
+    };
+    // The instance's stored size, then the limit exactly at it and just under it.
+    let (status, stored) = start(Limits::ROUTE.max_row_bytes, &"x".repeat(20));
+    assert_eq!(status, 200);
+    let size = u64::try_from(stored.unwrap()).unwrap();
+    assert_eq!(
+        start(size, &"x".repeat(20)).0,
+        200,
+        "an instance of exactly the limit fits"
+    );
+    assert_eq!(start(size - 1, &"x".repeat(20)).0, 500);
+    assert_eq!(start(size - 1, "x").0, 200, "a smaller input still fits");
+}
