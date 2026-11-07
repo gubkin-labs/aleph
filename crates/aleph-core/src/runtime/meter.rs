@@ -110,7 +110,8 @@ mod tests {
 
     #[test]
     fn each_charge_counts_against_its_own_resource() {
-        let mut meter = Meter::new(Limits::ROUTE);
+        // Not the default limits, so returning `Limits::default()` would be noticed.
+        let mut meter = Meter::new(Limits::JOB);
         meter.op().unwrap();
         meter.read(7).unwrap();
         meter.read(0).unwrap();
@@ -130,7 +131,7 @@ mod tests {
                 memory: 11,
             }
         );
-        assert_eq!(meter.limits(), &Limits::ROUTE);
+        assert_eq!(meter.limits(), &Limits::JOB);
     }
 
     #[test]

@@ -403,3 +403,185 @@ fn a_mistyped_write_names_the_field_kind_it_needs() {
         diags[0].message
     );
 }
+
+/// Straight-line plans (no branches, loops over full lists, rows that exist) whose worst case is
+/// what actually happens: for these, the runtime must charge exactly the static bounds on every
+/// counted resource. A checker that overcounts or a meter that undercharges both break it.
+#[test]
+#[allow(clippy::too_many_lines, reason = "one entry per plan shape")]
+fn straight_line_plans_use_exactly_their_bounds() {
+    let n = || body("n");
+    let name = || body("name");
+    let bin = |op: &str, lhs: Json, rhs: Json| json!({ "kind": "binary", "op": op, "lhs": lhs, "rhs": rhs });
+    let seeded = || let_(9, insert(item(json!({ "id": lit(json!("i0")) }))));
+    let three = || list(json!([lit(json!(1)), lit(json!(2)), n()]));
+    let exprs = [
+        ("lit", lit(json!(1))),
+        ("input", n()),
+        ("add", bin("add", n(), lit(json!(2)))),
+        (
+            "nested",
+            bin(
+                "mul",
+                bin("add", n(), lit(json!(2))),
+                bin("sub", n(), lit(json!(1))),
+            ),
+        ),
+        ("eq", bin("eq", name(), lit(json!("a")))),
+        (
+            "and",
+            bin("and", lit(json!(true)), bin("gt", n(), lit(json!(0)))),
+        ),
+        ("not", json!({ "kind": "not", "arg": lit(json!(false)) })),
+        ("neg", json!({ "kind": "neg", "arg": n() })),
+        ("isNull", json!({ "kind": "isNull", "of": n() })),
+        (
+            "select",
+            json!({ "kind": "select", "cond": lit(json!(true)), "then": n(), "else": n() }),
+        ),
+        ("object", obj(json!({ "a": n(), "b": name() }))),
+        ("list", list(json!([n(), n(), n()]))),
+        ("length", json!({ "kind": "length", "of": name() })),
+        (
+            "lower",
+            json!({ "kind": "str", "op": "lower", "of": name() }),
+        ),
+        (
+            "concat",
+            json!({ "kind": "concat", "parts": [name(), lit(json!("-")), n()] }),
+        ),
+        ("abs", json!({ "kind": "abs", "arg": n() })),
+        (
+            "truncate",
+            json!({ "kind": "truncate", "of": name(), "max": 3 }),
+        ),
+        (
+            "startsWith",
+            json!({ "kind": "strTest", "op": "startsWith", "of": name(), "arg": lit(json!("a")) }),
+        ),
+        (
+            "first",
+            json!({ "kind": "first", "of": list(json!([n()])) }),
+        ),
+        ("in", json!({ "kind": "in", "value": n(), "list": [1, 5] })),
+        ("now", json!({ "kind": "now" })),
+    ];
+    let mut plans: Vec<(String, Vec<Json>, Json)> = exprs
+        .into_iter()
+        .map(|(label, expr)| (label.to_owned(), vec![], expr))
+        .collect();
+    plans.extend([
+        ("insert".to_owned(), vec![let_(0, insert(item(json!({}))))], var(0)),
+        ("get".to_owned(), vec![seeded(), let_(0, get(lit(json!("i0"))))], var(0)),
+        (
+            "update".to_owned(),
+            vec![seeded(), let_(0, json!({ "op": "update", "entity": "Item", "key": { "id": lit(json!("i0")) }, "set": { "n": n() } }))],
+            var(0),
+        ),
+        (
+            "delete".to_owned(),
+            vec![seeded(), let_(0, json!({ "op": "delete", "entity": "Item", "key": { "id": lit(json!("i0")) } }))],
+            lit(json!(1)),
+        ),
+        ("ensure".to_owned(), vec![ensure(lit(json!(true)))], lit(json!(1))),
+        (
+            "upsert existing".to_owned(),
+            vec![seeded(), let_(0, json!({ "op": "upsert", "entity": "Item", "values": item(json!({ "id": lit(json!("i0")) })) }))],
+            var(0),
+        ),
+        (
+            "insertIfAbsent".to_owned(),
+            vec![let_(0, json!({ "op": "insertIfAbsent", "entity": "Item", "values": item(json!({})) }))],
+            var(0),
+        ),
+        (
+            "map".to_owned(),
+            vec![let_(0, json!({
+                "op": "map", "list": three(), "item": 1,
+                "body": [let_(2, json!({ "op": "eval", "expr": bin("add", var(1), n()) }))],
+                "yield": var(2),
+            }))],
+            var(0),
+        ),
+        (
+            "filter".to_owned(),
+            vec![let_(0, json!({ "op": "filter", "list": three(), "item": 1, "keep": bin("gte", var(1), lit(json!(0))) }))],
+            var(0),
+        ),
+        (
+            "forEach".to_owned(),
+            vec![json!({ "kind": "forEach", "list": three(), "item": 1, "body": [
+                let_(2, insert(item(json!({ "id": json!({ "kind": "concat", "parts": [lit(json!("x")), var(1)] }) })))),
+            ] })],
+            lit(json!(1)),
+        ),
+        (
+            "loop".to_owned(),
+            vec![let_(0, json!({
+                "op": "loop", "max": 4, "state": { "i": lit(json!(0)) }, "var": 1,
+                "body": [], "next": { "i": bin("add", field(var(1), "i"), lit(json!(1))) },
+            }))],
+            var(0),
+        ),
+        (
+            "query a full page".to_owned(),
+            vec![
+                let_(7, insert(item(json!({ "id": lit(json!("q1")) })))),
+                let_(8, insert(item(json!({ "id": lit(json!("q2")) })))),
+                let_(0, json!({ "op": "query", "entity": "Item", "limit": lit(json!(2)) })),
+            ],
+            var(0),
+        ),
+        (
+            "query a full page, descending".to_owned(),
+            vec![
+                let_(7, insert(item(json!({ "id": lit(json!("q1")) })))),
+                let_(8, insert(item(json!({ "id": lit(json!("q2")) })))),
+                let_(0, json!({ "op": "query", "entity": "Item", "limit": lit(json!(2)), "order": "desc" })),
+            ],
+            var(0),
+        ),
+        ("sum".to_owned(), vec![], json!({ "kind": "agg", "op": "sum", "list": three(), "item": 1, "value": var(1) })),
+        ("count".to_owned(), vec![], json!({ "kind": "agg", "op": "count", "list": three(), "item": 1 })),
+        ("sort".to_owned(), vec![], json!({ "kind": "sort", "list": three(), "item": 1, "by": var(1), "desc": true })),
+        ("distinct".to_owned(), vec![], json!({ "kind": "distinct", "of": three() })),
+        ("includes".to_owned(), vec![], json!({ "kind": "includes", "list": three(), "value": n() })),
+        ("listConcat".to_owned(), vec![], json!({ "kind": "listConcat", "parts": [three(), three()] })),
+        ("slice".to_owned(), vec![], json!({ "kind": "slice", "of": three(), "start": lit(json!(0)) })),
+        (
+            "log".to_owned(),
+            vec![json!({ "kind": "log", "label": "x", "value": n() })],
+            lit(json!(1)),
+        ),
+    ]);
+
+    let mut slack = Vec::new();
+    for (label, plan_body, output) in plans {
+        let m = manifest(
+            plan_body,
+            json!({ "kind": "object", "fields": { "v": output } }),
+        );
+        assert_eq!(codes(&m), ok(), "{label}");
+        let bounds = bounds(&m);
+        let r = run(&m, json!({ "n": 5, "name": "abc" }));
+        assert_eq!(r.status, 200, "{label}: {:?}", r.body);
+        let used = r.usage;
+        assert!(
+            used.fits_within(&bounds),
+            "{label}: {used:?} over {bounds:?}"
+        );
+        let counted = |c: Cost| (c.ops, c.reads, c.writes, c.effects, c.calls);
+        if counted(used) != counted(bounds) {
+            slack.push(format!(
+                "{label}: used {:?}, bounds {:?}",
+                counted(used),
+                counted(bounds)
+            ));
+        }
+    }
+    assert!(
+        slack.is_empty(),
+        "(ops, reads, writes, effects, calls):\n{}",
+        slack.join("\n")
+    );
+}
