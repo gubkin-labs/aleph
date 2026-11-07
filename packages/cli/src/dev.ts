@@ -11,7 +11,7 @@
 import { existsSync, mkdirSync, readFileSync, watch, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { dirname } from "node:path";
-import { DevEngine, validate } from "@aleph/core";
+import { DevEngine, validate } from "@aleph-lang/core";
 import type {
   Caller,
   Cost,
@@ -20,7 +20,7 @@ import type {
   Method,
   RecordedCall,
   Request,
-} from "@aleph/manifest";
+} from "@aleph-lang/manifest";
 
 const METHODS = new Set<string>(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]);
 

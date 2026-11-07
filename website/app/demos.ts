@@ -170,7 +170,7 @@ export const evolve = {
 };
 
 const MORE = [
-  'import { app, t } from "@aleph/sdk";',
+  'import { app, t } from "@aleph-lang/sdk";',
   "",
   'const a = app("blog"); // the app everything is declared on',
   "",

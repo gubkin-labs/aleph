@@ -2,7 +2,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { runExamples, validate } from "@aleph/core";
+import { runExamples, validate } from "@aleph-lang/core";
 import { describe, expect, it } from "vitest";
 
 const docs = join(import.meta.dirname, "..", "content", "docs");

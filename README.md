@@ -5,24 +5,17 @@ The SDK compiles that into a versioned **manifest**, and a platform runs the man
 infrastructure. Every operation is bounded, so thousands of apps can share the same processes and
 databases safely.
 
-> [!WARNING]
-> **Alpha.** Aleph is an early alpha and isn't ready for production. The language, the manifest
-> format, and the packages will change without notice between releases.
-
 ## Install
 
-The packages aren't on npm yet. Install them from a [GitHub release](https://github.com/gubkin-labs/aleph/releases), in a project
-on Node.js 24 or later:
+In a project on Node.js 24 or later:
 
 ```bash
-npm install https://github.com/gubkin-labs/aleph/releases/download/v0.1.0-alpha.2/aleph-sdk.tgz
-npm install --save-dev https://github.com/gubkin-labs/aleph/releases/download/v0.1.0-alpha.2/aleph-cli.tgz
+npm install @aleph-lang/sdk
+npm install --save-dev @aleph-lang/cli
 npm pkg set type=module   # Aleph apps are ES modules; new npm projects default to CommonJS
 ```
 
-To upgrade, change the version in both URLs. Use a versioned URL, not the release page's "latest"
-link: the file behind that link changes with every release, so the checksum in your lockfile stops
-matching and `npm ci` fails. Then follow the [quickstart](https://aleph-lang.vercel.app/docs/quickstart/).
+Then follow the [quickstart](https://aleph-lang.vercel.app/docs/quickstart/).
 
 ## What's here
 
@@ -33,19 +26,19 @@ This repository is the open-source half of Aleph:
 | [`crates/aleph-core`](crates/aleph-core) | The trusted core (Rust): manifest types, validator, static usage analyzer, bounded plan interpreter, runtime usage meter, tenant-isolated key encoding, and an in-memory transactional store |
 | [`crates/aleph-core-wasm`](crates/aleph-core-wasm) | `aleph-core` compiled to WASM |
 | [`crates/xtask`](crates/xtask) | Code generation: JSON Schema and TypeScript types from the Rust types |
-| [`packages/manifest`](packages/manifest) | `@aleph/manifest`: generated TypeScript types for the manifest format |
-| [`packages/core-wasm`](packages/core-wasm) | `@aleph/core`: validation, usage analysis, and a local dev engine (the Rust core, via WASM) |
-| [`packages/sdk`](packages/sdk) | `@aleph/sdk`: the TypeScript builder that produces manifests |
-| [`packages/cli`](packages/cli) | `@aleph/cli`: the `aleph` command (`build`, `check`, `test`, `client`, `dev`, `openapi`, `mcp`) |
+| [`packages/manifest`](packages/manifest) | `@aleph-lang/manifest`: generated TypeScript types for the manifest format |
+| [`packages/core-wasm`](packages/core-wasm) | `@aleph-lang/core`: validation, usage analysis, and a local dev engine (the Rust core, via WASM) |
+| [`packages/sdk`](packages/sdk) | `@aleph-lang/sdk`: the TypeScript builder that produces manifests |
+| [`packages/cli`](packages/cli) | `@aleph-lang/cli`: the `aleph` command (`build`, `check`, `test`, `client`, `dev`, `openapi`, `mcp`) |
 | [`examples`](examples) | Example apps with a minimal React UI and an inspector panel (`pnpm --filter @aleph-examples/shop dev`) |
-| [`website`](website) | The documentation site (Next.js, static export): `pnpm --filter @aleph/website dev` |
+| [`website`](website) | The documentation site (Next.js, static export): `pnpm --filter @aleph-lang/website dev` |
 | [`conformance`](conformance) | Golden apps, manifests, bounds, and request scenarios that the SDK, WASM, and native core must all agree on |
 | [`schema`](schema) | `manifest.schema.json`, for third-party SDKs and platforms |
 
 ## A taste
 
 ```ts
-import { app, err, t } from "@aleph/sdk";
+import { app, err, t } from "@aleph-lang/sdk";
 
 const a = app("projects", { roles: ["owner", "admin", "member"], apiKeyScopes: ["projects:read"] });
 
@@ -190,13 +183,13 @@ See [`conformance/cases`](conformance/cases) for complete apps:
 ## How it fits together
 
 ```
-app.ts ──@aleph/sdk──▶ manifest.json ──aleph-core──▶ validated plan ──▶ Engine::handle(tenant, request)
+app.ts ──@aleph-lang/sdk──▶ manifest.json ──aleph-core──▶ validated plan ──▶ Engine::handle(tenant, request)
                                        (types, scopes,               (one optimistic transaction,
                                         worst-case usage)             metered, tenant-prefixed keys)
 ```
 
 - **One core, everywhere.** `aleph-core` runs natively in the platform and as WASM in the toolchain
-  (`@aleph/core`), so local results and production results come from the same code.
+  (`@aleph-lang/core`), so local results and production results come from the same code.
 - **One source of truth for the format.** The Rust types generate the JSON Schema and the TypeScript
   types. `pnpm verify` fails if the generated files are stale.
 - **One conformance suite.** The same golden files run through the SDK, the WASM build, and the
@@ -228,16 +221,17 @@ There's no hosted CI for now: run `pnpm verify` before pushing.
 ### Releasing
 
 Releases are manual. In GitHub, open **Actions → Release → Run workflow** and enter a version like
-`0.1.0-alpha.1`. The workflow runs the same checks as `pnpm verify`, packs `@aleph/manifest`,
-`@aleph/core`, `@aleph/sdk`, and `@aleph/cli` into tarballs (`scripts/release-pack.mjs`), and
-publishes them on a GitHub release tagged `v<version>`. Each tarball depends on the others from the
-same release, so installing the SDK and the CLI by URL brings matching versions of the rest. Last,
-it commits "Point install docs at v<version>" to the branch it ran on
-(`scripts/set-release-version.mjs`), so the README, the quickstart, and the homepage install the new
-release by its versioned URL. To try the tarballs locally first:
+`0.1.0`. The workflow runs the same checks as `pnpm verify`, packs `@aleph-lang/manifest`,
+`@aleph-lang/core`, `@aleph-lang/sdk`, and `@aleph-lang/cli` (`scripts/release-pack.mjs`), publishes
+them to npm with provenance, and creates a GitHub release tagged `v<version>`. The packages depend
+on each other at the exact same version. A prerelease version like `0.2.0-beta.1` goes to the npm
+tag `next`, so `npm install` keeps getting the latest stable release.
+
+Publishing needs an `NPM_TOKEN` repository secret: an npm granular access token that can publish to
+the `@aleph-lang` scope. To check the packages locally first:
 
 ```bash
-pnpm build && node scripts/release-pack.mjs --version 0.0.0-local --base-url "file:$PWD/release"
+pnpm build && node scripts/release-pack.mjs --version 0.0.0-local
 ```
 
 | Task | Command |
@@ -245,7 +239,7 @@ pnpm build && node scripts/release-pack.mjs --version 0.0.0-local --base-url "fi
 | Format and auto-fix TS/JSON | `pnpm fix` |
 | Format Rust | `cargo fmt --all` |
 | Regenerate the schema and TS types after changing Rust manifest types | `pnpm codegen` |
-| Rewrite golden conformance files after an intended change | `pnpm --filter @aleph/conformance update` |
+| Rewrite golden conformance files after an intended change | `pnpm --filter @aleph-lang/conformance update` |
 
 Workspace packages resolve to their TypeScript sources through the `@aleph/source` export
 condition, so tests and typechecking don't need a build. Published packages use `dist/`.

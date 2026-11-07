@@ -2,7 +2,7 @@
  * Expressions. An `Expr<T>` stands for a value of type `T` that only exists when the plan runs,
  * so it has methods instead of operators: `a.plus(b).gte(c)`, not `a + b >= c`.
  */
-import type { BinaryOp, Expr as Node, Rounding, TimePart, TimeUnit } from "@aleph/manifest";
+import type { BinaryOp, Expr as Node, Rounding, TimePart, TimeUnit } from "@aleph-lang/manifest";
 import { List } from "./data.js";
 import type { Decimal } from "./fields.js";
 import { toLiteral, toNode } from "./node.js";

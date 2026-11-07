@@ -8,7 +8,7 @@
  * Each step is its own bounded transaction, with state carried between them. Routes start
  * instances, signal them, read their status, and cancel them.
  */
-import { app, err, t } from "@aleph/sdk";
+import { app, err, t } from "@aleph-lang/sdk";
 
 const a = app("fulfillment");
 

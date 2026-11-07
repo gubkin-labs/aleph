@@ -1,17 +1,23 @@
-# Publishes an alpha release: the SDK, CLI, and their dependencies as tarballs on a GitHub release.
-# Run it by hand from the Actions tab ("Release" → "Run workflow"). Nothing runs automatically.
+# Publishes a release to npm: @aleph-lang/manifest, core, sdk, and cli, then a GitHub release with
+# the notes. Run it by hand from the Actions tab ("Release" → "Run workflow"). Nothing runs
+# automatically.
+#
+# Needs an `NPM_TOKEN` repository secret: an npm granular access token that can publish to the
+# @aleph-lang scope. (With npm trusted publishing configured for each package instead, the token
+# can be removed.)
 name: Release
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release, like 0.1.0-alpha.1 (tagged v<version>)"
+        description: 'Version to release, like 0.1.0 (tagged v<version>). A prerelease like 0.2.0-beta.1 is published under the npm tag "next".'
         required: true
         type: string
 
 permissions:
-  contents: write
+  contents: write # the GitHub release and its tag
+  id-token: write # npm provenance: links each package to this workflow run
 
 concurrency:
   group: release
@@ -30,7 +36,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::version must look like 0.1.0-alpha.1, got '$VERSION'"
+            echo "::error::version must look like 0.1.0, got '$VERSION'"
             exit 1
           fi
           if gh release view "v$VERSION" >/dev/null 2>&1; then
@@ -43,6 +49,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+          registry-url: https://registry.npmjs.org
 
       - name: Install Rust (from rust-toolchain.toml)
         run: rustup show active-toolchain || rustup toolchain install
@@ -59,27 +66,31 @@ jobs:
       - name: Pack
         run: node scripts/release-pack.mjs --version "$VERSION" --out release
 
-      - name: Create the release
+      # Dependencies first. A package already published at this version is skipped, so a run that
+      # failed halfway can be run again with the same version.
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          TAG=latest
+          if [[ "$VERSION" == *-* ]]; then TAG=next; fi
+          while read -r file; do
+            name=$(tar -xzOf "release/$file" package/package.json | node -p "JSON.parse(require('fs').readFileSync(0)).name")
+            if npm view "$name@$VERSION" version >/dev/null 2>&1; then
+              echo "$name@$VERSION is already on npm, skipping"
+              continue
+            fi
+            npm publish "release/$file" --access public --provenance --tag "$TAG"
+          done < release/publish-order.txt
+
+      - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v$VERSION" release/*.tgz \
+          PRERELEASE=""
+          if [[ "$VERSION" == *-* ]]; then PRERELEASE="--prerelease"; fi
+          gh release create "v$VERSION" \
             --target "$GITHUB_SHA" \
-            --title "Aleph v$VERSION (alpha)" \
+            --title "Aleph v$VERSION" \
             --notes-file release/RELEASE_NOTES.md \
-            --latest
-
-      # Install instructions use versioned URLs (a lockfile pins each tarball's checksum), so point
-      # them at the release that was just published.
-      - name: Point the install docs at this release
-        run: |
-          node scripts/set-release-version.mjs "$VERSION"
-          if git diff --quiet; then
-            echo "install docs already point at v$VERSION"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "Point install docs at v$VERSION"
-          git pull --rebase origin "$GITHUB_REF_NAME"
-          git push origin "HEAD:$GITHUB_REF_NAME"
+            $PRERELEASE

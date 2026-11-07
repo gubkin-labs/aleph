@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-/** Anything with a deterministic `toJSON()`, like an `@aleph/sdk` app. */
+/** Anything with a deterministic `toJSON()`, like an `@aleph-lang/sdk` app. */
 interface Buildable {
   toJSON(options?: { sourceMap?: boolean }): string;
 }
@@ -70,7 +70,7 @@ export async function loadManifest(
   }
   if (!isBuildable(module.default)) {
     throw new LoadError(
-      `${path} must \`export default\` an app created with app() from @aleph/sdk`,
+      `${path} must \`export default\` an app created with app() from @aleph-lang/sdk`,
     );
   }
   return module.default.toJSON({ sourceMap: options.sourceMap ?? false });

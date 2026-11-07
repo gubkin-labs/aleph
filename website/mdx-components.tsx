@@ -12,23 +12,6 @@ function Note({ children, title = "Note" }: { children: ReactNode; title?: strin
   );
 }
 
-/** The alpha warning: not ready for production, and things will change. */
-function Alpha({ children }: { children?: ReactNode }) {
-  return (
-    <aside className="callout callout-tbd">
-      <strong>Alpha</strong>
-      <div>
-        {children ?? (
-          <p>
-            Aleph is an early alpha and isn't ready for production. The language, the manifest
-            format, and the packages will change without notice between releases.
-          </p>
-        )}
-      </div>
-    </aside>
-  );
-}
-
 /** Something the maintainers still have to do by hand (publishing, hosting, ...). */
 function Tbd({ children }: { children: ReactNode }) {
   return (
@@ -65,7 +48,6 @@ export function useMDXComponents(components: MDXComponents): MDXComponents {
     },
     Note,
     Tbd,
-    Alpha,
     Cards,
     Card,
   };

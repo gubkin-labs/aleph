@@ -1,4 +1,4 @@
-/** `@aleph/cli`: the commands behind the `aleph` binary, usable programmatically. */
+/** `@aleph-lang/cli`: the commands behind the `aleph` binary, usable programmatically. */
 export { check, formatDiagnostics, formatEvolution, formatReport } from "./check.js";
 export { generateClient, inputType, schemaType } from "./client.js";
 export {

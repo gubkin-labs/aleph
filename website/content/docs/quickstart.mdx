@@ -4,13 +4,11 @@ In five minutes: write a small backend, see its worst-case usage, add an example
 
 ## Install
 
-<Alpha />
-
-Aleph is two packages: the SDK you write apps with, and the CLI that checks, tests, and serves them. They aren't on npm yet, so install them from a [GitHub release](https://github.com/gubkin-labs/aleph/releases). The CLI brings the WebAssembly build of the core with it, so there's nothing else to install.
+Aleph is two npm packages: the SDK you write apps with, and the CLI that checks, tests, and serves them. The CLI brings the WebAssembly build of the core with it, so there's nothing else to install.
 
 ```bash
-npm install https://github.com/gubkin-labs/aleph/releases/download/v0.1.0-alpha.2/aleph-sdk.tgz
-npm install --save-dev https://github.com/gubkin-labs/aleph/releases/download/v0.1.0-alpha.2/aleph-cli.tgz
+npm install @aleph-lang/sdk
+npm install --save-dev @aleph-lang/cli
 ```
 
 Aleph apps are ES modules. New npm projects say `"type": "commonjs"` in package.json, so switch yours to modules:
@@ -18,8 +16,6 @@ Aleph apps are ES modules. New npm projects say `"type": "commonjs"` in package.
 ```bash
 npm pkg set type=module
 ```
-
-pnpm and bun take the same URLs. To upgrade, change the version in both. Always install a versioned URL, not the release page's "latest" link: the file behind that link changes with every release, so the checksum in your lockfile stops matching and `npm ci` fails.
 
 Requirements:
 - **Node.js 24 or newer.** The CLI loads `app.ts` with Node's built-in TypeScript support, so there's no separate build step.
@@ -34,7 +30,7 @@ pnpm install
 pnpm build
 ```
 
-The `aleph` command is then available from `packages/cli` (`pnpm --filter @aleph/cli exec aleph --help`), and the example apps under `examples/` use the packages directly. Building from source also needs a Rust toolchain with the `wasm32-unknown-unknown` target and `wasm-bindgen-cli`; see [Contributing](/docs/contributing/).
+The `aleph` command is then available from `packages/cli` (`pnpm --filter @aleph-lang/cli exec aleph --help`), and the example apps under `examples/` use the packages directly. Building from source also needs a Rust toolchain with the `wasm32-unknown-unknown` target and `wasm-bindgen-cli`; see [Contributing](/docs/contributing/).
 
 ### Check your setup
 
@@ -47,7 +43,7 @@ npx aleph --help
 Create `app.ts`:
 
 ```ts
-import { app, err, t } from "@aleph/sdk";
+import { app, err, t } from "@aleph-lang/sdk";
 
 const a = app("notes");
 

@@ -15,7 +15,7 @@ import type {
   Expr as Node,
   QueueDecl,
   Trigger,
-} from "@aleph/manifest";
+} from "@aleph-lang/manifest";
 import {
   type Accessor,
   type Entity,

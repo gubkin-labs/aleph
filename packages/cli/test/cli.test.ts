@@ -32,7 +32,10 @@ describe("aleph build", () => {
     // imports itself, so the CLI has to be checked against Node's message directly.)
     const dir = mkdtempSync(join(tmpdir(), "aleph-cli-"));
     writeFileSync(join(dir, "package.json"), '{ "type": "commonjs" }\n');
-    writeFileSync(join(dir, "app.ts"), 'import { app } from "@aleph/sdk";\nexport default app;\n');
+    writeFileSync(
+      join(dir, "app.ts"),
+      'import { app } from "@aleph-lang/sdk";\nexport default app;\n',
+    );
     const node = spawnSync(process.execPath, [join(dir, "app.ts")], { encoding: "utf8" });
     const message = node.stderr.split("\n").find((l) => l.startsWith("SyntaxError")) ?? "";
     expect(message).not.toBe("");

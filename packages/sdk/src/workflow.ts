@@ -15,7 +15,7 @@
  * }, { onFail: "refund" });
  * ```
  */
-import type { ErrorDecl, Handler, WorkflowDecl } from "@aleph/manifest";
+import type { ErrorDecl, Handler, WorkflowDecl } from "@aleph-lang/manifest";
 import {
   type Accessor,
   ErrorRef,

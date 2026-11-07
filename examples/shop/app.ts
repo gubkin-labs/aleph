@@ -4,7 +4,7 @@
  * email to the customer's address from the user directory, a running revenue sum, and an hourly
  * cron that expires stale pending orders.
  */
-import { app, err, t } from "@aleph/sdk";
+import { app, err, t } from "@aleph-lang/sdk";
 
 const a = app("shop", { profile: { email: t.string().max(200) } });
 

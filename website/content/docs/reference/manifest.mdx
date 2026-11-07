@@ -46,11 +46,11 @@ A **plan** has a `body` of statements and an `output` expression:
 
 ## Schema and types
 
-The JSON Schema is `schema/manifest.schema.json` in the repository. TypeScript types are in `@aleph/manifest`. Both are generated from the Rust types in `aleph-core`, which are the single source of truth.
+The JSON Schema is `schema/manifest.schema.json` in the repository. TypeScript types are in `@aleph-lang/manifest`. Both are generated from the Rust types in `aleph-core`, which are the single source of truth.
 
 ## Running a manifest
 
-Any host that embeds `aleph-core` can run a manifest: validate it, then hand requests to the engine, which takes the tenant, a request, a store, and an environment. The WebAssembly build (`@aleph/core`) runs it in Node, with `validate`, `runExamples`, `compareManifests`, and `DevEngine`. A conformance suite of golden manifests and request scenarios defines the expected behavior for every implementation.
+Any host that embeds `aleph-core` can run a manifest: validate it, then hand requests to the engine, which takes the tenant, a request, a store, and an environment. The WebAssembly build (`@aleph-lang/core`) runs it in Node, with `validate`, `runExamples`, `compareManifests`, and `DevEngine`. A conformance suite of golden manifests and request scenarios defines the expected behavior for every implementation.
 
 <Tbd>
 The format is labeled `0.2` while the language is pre-1.0. Before the first public release, freeze the format, bump its version, and publish a stability policy here.

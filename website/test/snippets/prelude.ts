@@ -2,7 +2,7 @@
  * Names the docs' code fragments refer to, with their real SDK types, so every fragment can be
  * type-checked against the actual API (see test/snippets.test.ts).
  */
-import { app, err, t } from "@aleph/sdk";
+import { app, err, t } from "@aleph-lang/sdk";
 
 export const a = app("docs", {
   roles: ["owner", "admin", "member"],

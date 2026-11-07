@@ -6,7 +6,7 @@ import {
   type Manifest,
   type Route,
   type Verify,
-} from "@aleph/manifest";
+} from "@aleph-lang/manifest";
 import {
   type Accessor,
   type ComputedGroup,

@@ -1,5 +1,12 @@
 /** OpenAPI and MCP descriptions generated from a manifest. */
-import type { CheckReport, Field, FieldType, Manifest, Route, TypeSchema } from "@aleph/manifest";
+import type {
+  CheckReport,
+  Field,
+  FieldType,
+  Manifest,
+  Route,
+  TypeSchema,
+} from "@aleph-lang/manifest";
 
 type JsonSchema = Record<string, unknown>;
 

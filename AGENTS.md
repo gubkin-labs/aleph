@@ -32,7 +32,7 @@ pnpm verify
 There's no hosted CI: `pnpm verify` (`scripts/ci.sh`) is the gate, so run it before every push.
 
 If you intentionally changed SDK output or analysis results, update the golden files with
-`pnpm --filter @aleph/conformance update`, then review the diff.
+`pnpm --filter @aleph-lang/conformance update`, then review the diff.
 
 ## Conventions
 

@@ -6,13 +6,13 @@
  *    must fit within its route's static bounds.
  *
  * The Rust side (`crates/aleph-core/tests/conformance.rs`) runs the same files natively.
- * `pnpm --filter @aleph/conformance update` rewrites the golden files.
+ * `pnpm --filter @aleph-lang/conformance update` rewrites the golden files.
  */
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { compareManifests, DevEngine, runExamples, validate } from "@aleph/core";
-import type { CheckReport, Cost, Request, Response } from "@aleph/manifest";
-import type { App } from "@aleph/sdk";
+import { compareManifests, DevEngine, runExamples, validate } from "@aleph-lang/core";
+import type { CheckReport, Cost, Request, Response } from "@aleph-lang/manifest";
+import type { App } from "@aleph-lang/sdk";
 import { describe, expect, it } from "vitest";
 import {
   type Scenario,
@@ -34,7 +34,7 @@ function golden(path: string, actual: string): void {
     writeFileSync(path, actual);
     return;
   }
-  expect(actual, `${path} is stale; run \`pnpm --filter @aleph/conformance update\``).toBe(
+  expect(actual, `${path} is stale; run \`pnpm --filter @aleph-lang/conformance update\``).toBe(
     readFileSync(path, "utf8"),
   );
 }

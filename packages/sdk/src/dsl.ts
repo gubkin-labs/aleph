@@ -3,7 +3,7 @@
  * time, so plans use these instead.
  */
 
-import type { Expr as Node, Stmt } from "@aleph/manifest";
+import type { Expr as Node, Stmt } from "@aleph-lang/manifest";
 import {
   bind,
   type ErrorRef,

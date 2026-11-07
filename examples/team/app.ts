@@ -2,7 +2,7 @@
  * A team SaaS: org roles and API keys, case-insensitive unique emails, seat limits by plan,
  * idempotent invites, a last-owner guard, and a route exposed as an MCP tool.
  */
-import { type App, app, err, t } from "@aleph/sdk";
+import { type App, app, err, t } from "@aleph-lang/sdk";
 
 const a: App<"owner" | "admin" | "member", "members:read"> = app("team", {
   roles: ["owner", "admin", "member"],

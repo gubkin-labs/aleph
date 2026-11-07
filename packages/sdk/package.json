@@ -1,5 +1,5 @@
 {
-  "name": "@aleph/sdk",
+  "name": "@aleph-lang/sdk",
   "version": "0.1.0",
   "description": "Declare Aleph backends in TypeScript and build them into manifests",
   "license": "Apache-2.0",
@@ -21,9 +21,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@aleph/manifest": "workspace:*"
+    "@aleph-lang/manifest": "workspace:*"
   },
   "devDependencies": {
-    "@aleph/core": "workspace:*"
+    "@aleph-lang/core": "workspace:*"
   }
 }

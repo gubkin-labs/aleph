@@ -1,5 +1,5 @@
 /** Declared business errors: `err.notFound()`, `err.forbidden("...")`, ... */
-import type { ErrorDecl } from "@aleph/manifest";
+import type { ErrorDecl } from "@aleph-lang/manifest";
 import { type Fields, fieldSpecs } from "./fields.js";
 
 /**

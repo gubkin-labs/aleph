@@ -1,4 +1,4 @@
-import type { Manifest } from "@aleph/manifest";
+import type { Manifest } from "@aleph-lang/manifest";
 import { describe, expect, it } from "vitest";
 import {
   DevEngine,
@@ -50,7 +50,7 @@ const manifest: Manifest = {
   ],
 };
 
-describe("@aleph/core", () => {
+describe("@aleph-lang/core", () => {
   it("reports the format version and limits", () => {
     expect(formatVersion()).toBe("0.2");
     expect(defaultLimits().writes).toBe(50);

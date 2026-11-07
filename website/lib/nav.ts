@@ -113,7 +113,7 @@ export const NAV: Section[] = [
     title: "Reference",
     pages: [
       { slug: "reference/cli", title: "CLI", description: "Every aleph command and flag." },
-      { slug: "reference/sdk", title: "SDK", description: "The @aleph/sdk API." },
+      { slug: "reference/sdk", title: "SDK", description: "The @aleph-lang/sdk API." },
       {
         slug: "reference/limits",
         title: "Limits",

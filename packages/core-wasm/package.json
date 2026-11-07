@@ -1,5 +1,5 @@
 {
-  "name": "@aleph/core",
+  "name": "@aleph-lang/core",
   "version": "0.1.0",
   "description": "aleph-core compiled to WASM: manifest validation, usage analysis, and a local dev engine",
   "license": "Apache-2.0",
@@ -23,6 +23,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@aleph/manifest": "workspace:*"
+    "@aleph-lang/manifest": "workspace:*"
   }
 }

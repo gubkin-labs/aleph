@@ -8,7 +8,7 @@
  *   bounds, the async activity (handler runs, retries, deliveries, integration calls), and the
  *   app's worst-case usage report.
  */
-import type { CheckReport, Cost } from "@aleph/manifest";
+import type { CheckReport, Cost } from "@aleph-lang/manifest";
 import {
   createContext,
   type ReactNode,
@@ -201,7 +201,7 @@ export async function mock(
 // ─── Inspector ──────────────────────────────────────────────────────────────────────────────────
 
 // The dev server's activity feed (requests, runs, deliveries, logs, reloads).
-type Activity = import("@aleph/cli").Activity;
+type Activity = import("@aleph-lang/cli").Activity;
 
 type ReportResult = { ok: true; report: CheckReport } | { ok: false };
 

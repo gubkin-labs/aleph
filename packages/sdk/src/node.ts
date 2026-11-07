@@ -2,7 +2,7 @@
  * Conversion from SDK values (expressions, rows, lists, plain objects, literals) to manifest
  * expression nodes.
  */
-import type { Literal, Expr as Node } from "@aleph/manifest";
+import type { Literal, Expr as Node } from "@aleph-lang/manifest";
 import { AlephBuildError } from "./recorder.js";
 
 /**

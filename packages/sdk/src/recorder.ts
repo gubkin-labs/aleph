@@ -4,7 +4,7 @@
  */
 import { relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Expr as ExprNode, Op, Stmt } from "@aleph/manifest";
+import type { Expr as ExprNode, Op, Stmt } from "@aleph-lang/manifest";
 
 /** Thrown when the SDK is used in a way that can't produce a valid plan. */
 export class AlephBuildError extends Error {

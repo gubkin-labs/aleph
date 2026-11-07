@@ -2,7 +2,7 @@
  * A project management SaaS backend: org roles and API keys, billing plans, projects with a plan
  * limit, paginated listing, tasks, watchers, counters, and bounded bulk operations.
  */
-import { app, err, t } from "@aleph/sdk";
+import { app, err, t } from "@aleph-lang/sdk";
 
 const orgId = t.string().min(1).max(64);
 

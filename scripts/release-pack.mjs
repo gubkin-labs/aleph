@@ -1,14 +1,13 @@
 #!/usr/bin/env node
-// Packs the public packages into self-contained tarballs for a GitHub release.
+// Packs the public packages into tarballs ready for `npm publish`.
 //
-//   node scripts/release-pack.mjs --version 0.1.0-alpha.1 [--base-url URL] [--out release]
+//   node scripts/release-pack.mjs --version 0.1.0 [--out release]
 //
 // Run `pnpm build` first. Each package is staged with its built files, a README, and the license,
-// and its package.json gets the release version. Dependencies on other Aleph packages point at
-// their tarballs in the same release (`--base-url`), so installing @aleph/sdk and @aleph/cli by
-// URL pulls in matching versions of @aleph/manifest and @aleph/core. Install instructions always
-// use versioned URLs: a lockfile records each tarball's checksum, and the release page's "latest"
-// link serves a new file on every release, which would break `npm ci`.
+// and its package.json gets the release version. Dependencies on other Aleph packages become that
+// exact version, so @aleph-lang/sdk and @aleph-lang/cli always install matching versions of
+// @aleph-lang/manifest and @aleph-lang/core. Publish the tarballs in the order listed in
+// `release/publish-order.txt` (dependencies first).
 import { execFileSync } from "node:child_process";
 import {
   cpSync,
@@ -29,40 +28,28 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const { values } = parseArgs({
   options: {
     version: { type: "string" },
-    "base-url": { type: "string" },
     out: { type: "string", default: "release" },
   },
 });
 const version = values.version;
 if (!version || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {
-  throw new Error(`--version must be a semver version like 0.1.0-alpha.1, got ${version}`);
+  throw new Error(`--version must be a semver version like 0.1.0, got ${version}`);
 }
-const baseUrl = (
-  values["base-url"] ?? `https://github.com/${REPO}/releases/download/v${version}`
-).replace(/\/$/, "");
 const out = resolve(values.out);
 
 /** The packages to release, dependencies first: [directory, npm name, tarball name]. */
 const PACKAGES = [
-  ["packages/manifest", "@aleph/manifest", "aleph-manifest.tgz"],
-  ["packages/core-wasm", "@aleph/core", "aleph-core.tgz"],
-  ["packages/sdk", "@aleph/sdk", "aleph-sdk.tgz"],
-  ["packages/cli", "@aleph/cli", "aleph-cli.tgz"],
+  ["packages/manifest", "@aleph-lang/manifest", "aleph-lang-manifest.tgz"],
+  ["packages/core-wasm", "@aleph-lang/core", "aleph-lang-core.tgz"],
+  ["packages/sdk", "@aleph-lang/sdk", "aleph-lang-sdk.tgz"],
+  ["packages/cli", "@aleph-lang/cli", "aleph-lang-cli.tgz"],
 ];
-const tarballOf = new Map(PACKAGES.map(([, name, file]) => [name, `${baseUrl}/${file}`]));
+const released = new Set(PACKAGES.map(([, name]) => name));
 
-const ALPHA = [
-  "> [!WARNING]",
-  "> **Alpha.** Aleph is an early alpha and isn't ready for production. The language, the manifest",
-  "> format, and these packages will change without notice between releases.",
-].join("\n");
-
-/** Where this version's tarballs are published (even when testing with a local `--base-url`). */
-const published = (file) => `https://github.com/${REPO}/releases/download/v${version}/${file}`;
-const install = (url) => [
+const INSTALL = [
   "```bash",
-  `npm install ${url("aleph-sdk.tgz")}`,
-  `npm install -D ${url("aleph-cli.tgz")}`,
+  "npm install @aleph-lang/sdk",
+  "npm install --save-dev @aleph-lang/cli",
   "npm pkg set type=module   # Aleph apps are ES modules; new npm projects default to CommonJS",
   "```",
 ];
@@ -73,11 +60,11 @@ function readme(name, description) {
     "",
     description,
     "",
-    ALPHA,
+    "In a project on Node.js 24 or later:",
     "",
-    `Aleph isn't published to npm yet. Install this release (v${version}) from GitHub:`,
+    ...INSTALL,
     "",
-    ...install(published),
+    "Then follow the [quickstart](https://aleph-lang.vercel.app/docs/quickstart/).",
     "",
     "Docs: https://aleph-lang.vercel.app/docs/ · Source: https://github.com/gubkin-labs/aleph",
     "",
@@ -102,20 +89,19 @@ for (const [dir, name, file] of PACKAGES) {
   cpSync(join(root, "LICENSE"), join(stage, "LICENSE"));
   writeFileSync(join(stage, "README.md"), readme(name, pkg.description));
 
-  // Other Aleph packages come from this release's tarballs; dev dependencies aren't shipped.
+  // Other Aleph packages are pinned to this exact version; dev dependencies aren't shipped.
   const dependencies = Object.fromEntries(
     Object.entries(pkg.dependencies ?? {}).map(([dep, range]) => {
       if (!range.startsWith("workspace:")) return [dep, range];
-      const url = tarballOf.get(dep);
-      if (!url) throw new Error(`${name} depends on ${dep}, which isn't released`);
-      return [dep, url];
+      if (!released.has(dep)) throw new Error(`${name} depends on ${dep}, which isn't released`);
+      return [dep, version];
     }),
   );
   // The "@aleph/source" export condition points at src/, which isn't shipped.
   const exports = JSON.parse(
     JSON.stringify(pkg.exports, (key, value) => (key === "@aleph/source" ? undefined : value)),
   );
-  const released = {
+  const manifest = {
     ...pkg,
     version,
     exports,
@@ -126,9 +112,10 @@ for (const [dir, name, file] of PACKAGES) {
     homepage: "https://aleph-lang.vercel.app",
     repository: { type: "git", url: `git+https://github.com/${REPO}.git`, directory: dir },
     bugs: { url: `https://github.com/${REPO}/issues` },
+    publishConfig: { access: "public" },
   };
-  if (Object.keys(dependencies).length === 0) delete released.dependencies;
-  writeFileSync(join(stage, "package.json"), `${JSON.stringify(released, null, 2)}\n`);
+  if (Object.keys(dependencies).length === 0) delete manifest.dependencies;
+  writeFileSync(join(stage, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
   const packed = execFileSync("npm", ["pack", "--silent", "--pack-destination", out], {
     cwd: stage,
@@ -142,25 +129,24 @@ for (const [dir, name, file] of PACKAGES) {
 }
 rmSync(join(out, "stage"), { recursive: true, force: true });
 
+writeFileSync(join(out, "publish-order.txt"), `${PACKAGES.map(([, , file]) => file).join("\n")}\n`);
 writeFileSync(
   join(out, "RELEASE_NOTES.md"),
   [
-    ALPHA,
-    "",
     "## Install",
     "",
-    "In a project with Node.js 24 or later:",
+    "In a project on Node.js 24 or later:",
     "",
-    ...install(published),
-    "",
-    "To upgrade later, change the version in both URLs. Don't install the release page's \"latest\"",
-    "link: it serves a new file on every release, so your lockfile's checksum stops matching.",
+    ...INSTALL,
     "",
     "Then follow the [quickstart](https://aleph-lang.vercel.app/docs/quickstart/).",
     "",
     "## Packages",
     "",
-    ...PACKAGES.map(([, name, f]) => `- \`${name}\` ${version}: \`${f}\``),
+    ...PACKAGES.map(
+      ([, name]) =>
+        `- [\`${name}@${version}\`](https://www.npmjs.com/package/${name}/v/${version})`,
+    ),
     "",
   ].join("\n"),
 );

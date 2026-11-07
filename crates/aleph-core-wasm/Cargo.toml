@@ -1,6 +1,6 @@
 [package]
 name = "aleph-core-wasm"
-description = "WASM bindings for aleph-core, used by the Aleph CLI and @aleph/core"
+description = "WASM bindings for aleph-core, used by the Aleph CLI and @aleph-lang/core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

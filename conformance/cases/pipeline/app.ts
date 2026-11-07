@@ -3,7 +3,7 @@
  * and a dead-letter handler, live status on a realtime channel, email notifications, an
  * append-only audit log, a page-count sum, and a daily cron that purges failed documents.
  */
-import { app, err, t } from "@aleph/sdk";
+import { app, err, t } from "@aleph-lang/sdk";
 
 const orgId = t.string().min(1).max(64);
 

@@ -11,7 +11,7 @@ import type {
   IndexPart,
   Expr as Node,
   Stmt,
-} from "@aleph/manifest";
+} from "@aleph-lang/manifest";
 import { Expr, type ExprLike, type Numeric } from "./expr.js";
 import {
   type AnyField,

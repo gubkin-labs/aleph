@@ -14,7 +14,7 @@ import type {
   Route,
   RouteExample,
   Webhook,
-} from "@aleph/manifest";
+} from "@aleph-lang/manifest";
 import { type Accessor, ErrorRef, materialize, shapeOfType } from "./data.js";
 import { $ } from "./dsl.js";
 import { type FieldBuilder, type Fields, type FieldValue, fieldSpecs, t } from "./fields.js";

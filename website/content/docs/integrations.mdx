@@ -32,7 +32,7 @@ Concrete providers (HTTP, email, Stripe, ...) are implemented by the runtime tha
 ## Receiving webhooks
 
 ```ts
-import { verify } from "@aleph/sdk";
+import { verify } from "@aleph-lang/sdk";
 
 a.webhook("POST /webhooks/stripe", {
   verify: verify.stripe("STRIPE_WEBHOOK_SECRET"),

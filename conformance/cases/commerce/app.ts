@@ -9,7 +9,7 @@
  *   directory, keyed reminder jobs that are cancelled on payment, and a weekly calendar digest.
  * - **examples:** worked examples that `aleph test` runs.
  */
-import { $, app, err, t, verify } from "@aleph/sdk";
+import { $, app, err, t, verify } from "@aleph-lang/sdk";
 
 const customerId = t.string().min(1).max(64);
 const sku = t.string().min(1).max(32);

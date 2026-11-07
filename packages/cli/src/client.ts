@@ -3,7 +3,14 @@
  * route becomes a function with typed inputs, a typed result (the declared `returns`, or what the
  * checker inferred), and typed errors, so changing a route breaks the code that calls it.
  */
-import type { CheckReport, Field, FieldType, Manifest, Route, TypeSchema } from "@aleph/manifest";
+import type {
+  CheckReport,
+  Field,
+  FieldType,
+  Manifest,
+  Route,
+  TypeSchema,
+} from "@aleph-lang/manifest";
 
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 

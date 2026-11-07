@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aleph/cli": "workspace:*",
-    "@aleph/manifest": "workspace:*"
+    "@aleph-lang/cli": "workspace:*",
+    "@aleph-lang/manifest": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.3.0",

@@ -4,7 +4,7 @@
  */
 import type { Server } from "node:http";
 import { resolve } from "node:path";
-import { check, loadManifest, type MockResponse, startDevServer } from "@aleph/cli";
+import { check, loadManifest, type MockResponse, startDevServer } from "@aleph-lang/cli";
 import type { Plugin } from "vite";
 
 /** Options for {@link aleph}. */

@@ -1,5 +1,5 @@
 /**
- * `@aleph/core`: the Rust core, compiled to WASM.
+ * `@aleph-lang/core`: the Rust core, compiled to WASM.
  *
  * This is the same validator, usage analyzer, and interpreter the platform runs, so anything that
  * passes here passes in production.
@@ -17,7 +17,7 @@ import type {
   RecordedCall,
   Request,
   Response,
-} from "@aleph/manifest";
+} from "@aleph-lang/manifest";
 
 interface WasmDevEngine {
   handle(requestJson: string, nowMs: number): string;

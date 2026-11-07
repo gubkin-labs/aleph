@@ -2,7 +2,7 @@
  * A todo app: signed-in users, CRUD, cursor paging, a range query on an index, a counter, a
  * "due today" view in the user's time zone, and worked examples (`aleph test`).
  */
-import { type App, app, err, t } from "@aleph/sdk";
+import { type App, app, err, t } from "@aleph-lang/sdk";
 
 const a: App<never, never> = app("todos");
 

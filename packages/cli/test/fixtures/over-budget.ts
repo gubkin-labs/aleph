@@ -1,5 +1,5 @@
 // A deliberately invalid app: the loop can write 100 rows, over the 50-write route limit.
-import { $, type App, app, t } from "@aleph/sdk";
+import { $, type App, app, t } from "@aleph-lang/sdk";
 
 const a: App<never, never> = app("overBudget");
 const Item = a.entity("Item", {

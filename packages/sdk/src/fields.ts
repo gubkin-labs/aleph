@@ -4,7 +4,7 @@
  * Every field has a statically known maximum size. That's what lets the core bound row sizes
  * and bytes read, so `t.string()` isn't a field until it has a `.max()`.
  */
-import type { DefaultValue, Field, FieldType, Literal } from "@aleph/manifest";
+import type { DefaultValue, Field, FieldType, Literal } from "@aleph-lang/manifest";
 import { toLiteral } from "./node.js";
 import { AlephBuildError } from "./recorder.js";
 

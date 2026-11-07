@@ -1,5 +1,5 @@
 {
-  "name": "@aleph/website",
+  "name": "@aleph-lang/website",
   "private": true,
   "description": "aleph.dev: the Aleph documentation and project website",
   "type": "module",
@@ -22,8 +22,8 @@
     "shiki": "4.6.0"
   },
   "devDependencies": {
-    "@aleph/core": "workspace:*",
-    "@aleph/sdk": "workspace:*",
+    "@aleph-lang/core": "workspace:*",
+    "@aleph-lang/sdk": "workspace:*",
     "@types/mdx": "2.0.14",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0"

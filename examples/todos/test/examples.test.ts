@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { generateClient } from "@aleph/cli";
-import { runExamples, validate } from "@aleph/core";
+import { generateClient } from "@aleph-lang/cli";
+import { runExamples, validate } from "@aleph-lang/core";
 import { describe, expect, it } from "vitest";
 import app from "../app.ts";
 

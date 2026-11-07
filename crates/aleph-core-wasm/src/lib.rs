@@ -1,7 +1,7 @@
 //! WASM bindings for `aleph-core`.
 //!
 //! The interface is JSON strings in, JSON strings out. That keeps the boundary small and
-//! language-neutral: `@aleph/core` wraps it with types generated from the same Rust definitions.
+//! language-neutral: `@aleph-lang/core` wraps it with types generated from the same Rust definitions.
 
 use std::sync::Arc;
 

@@ -1,12 +1,12 @@
 /**
- * `@aleph/sdk`: declare a backend in TypeScript and build it into an Aleph manifest.
+ * `@aleph-lang/sdk`: declare a backend in TypeScript and build it into an Aleph manifest.
  *
  * Handlers run once, at build time, with symbolic values. Every operation they call is recorded
  * into a plan, and the plan, not your code, is what the platform runs.
  *
  * @example
  * ```ts
- * import { app, err, t } from "@aleph/sdk";
+ * import { app, err, t } from "@aleph-lang/sdk";
  *
  * const a = app("todo");
  * const Todo = a.entity("Todo", {

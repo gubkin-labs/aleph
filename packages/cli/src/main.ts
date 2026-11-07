@@ -1,8 +1,8 @@
 /** Command-line parsing and dispatch. */
 import { readFile, writeFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
-import { compareManifests, runExamples, validate } from "@aleph/core";
-import type { Manifest } from "@aleph/manifest";
+import { compareManifests, runExamples, validate } from "@aleph-lang/core";
+import type { Manifest } from "@aleph-lang/manifest";
 import { check, formatEvolution } from "./check.js";
 import { generateClient } from "./client.js";
 import { startDevServer } from "./dev.js";

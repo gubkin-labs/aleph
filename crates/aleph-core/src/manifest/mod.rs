@@ -1,7 +1,7 @@
 //! The manifest: the versioned, declarative contract between authoring tools and platforms.
 //!
 //! These Rust types are the **single source of truth** for the manifest format. The JSON Schema
-//! (`schema/manifest.schema.json`) and the TypeScript types (`@aleph/manifest`) are generated from
+//! (`schema/manifest.schema.json`) and the TypeScript types (`@aleph-lang/manifest`) are generated from
 //! them by `cargo xtask codegen`, so the two sides can't drift apart.
 //!
 //! A manifest is plain data. It never contains author code. Logic is expressed as a [`Plan`]: a

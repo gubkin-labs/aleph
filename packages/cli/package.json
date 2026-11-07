@@ -1,5 +1,5 @@
 {
-  "name": "@aleph/cli",
+  "name": "@aleph-lang/cli",
   "version": "0.1.0",
   "description": "The aleph CLI: build, check, and run Aleph apps locally",
   "license": "Apache-2.0",
@@ -23,10 +23,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@aleph/core": "workspace:*",
-    "@aleph/manifest": "workspace:*"
+    "@aleph-lang/core": "workspace:*",
+    "@aleph-lang/manifest": "workspace:*"
   },
   "devDependencies": {
-    "@aleph/sdk": "workspace:*"
+    "@aleph-lang/sdk": "workspace:*"
   }
 }

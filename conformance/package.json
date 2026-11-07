@@ -1,5 +1,5 @@
 {
-  "name": "@aleph/conformance",
+  "name": "@aleph-lang/conformance",
   "private": true,
   "description": "Golden manifests and scenarios that every Aleph SDK and platform must agree on",
   "type": "module",
@@ -9,8 +9,8 @@
     "update": "UPDATE_GOLDEN=1 vitest run"
   },
   "devDependencies": {
-    "@aleph/core": "workspace:*",
-    "@aleph/manifest": "workspace:*",
-    "@aleph/sdk": "workspace:*"
+    "@aleph-lang/core": "workspace:*",
+    "@aleph-lang/manifest": "workspace:*",
+    "@aleph-lang/sdk": "workspace:*"
   }
 }

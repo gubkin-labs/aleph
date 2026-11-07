@@ -2,7 +2,7 @@
  * A wallet ledger: accounts, deposits, transfers between accounts, and an append-only entry log.
  * Stresses multi-row transactions, guards, and declared errors.
  */
-import { app, err, t } from "@aleph/sdk";
+import { app, err, t } from "@aleph-lang/sdk";
 
 const a = app("ledger");
 

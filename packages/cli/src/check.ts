@@ -1,6 +1,6 @@
 /** `aleph check`: diagnostics, or a table of each route's worst-case usage. */
-import { defaultLimits, type Evolution, jobLimits, validate } from "@aleph/core";
-import type { CheckReport, Cost, Diagnostic, Limits, RouteReport } from "@aleph/manifest";
+import { defaultLimits, type Evolution, jobLimits, validate } from "@aleph-lang/core";
+import type { CheckReport, Cost, Diagnostic, Limits, RouteReport } from "@aleph-lang/manifest";
 
 /** Formats diagnostics for a terminal. */
 export function formatDiagnostics(diagnostics: Diagnostic[]): string {

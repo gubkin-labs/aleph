@@ -7,7 +7,7 @@ Aleph is open source under the Apache-2.0 license. The repository is a monorepo:
 | `crates/aleph-core` | The trusted core (Rust): manifest types, validator, usage analyzer, interpreter, meter, keyspace, in-memory store |
 | `crates/aleph-core-wasm` | The core compiled to WebAssembly |
 | `crates/xtask` | Generates the JSON Schema and TypeScript types from the Rust types |
-| `packages/manifest`, `packages/core-wasm`, `packages/sdk`, `packages/cli` | `@aleph/manifest`, `@aleph/core`, `@aleph/sdk`, `@aleph/cli` |
+| `packages/manifest`, `packages/core-wasm`, `packages/sdk`, `packages/cli` | `@aleph-lang/manifest`, `@aleph-lang/core`, `@aleph-lang/sdk`, `@aleph-lang/cli` |
 | `conformance` | Golden apps, bounds, scenarios, invalid manifests, and evolution cases |
 | `examples` | Example apps with React UIs |
 | `website` | This site (Next.js, static export) |
@@ -35,14 +35,14 @@ Run it before you push.
 ## How changes land
 
 - **The Rust types are the format.** Change them, then run `pnpm codegen`.
-- **Conformance is the contract.** An intended behavior change updates the golden files (`pnpm --filter @aleph/conformance update`), and the diff is part of the review.
+- **Conformance is the contract.** An intended behavior change updates the golden files (`pnpm --filter @aleph-lang/conformance update`), and the diff is part of the review.
 - **New language features need coverage everywhere:** the checker (types and usage), the interpreter (metered identically), the SDK, a conformance case, and docs here.
 - **Long property runs:** `PROPTEST_CASES=100000 cargo test --release -p aleph-core --test generated_plans`.
 
 ## The docs
 
 ```bash
-pnpm --filter @aleph/website dev
+pnpm --filter @aleph-lang/website dev
 ```
 
 Pages are MDX files in `website/content/docs`, and the navigation is `website/lib/nav.ts`. A test checks that every page in the navigation exists and that internal links resolve.

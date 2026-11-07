@@ -65,7 +65,7 @@ function moduleFor(page: string): { file: string; count: number } {
         .map((line) => {
           const fromApp = /^import (\w+) from "\.\.?\/app(\.ts)?";/.exec(line);
           if (fromApp) return `const ${fromApp[1]} = a;`;
-          if (/^import .* from "@aleph\/sdk";/.test(line)) return "";
+          if (/^import .* from "@aleph-lang\/sdk";/.test(line)) return "";
           if (/^import /.test(line)) {
             imports.add(line);
             return "";
@@ -94,7 +94,7 @@ describe("docs snippets", () => {
     mkdirSync(out, { recursive: true });
     writeFileSync(
       join(out, "sdk.ts"),
-      'export * from "@aleph/sdk";\nexport type Routes = Record<string, { input: unknown; output: unknown; error: unknown }>;\n',
+      'export * from "@aleph-lang/sdk";\nexport type Routes = Record<string, { input: unknown; output: unknown; error: unknown }>;\n',
     );
     const files = pages(docs)
       .map(moduleFor)

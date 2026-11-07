@@ -1,4 +1,4 @@
-import { DevEngine, validate } from "@aleph/core";
+import { DevEngine, validate } from "@aleph-lang/core";
 import { describe, expect, it } from "vitest";
 import app from "../app.ts";
 
