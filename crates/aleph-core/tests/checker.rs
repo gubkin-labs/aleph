@@ -1119,3 +1119,35 @@ fn request_for(body: Json) -> Request {
         raw_body: None,
     }
 }
+
+#[test]
+fn an_expired_row_cant_be_updated() {
+    let update = let_(
+        0,
+        json!({ "op": "update", "entity": "Item", "key": { "id": lit(json!("i0")) }, "set": { "n": body("n") } }),
+    );
+    let mut m = manifest(vec![update], lit(json!(1)));
+    m["entities"]["Item"]["fields"]["at"] = json!({ "type": { "kind": "timestamp" } });
+    m["entities"]["Item"]["ttl"] = json!({ "field": "at", "ms": 10 });
+    let mut seed_route = m["routes"][0].clone();
+    seed_route["id"] = json!("seed");
+    seed_route["path"] = json!("/seed");
+    let seed = item(json!({ "id": lit(json!("i0")), "at": { "kind": "now" } }));
+    seed_route["plan"] = json!({ "body": [let_(0, insert(seed))], "output": lit(json!(1)) });
+    m["routes"].as_array_mut().unwrap().push(seed_route);
+    let status_after = |wait_ms: i64| {
+        let (engine, tenant, env) = engine_for(&m);
+        let seeded = engine.handle(
+            &tenant,
+            &Request {
+                path: "/seed".into(),
+                ..request_for(json!({ "n": 1, "name": "a" }))
+            },
+        );
+        assert_eq!(seeded.status, 200, "{:?}", seeded.body);
+        env.advance(wait_ms);
+        post(&engine, &tenant).status
+    };
+    assert_eq!(status_after(1), 200);
+    assert_eq!(status_after(100), 404);
+}
