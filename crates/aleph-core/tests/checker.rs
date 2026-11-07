@@ -948,3 +948,174 @@ fn matching_on_anything_but_an_enum_needs_a_default_case() {
         only("non_exhaustive_match")
     );
 }
+
+fn engine_for(m: &Json) -> (Engine, TenantId, Arc<FixedEnv>) {
+    let valid =
+        parse_and_validate(&m.to_string(), &Limits::ROUTE).unwrap_or_else(|d| panic!("{d:#?}"));
+    let env = Arc::new(FixedEnv::new(1_000, 1));
+    let engine = Engine::new(valid, Arc::new(MemoryStore::new()), env.clone());
+    (engine, TenantId::new("t").unwrap(), env)
+}
+
+fn post(engine: &Engine, tenant: &TenantId) -> Response {
+    engine.handle(
+        tenant,
+        &Request {
+            method: Method::Post,
+            path: "/r".into(),
+            query: BTreeMap::new(),
+            body: Some(json!({ "n": 1, "name": "a" })),
+            caller: None,
+            ip: None,
+            idempotency_key: None,
+            headers: BTreeMap::new(),
+            raw_body: None,
+        },
+    )
+}
+
+/// The harness manifest with a queue `q` (payload `i`) whose handler `job` runs `job_body`.
+fn with_queue(route_body: Vec<Json>, job_body: Vec<Json>) -> Json {
+    let mut m = manifest(route_body, lit(json!(1)));
+    m["queues"] = json!({ "q": { "payload": { "i": { "type": { "kind": "int" } } } } });
+    m["handlers"] = json!([{
+        "id": "job",
+        "trigger": { "kind": "queue", "queue": "q" },
+        "errors": {},
+        "plan": { "body": job_body, "output": lit(Json::Null) },
+    }]);
+    m
+}
+
+fn enqueue(extra: Json) -> Json {
+    let mut op = json!({ "op": "enqueue", "queue": "q", "payload": { "i": lit(json!(0)) } });
+    for (k, v) in extra.as_object().unwrap() {
+        op[k] = v.clone();
+    }
+    op
+}
+
+#[test]
+fn enqueue_delays_are_capped_at_30_days() {
+    let status = |delay: i64| {
+        let m = with_queue(
+            vec![let_(0, enqueue(json!({ "delayMs": lit(json!(delay)) })))],
+            vec![],
+        );
+        let (engine, tenant, _) = engine_for(&m);
+        post(&engine, &tenant).status
+    };
+    let cap = 30 * 24 * 60 * 60 * 1000;
+    assert_eq!(status(0), 200);
+    assert_eq!(status(cap), 200);
+    assert_eq!(status(cap + 1), 500);
+    assert_eq!(status(-1), 500);
+}
+
+#[test]
+fn job_and_workflow_keys_are_1_to_256_bytes() {
+    let job = |key: String| {
+        let m = with_queue(
+            vec![let_(0, enqueue(json!({ "key": lit(json!(key)) })))],
+            vec![],
+        );
+        let (engine, tenant, _) = engine_for(&m);
+        post(&engine, &tenant).status
+    };
+    assert_eq!(job("k".repeat(256)), 200);
+    assert_eq!(job("k".repeat(257)), 500);
+    assert_eq!(job(String::new()), 500);
+
+    let workflow = |key: String| {
+        let mut m = manifest(
+            vec![let_(
+                0,
+                json!({ "op": "startWorkflow", "workflow": "w", "key": lit(json!(key)), "input": {} }),
+            )],
+            lit(json!(1)),
+        );
+        m["workflows"] = json!({ "w": { "input": {}, "start": "a" } });
+        m["handlers"] = json!([{
+            "id": "w_a",
+            "trigger": { "kind": "workflow", "workflow": "w", "step": "a" },
+            "errors": {},
+            "plan": { "body": [{ "kind": "complete" }], "output": lit(Json::Null) },
+        }]);
+        let (engine, tenant, _) = engine_for(&m);
+        post(&engine, &tenant).status
+    };
+    assert_eq!(workflow("k".repeat(256)), 200);
+    assert_eq!(workflow("k".repeat(257)), 500);
+    assert_eq!(workflow(String::new()), 500);
+}
+
+#[test]
+fn a_job_that_re_enqueues_its_queue_continues_past_the_chain_depth() {
+    // Each run re-enqueues the next batch until i reaches 20, more hops than `MAX_CHAIN_DEPTH`
+    // allows, but a continuation stays on its hop.
+    let i = || json!({ "kind": "input", "source": "payload", "name": "i" });
+    let again = json!({
+        "kind": "if",
+        "cond": bin("lt", i(), lit(json!(20))),
+        "then": [let_(1, json!({ "op": "enqueue", "queue": "q", "payload": { "i": bin("add", i(), lit(json!(1))) } }))],
+        "else": [],
+    });
+    let m = with_queue(vec![let_(0, enqueue(json!({})))], vec![again]);
+    let (engine, tenant, _) = engine_for(&m);
+    assert_eq!(post(&engine, &tenant).status, 200);
+    let report = engine.process(&tenant, 1_000);
+    assert_eq!(report.failures, Vec::<String>::new());
+    assert_eq!(report.ran, 21, "{report:#?}");
+}
+
+#[test]
+fn an_upsert_over_an_expired_row_starts_a_fresh_row() {
+    // Route 1 inserts `i0` tagged "old"; route `r` upserts `i0` without a tag. Over a live row
+    // the tag stays; over an expired one the row is replaced, so the tag is gone.
+    let upsert = let_(
+        0,
+        json!({ "op": "upsert", "entity": "Item", "values": item(json!({ "id": lit(json!("i0")), "at": { "kind": "now" } })) }),
+    );
+    let mut m = manifest(vec![upsert], field(var(0), "tag"));
+    m["entities"]["Item"]["fields"]["at"] = json!({ "type": { "kind": "timestamp" } });
+    m["entities"]["Item"]["ttl"] = json!({ "field": "at", "ms": 10 });
+    let seed =
+        item(json!({ "id": lit(json!("i0")), "tag": lit(json!("old")), "at": { "kind": "now" } }));
+    let mut seed_route = m["routes"][0].clone();
+    seed_route["id"] = json!("seed");
+    seed_route["path"] = json!("/seed");
+    seed_route["plan"] = json!({ "body": [let_(0, insert(seed))], "output": lit(json!(1)) });
+    m["routes"].as_array_mut().unwrap().push(seed_route);
+
+    let tag_after = |wait_ms: i64| {
+        let (engine, tenant, env) = engine_for(&m);
+        let seeded = engine.handle(
+            &tenant,
+            &Request {
+                path: "/seed".into(),
+                ..request_for(json!({ "n": 1, "name": "a" }))
+            },
+        );
+        assert_eq!(seeded.status, 200, "{:?}", seeded.body);
+        env.advance(wait_ms);
+        let r = post(&engine, &tenant);
+        assert_eq!(r.status, 200, "{:?}", r.body);
+        r.body.clone()
+    };
+    assert_eq!(tag_after(1), json!("old"));
+    assert_eq!(tag_after(100), Json::Null);
+}
+
+fn request_for(body: Json) -> Request {
+    Request {
+        method: Method::Post,
+        path: "/r".into(),
+        query: BTreeMap::new(),
+        body: Some(body),
+        caller: None,
+        ip: None,
+        idempotency_key: None,
+        headers: BTreeMap::new(),
+        raw_body: None,
+    }
+}
