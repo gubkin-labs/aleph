@@ -43,14 +43,14 @@ export default function Home() {
           ℵ
         </div>
         <h1>
-          A backend language where the worst case is known <em>before it ships.</em>
+          A language for agents to write backends that <em>scale safely.</em>
         </h1>
         <p className="lead">
-          Write your routes, data, and rules in TypeScript. Aleph counts what every route can read,
-          write, and compute, rejects what&rsquo;s unbounded, and runs the rest on shared
-          infrastructure.
+          Every Aleph route declares what it can read, write, and compute, and anything unbounded is
+          rejected before it ships. So an app can&rsquo;t flood your database or spike CPU and
+          memory, and many apps can share one runtime.
         </p>
-        <p className="tagline">Built for agents. Run on Rust.</p>
+        <p className="tagline">Write TypeScript. Run on Rust.</p>
       </section>
 
       <section className="pg-wrap" aria-label="What Aleph rules out">

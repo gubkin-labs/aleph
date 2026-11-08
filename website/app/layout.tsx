@@ -16,11 +16,11 @@ const serif = Instrument_Serif({
 export const metadata: Metadata = {
   metadataBase: new URL("https://aleph-lang.com"),
   title: {
-    default: "Aleph: a backend language where the worst case is known before it ships",
+    default: "Aleph: a language for agents to write backends that scale safely",
     template: "%s · Aleph",
   },
   description:
-    "Write your routes, data, and rules in TypeScript. Aleph counts what every route can read, write, and compute, rejects what's unbounded, and runs the rest on shared infrastructure.",
+    "Every Aleph route declares what it can read, write, and compute, and anything unbounded is rejected before it ships. So an app can't flood your database or spike CPU and memory, and many apps can share one runtime.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
