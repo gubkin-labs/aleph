@@ -29,7 +29,11 @@ export function Playground({ tabs }: { tabs: PlaygroundTab[] }) {
   const [hover, setHover] = useState(false);
 
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) setAuto(false);
+    // No autoplay with reduced motion, or on small screens, where changing the tab would make
+    // the page jump under the reader.
+    if (window.matchMedia("(prefers-reduced-motion: reduce), (max-width: 860px)").matches) {
+      setAuto(false);
+    }
     const el = frame.current;
     if (!el) return;
     const observer = new IntersectionObserver(

@@ -35,23 +35,25 @@ function Scene({
   h = 172,
   wide,
   big,
+  className,
   children,
 }: {
   aria: string;
   w?: number;
   h?: number;
   wide?: boolean;
+  className?: string;
   /** A scene that is the whole tab: it needs more room to stay readable on narrow screens. */
   big?: boolean;
   children: ReactNode;
 }) {
   return (
     <figure
-      className={["demo", "pg-scene", wide && "pg-scene-wide", big && "pg-scene-big"]
+      className={["demo", "pg-scene", wide && "pg-scene-wide", big && "pg-scene-big", className]
         .filter(Boolean)
         .join(" ")}
     >
-      <Visible>
+      <Visible threshold={big ? 0.1 : 0.6}>
         <svg viewBox={`0 0 ${w} ${h}`} className="scene" role="img" aria-label={aria}>
           {children}
         </svg>
@@ -1188,13 +1190,14 @@ const BIG_H = 570;
  * else from it: auth, database, logs, workflows, queues, files, an MCP server, an OpenAPI spec,
  * and Swagger docs. Each one appears with a sentence on why it matters.
  */
-export function BuiltInScene() {
+function BuiltInDesktop() {
   const colX = [330, 550, 770];
   const rowY = [26, 194, 362];
   return (
     <Scene
       wide
       big
+      className="pg-scene-desktop"
       w={1000}
       h={BIG_H}
       aria="Your code becomes a manifest. A platform that supports the manifest generates auth, a database, logs, workflows, queues, files, an MCP server, an OpenAPI spec, and Swagger docs from it, each with a short description of its benefit."
@@ -1245,5 +1248,76 @@ export function BuiltInScene() {
         generated from the manifest
       </Label>
     </Scene>
+  );
+}
+
+/** The same scene top to bottom, for screens too narrow for a grid of cards. */
+function BuiltInMobile() {
+  const CARD_H = 108;
+  const STEP = 118;
+  const Y0 = 146;
+  const total = Y0 + (BUILT_IN.length - 1) * STEP + CARD_H + 16;
+  return (
+    <Scene
+      big
+      className="pg-scene-mobile"
+      w={360}
+      h={total + 16}
+      aria="Your code becomes a manifest. A platform that supports the manifest generates auth, a database, logs, workflows, queues, files, an MCP server, an OpenAPI spec, and Swagger docs from it, each with a short description of its benefit."
+    >
+      <Pop t={0.2}>
+        <Doc cx={60} y={54} />
+      </Pop>
+      <line x1={80} y1={54} x2={160} y2={54} className="s-edge" />
+      <Dot x={80} y={54} t={0.7} dx={74} dur={0.6} tone="ok" />
+      <Pop t={1.2}>
+        <rect x={160} y={24} width={80} height={60} rx={8} className="s-card s-strong-card" />
+        <text x={200} y={60} textAnchor="middle" className="pg-glyph" fontSize={18}>
+          {"{ }"}
+        </text>
+      </Pop>
+      <path d="M240 54 H 330 V 130" className="s-edge" />
+      <Dot x={240} y={54} t={1.9} dx={86} dur={0.6} tone="ok" />
+      <Dot x={330} y={54} t={2.4} dx={0} dy={72} dur={0.4} tone="ok" />
+      <Label x={60} y={102}>
+        your code
+      </Label>
+      <Label x={200} y={102}>
+        manifest
+      </Label>
+      <Pop t={2.4}>
+        <rect x={10} y={130} width={340} height={total - 130} rx={10} className="pg-tx" />
+        <text x={22} y={123} className="pg-tag">
+          generated from the manifest
+        </text>
+      </Pop>
+      {BUILT_IN.map((f, i) => {
+        const y = Y0 + i * STEP;
+        return (
+          <Pop key={f.id} t={3 + i * 0.9}>
+            <rect x={24} y={y} width={312} height={CARD_H} rx={8} className="pg-tile" />
+            <FeatureIcon name={f.id} cx={68} cy={y + CARD_H / 2} />
+            <text x={110} y={y + 34} className="pg-name">
+              {f.name}
+            </text>
+            {f.lines.map((line, k) => (
+              <text key={line} x={110} y={y + 58 + k * 16} className="pg-desc">
+                {line}
+              </text>
+            ))}
+          </Pop>
+        );
+      })}
+    </Scene>
+  );
+}
+
+/** One scene on wide screens, the other on narrow ones; CSS picks. */
+export function BuiltInScene() {
+  return (
+    <div className="pg-builtin">
+      <BuiltInDesktop />
+      <BuiltInMobile />
+    </div>
   );
 }

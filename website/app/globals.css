@@ -1787,6 +1787,18 @@ body:has(main.home) .topbar nav {
   width: 100%;
 }
 
+.pg-builtin {
+  height: 100%;
+}
+
+.pg-builtin > .pg-scene {
+  height: 100%;
+}
+
+.pg-builtin > .pg-scene-mobile {
+  display: none;
+}
+
 .pg-scene.pg-scene-wide svg {
   max-width: none;
 }
@@ -2326,13 +2338,59 @@ body:has(main.home) .topbar nav {
     min-width: 500px;
   }
 
-  .pg-scene-big svg {
-    min-width: 820px;
+  /* Narrow screens get the built-in scene top to bottom instead of a grid. */
+  .pg-builtin > .pg-scene-desktop {
+    display: none;
+  }
+
+  .pg-builtin > .pg-scene-mobile {
+    display: flex;
+  }
+
+  .pg-scene.pg-scene-mobile svg {
+    min-width: 0;
+    max-width: 460px;
+  }
+
+  /* Every tab stays in view: a grid instead of a row that scrolls out of sight. */
+  .pg-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    overflow: visible;
+    background: var(--border);
   }
 
   .pg-tab {
-    flex: 1 0 auto;
-    white-space: nowrap;
-    padding: 14px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 54px;
+    background: var(--bg-soft);
+    border-right: 0;
+    padding: 10px 8px;
+    font-size: 11px;
+  }
+
+  .pg-replay {
+    grid-column: 1 / -1;
+    background: var(--bg-soft);
+    border-left: 0;
+    padding: 9px;
+    font-size: 13px;
+  }
+
+  .pg-replay::after {
+    content: " replay";
+    font: 11px var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+}
+
+@media (max-width: 520px) {
+  .pg-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
