@@ -14,8 +14,10 @@ export type PlaygroundTab = {
   label: string;
   /** How long the tab stays up before the next one, in milliseconds. */
   ms: number;
-  aleph: ReactNode;
-  other: ReactNode;
+  /** "code" is a scene over each code pane; "stack" is two scenes, one over the other. */
+  layout: "code" | "stack";
+  /** The tab's cells, each placed in the grid by its own `pg-c*` and `pg-r*` classes. */
+  body: ReactNode;
 };
 
 export function Playground({ tabs }: { tabs: PlaygroundTab[] }) {
@@ -111,14 +113,13 @@ export function Playground({ tabs }: { tabs: PlaygroundTab[] }) {
       </div>
 
       <div
-        className="pg-panes"
+        className={`pg-panes pg-${tab.layout}`}
         role="tabpanel"
         id={`pg-panel-${tab.id}`}
         aria-labelledby={`pg-tab-${tab.id}`}
         key={`${tab.id}-${replay}`}
       >
-        <div className="pg-side pg-aleph">{tab.aleph}</div>
-        <div className="pg-side pg-other">{tab.other}</div>
+        {tab.body}
       </div>
     </div>
   );

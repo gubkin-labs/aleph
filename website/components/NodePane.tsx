@@ -11,6 +11,7 @@ export function NodePane({
   start = 1,
   code,
   flag = [],
+  ribbon = true,
 }: {
   title: string;
   file: string;
@@ -18,6 +19,8 @@ export function NodePane({
   code: string[];
   /** Line numbers (in the pane's numbering) that cause the problem. */
   flag?: number[];
+  /** Show the amber "accepted" ribbon (leave it out where the tab has no verdict). */
+  ribbon?: boolean;
 }) {
   const width = String(start + code.length).length;
   return (
@@ -27,7 +30,7 @@ export function NodePane({
       </figcaption>
       <div className="editor">
         <div className="editor-tab">{file}</div>
-        <div className="ribbon ribbon-warn ribbon-late">accepted</div>
+        {ribbon && <div className="ribbon ribbon-warn ribbon-late">accepted</div>}
         <div className="editor-body">
           {code.map((text, i) => {
             const n = start + i;

@@ -1726,33 +1726,72 @@ body:has(main.home) .topbar nav {
   align-items: stretch;
 }
 
-/* Each side is a code pane over a scene; the grid lines the two scenes up in a row of their own. */
-.pg-side {
-  display: contents;
+/* Each piece names its own cell; the DOM order is the order it stacks in on narrow screens. */
+.pg-c1 {
+  grid-column: 1;
 }
 
-.pg-aleph > :first-child {
-  grid-column: 1;
+.pg-c2 {
+  grid-column: 2;
+}
+
+.pg-cw {
+  grid-column: 1 / -1;
+}
+
+.pg-r1 {
   grid-row: 1;
 }
 
-.pg-aleph > :last-child {
-  grid-column: 1;
+.pg-r2 {
   grid-row: 2;
 }
 
-.pg-other > :first-child {
-  grid-column: 2;
-  grid-row: 1;
+/* One height for every tab: a scene row over a code row, or two stacked scene rows. */
+.pg-code {
+  grid-template-rows: 240px 360px;
 }
 
-.pg-other > :last-child {
-  grid-column: 2;
-  grid-row: 2;
+.pg-stack {
+  grid-template-rows: 300px 300px;
+}
+
+.pg-panes > * {
+  min-width: 0;
 }
 
 .pg-panes > * > .demo {
   min-width: 0;
+  height: 100%;
+}
+
+.pg-scene {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pg-scene .pg-view {
+  width: 100%;
+}
+
+.pg-scene.pg-scene-wide svg {
+  max-width: 960px;
+}
+
+.pg-docline {
+  stroke: #8da2c0;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+/* Brighter outlines than the homepage's other diagrams, so small icons stay readable. */
+.pg-scene .s-card {
+  stroke: #3d5069;
+}
+
+.pg-scene .s-edge {
+  stroke: #54677f;
 }
 
 /* Every code pane is the same height on every tab; longer code scrolls inside it. */
@@ -1955,6 +1994,7 @@ body:has(main.home) .topbar nav {
 }
 
 .pg-ghost {
+  fill: none;
   stroke: #b8693f;
   stroke-width: 1.4;
   stroke-dasharray: 4 4;
@@ -1967,6 +2007,60 @@ body:has(main.home) .topbar nav {
 .pg-grow {
   transform-box: fill-box;
   transform-origin: left;
+}
+
+.pg-rise {
+  transform-box: fill-box;
+  transform-origin: bottom;
+}
+
+.pg-calm {
+  fill: var(--accent);
+  fill-opacity: 0.7;
+}
+
+.pg-tag {
+  fill: var(--fg-muted);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.scene .pg-tiny {
+  fill: var(--fg-muted);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+.scene .pg-glyph {
+  fill: var(--fg);
+  font-weight: 700;
+}
+
+.scene .pg-feature {
+  fill: var(--fg);
+  font-size: 12.5px;
+}
+
+.pg-teeth {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 4;
+}
+
+.pg-coin {
+  fill: #c9a227;
+  stroke: #e8c766;
+  stroke-width: 1.2;
+}
+
+.scene .pg-coin-text {
+  fill: #3d2f08;
+  font-weight: 700;
+}
+
+.pg-pause {
+  fill: #f6a26b;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -1984,10 +2078,19 @@ body:has(main.home) .topbar nav {
     transform: scaleX(0.04);
     animation: pg-grow var(--d, 2s) linear var(--t, 0s) forwards;
   }
+
+  .pg-rise {
+    transform: scaleY(0.1);
+    animation: pg-rise var(--d, 2s) ease-in var(--t, 0s) forwards;
+  }
+
+  .pg-out {
+    animation: pg-out 0.4s ease var(--t, 0s) forwards;
+  }
 }
 
 /* Hold every animation until the scene is on screen. */
-.pg-view:not(.in) :is(.pg-at, .pg-fly, .pg-grow) {
+.pg-view:not(.in) :is(.pg-at, .pg-fly, .pg-grow, .pg-rise, .pg-out) {
   animation-play-state: paused;
 }
 
@@ -2021,7 +2124,19 @@ body:has(main.home) .topbar nav {
 
 @keyframes pg-grow {
   to {
-    transform: scaleX(1);
+    transform: scaleX(var(--to, 1));
+  }
+}
+
+@keyframes pg-rise {
+  to {
+    transform: scaleY(var(--to, 1));
+  }
+}
+
+@keyframes pg-out {
+  to {
+    opacity: 0;
   }
 }
 
@@ -2030,6 +2145,18 @@ body:has(main.home) .topbar nav {
   .pg-fly {
     opacity: var(--o, 1);
     transform: translate(var(--dx, 0px), var(--dy, 0px));
+  }
+
+  .pg-grow {
+    transform: scaleX(var(--to, 1));
+  }
+
+  .pg-rise {
+    transform: scaleY(var(--to, 1));
+  }
+
+  .pg-out {
+    display: none;
   }
 }
 
@@ -2045,16 +2172,17 @@ body:has(main.home) .topbar nav {
 .pg-tab {
   position: relative;
   flex: 1 1 0;
-  font: 12px var(--mono);
-  letter-spacing: 0.08em;
+  font: 11.5px var(--mono);
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fg-muted);
   background: none;
   border: 0;
   border-right: 1px solid var(--border);
-  padding: 16px 20px;
+  padding: 14px 12px;
+  line-height: 1.35;
   cursor: pointer;
-  white-space: nowrap;
+  text-align: center;
   transition: color 0.2s ease;
 }
 
@@ -2116,14 +2244,16 @@ body:has(main.home) .topbar nav {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .pg-other > :first-child {
+  .pg-c1,
+  .pg-c2,
+  .pg-cw {
     grid-column: 1;
-    grid-row: 3;
+    grid-row: auto;
   }
 
-  .pg-other > :last-child {
-    grid-column: 1;
-    grid-row: 4;
+  .pg-code,
+  .pg-stack {
+    grid-template-rows: none;
   }
 }
 
@@ -2142,9 +2272,7 @@ body:has(main.home) .topbar nav {
 
   .pg-tab {
     flex: 1 0 auto;
-  }
-
-  .pg-tab {
-    padding: 14px 14px;
+    white-space: nowrap;
+    padding: 14px;
   }
 }
