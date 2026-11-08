@@ -1776,7 +1776,12 @@ body:has(main.home) .topbar nav {
 }
 
 .pg-scene.pg-scene-wide svg {
-  max-width: 960px;
+  max-width: none;
+}
+
+.pg-tile {
+  fill: #172435;
+  stroke: #3d5069;
 }
 
 .pg-docline {
@@ -2079,6 +2084,11 @@ body:has(main.home) .topbar nav {
     animation: pg-grow var(--d, 2s) linear var(--t, 0s) forwards;
   }
 
+  .pg-flyloop {
+    opacity: 0;
+    animation: pg-flyloop var(--dur, 1s) linear var(--t, 0s) infinite;
+  }
+
   .pg-rise {
     transform: scaleY(0.1);
     animation: pg-rise var(--d, 2s) ease-in var(--t, 0s) forwards;
@@ -2090,7 +2100,7 @@ body:has(main.home) .topbar nav {
 }
 
 /* Hold every animation until the scene is on screen. */
-.pg-view:not(.in) :is(.pg-at, .pg-fly, .pg-grow, .pg-rise, .pg-out) {
+.pg-view:not(.in) :is(.pg-at, .pg-fly, .pg-flyloop, .pg-grow, .pg-rise, .pg-out) {
   animation-play-state: paused;
 }
 
@@ -2128,6 +2138,23 @@ body:has(main.home) .topbar nav {
   }
 }
 
+@keyframes pg-flyloop {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  10% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx, 0px), var(--dy, 0px));
+  }
+}
+
 @keyframes pg-rise {
   to {
     transform: scaleY(var(--to, 1));
@@ -2145,6 +2172,11 @@ body:has(main.home) .topbar nav {
   .pg-fly {
     opacity: var(--o, 1);
     transform: translate(var(--dx, 0px), var(--dy, 0px));
+  }
+
+  .pg-flyloop {
+    opacity: 1;
+    transform: translate(calc(var(--dx, 0px) * 0.5), 0);
   }
 
   .pg-grow {

@@ -24,7 +24,7 @@ const MARK_Y = 112;
 const LABEL_Y = 160;
 
 type Stage = { w: number; users: number; mid: number; db: number };
-const WIDE: Stage = { w: 760, users: 40, mid: 380, db: 720 };
+const WIDE: Stage = { w: 1000, users: 60, mid: 500, db: 940 };
 
 /** How far a request starting at `from` with width `w` travels to stop at `edge`. */
 const reach = (edge: number, from: number, w: number) => edge - 4 - (from + w);
@@ -80,7 +80,7 @@ function Label({
 }
 
 /** A small caption that names a phase of the scene, in the top-left corner clear of the cards. */
-function Tag({ x = 14, t, children }: { x?: number; t?: number; children: ReactNode }) {
+function Tag({ x = 30, t, children }: { x?: number; t?: number; children: ReactNode }) {
   return (
     <text
       x={x}
@@ -367,7 +367,7 @@ function DocPkt({
  * fixed version passes the check and reaches the server. Times line up with the Aleph code's
  * verdicts (rejected at about 7.5s, accepted at about 11s).
  */
-function Ship({ st, gate }: { st: Stage; gate: number }) {
+function Ship({ st, gate, serverMark = true }: { st: Stage; gate: number; serverMark?: boolean }) {
   const from = st.users + 24;
   return (
     <g>
@@ -381,7 +381,7 @@ function Ship({ st, gate }: { st: Stage; gate: number }) {
       <Mark cx={gate} t={7.4} />
       <DocPkt from={from} tone="ok" t={9.4} dx={reach(st.mid - 28, from, 22)} dur={1.4} />
       <Mark cx={gate} cy={L1} ok t={10.1} />
-      <Mark cx={st.mid} ok t={10.9} />
+      {serverMark && <Mark cx={st.mid} ok t={10.9} />}
       <Label x={st.users} t={5.2}>
         your code
       </Label>
@@ -457,6 +457,7 @@ function Dot({
   dur = 0.7,
   tone = "plain",
   o = 0,
+  loop,
 }: {
   x: number;
   y: number;
@@ -466,11 +467,13 @@ function Dot({
   dur?: number;
   tone?: Tone;
   o?: number;
+  /** Keep flying for as long as the scene is on screen. */
+  loop?: boolean;
 }) {
   return (
     <g transform={`translate(${x} ${y})`}>
       <g
-        className="pg-fly"
+        className={loop ? "pg-flyloop" : "pg-fly"}
         style={vars({
           "--t": `${t}s`,
           "--dx": `${dx}px`,
@@ -521,7 +524,7 @@ function Meter({
 
 // ─── 1. Infra protection ────────────────────────────────────────────────────────
 
-const GATE = 210;
+const GATE = 270;
 
 /**
  * One request path for both code panes. First what a typical backend does with a request for far
@@ -674,7 +677,7 @@ export function GuardrailsScene() {
       <g className="pg-at" style={vars({ "--t": "5.2s" })}>
         {meters(st.mid, false, 10.9, 0.16, 0.2)}
       </g>
-      <Ship st={st} gate={GATE} />
+      <Ship st={st} gate={GATE} serverMark={false} />
 
       <Label x={st.mid}>server</Label>
       <Label x={st.db}>db</Label>
@@ -701,7 +704,10 @@ function Insert({ cx, y }: { cx: number; y: number }) {
  */
 function exactlyScene(atomic: boolean) {
   const from = 64;
-  const lane = (y: number, t0: number) => (
+  const DB_MARK = DB_X + 38;
+  const MAIL_MARK = MAIL_X + 38;
+  /** `fails` is whether this user's transaction goes wrong. */
+  const lane = (y: number, t0: number, fails: boolean) => (
     <g>
       <User cx={40} y={y} />
       {atomic ? (
@@ -721,17 +727,26 @@ function exactlyScene(atomic: boolean) {
       </g>
       {atomic ? (
         <>
-          <Flash x={TXL} y={y - 28} w={TXR - TXL} h={56} tone="err" t={t0 + 2} />
-          <Mark cx={DB_X + 20} cy={y - 14} t={t0 + 2} k={0.7} />
-          <Mark cx={MAIL_X + 22} cy={y - 14} t={t0 + 2} k={0.7} />
+          <Flash x={TXL} y={y - 28} w={TXR - TXL} h={56} tone={fails ? "err" : "ok"} t={t0 + 2} />
+          <Mark cx={DB_MARK} cy={y} ok={!fails} t={t0 + 2} k={0.85} />
+          <Mark cx={MAIL_MARK} cy={y} ok={!fails} t={t0 + 2} k={0.85} />
         </>
       ) : (
         <>
           <Flash x={TXL} y={y - 28} w={120} h={56} tone="ok" t={t0 + 1.7} />
-          <Mark cx={DB_X + 20} cy={y - 14} ok t={t0 + 1.7} k={0.7} />
-          <Mark cx={(TXL + 120 + TXR - 120) / 2} cy={y} t={t0 + 2.4} k={0.8} />
-          <Flash x={TXR - 120} y={y - 28} w={120} h={56} tone="err" t={t0 + 3} />
-          <Mark cx={MAIL_X + 22} cy={y - 14} t={t0 + 3} k={0.7} />
+          <Mark cx={DB_MARK} cy={y} ok t={t0 + 1.7} k={0.85} />
+          {fails ? (
+            <>
+              <Mark cx={(TXL + 120 + TXR - 120) / 2} cy={y} t={t0 + 2.4} k={0.85} />
+              <Flash x={TXR - 120} y={y - 28} w={120} h={56} tone="err" t={t0 + 3} />
+              <Mark cx={MAIL_MARK} cy={y} t={t0 + 3} k={0.85} />
+            </>
+          ) : (
+            <>
+              <Flash x={TXR - 120} y={y - 28} w={120} h={56} tone="ok" t={t0 + 2.6} />
+              <Mark cx={MAIL_MARK} cy={y} ok t={t0 + 2.6} k={0.85} />
+            </>
+          )}
         </>
       )}
     </g>
@@ -740,12 +755,12 @@ function exactlyScene(atomic: boolean) {
     <Scene
       aria={
         atomic
-          ? "Two users send requests at the same time. Each request is one transaction holding a database insert and an email. When it fails, both the insert and the email are rolled back."
-          : "Two users send requests at the same time. Each request is two separate transactions: a database insert, then an email. The insert is committed, the server fails, and the email is never sent."
+          ? "Two users send requests at the same time. Each request is one transaction holding a database insert and an email. One transaction succeeds, and in the other both the insert and the email are rolled back."
+          : "Two users send requests at the same time. Each request is two separate transactions: a database insert, then an email. One request succeeds. In the other the insert is committed, the server fails, and the email is never sent."
       }
     >
-      {lane(L1, 0.3)}
-      {lane(L2, 0.5)}
+      {lane(L1, 0.3, true)}
+      {lane(L2, 0.5, false)}
       <Label x={40}>users</Label>
       <Label x={DB_X}>db insert</Label>
       <Label x={MAIL_X}>email sent</Label>
@@ -764,7 +779,7 @@ export function ExactlyNode() {
 // ─── 4. Shared infra, reduced costs ─────────────────────────────────────────────
 
 const SH = 230;
-const WW = 760;
+const WW = 1000;
 
 function MiniServer({ cx, cy }: { cx: number; cy: number }) {
   return (
@@ -807,9 +822,9 @@ export function SharedAleph() {
       aria="Six apps run inside one shared runtime that has a single server, database, and cache, with one dollar coin for the whole cost."
     >
       <Tag>with aleph</Tag>
-      <rect x={30} y={22} width={700} height={160} rx={10} className="pg-tx" />
+      <rect x={30} y={22} width={940} height={160} rx={10} className="pg-tx" />
       {docs.map((i) => {
-        const cx = 95 + i * 114;
+        const cx = 120 + i * 152;
         return (
           <Pop key={cx} t={0.3 + i * 0.25}>
             <Doc cx={cx} y={58} s={0.8} />
@@ -818,14 +833,14 @@ export function SharedAleph() {
         );
       })}
       <Pop t={1.9}>
-        <line x1={95} y1={92} x2={665} y2={92} className="s-edge" />
-        <line x1={380} y1={92} x2={380} y2={98} className="s-edge" />
-        <MiniServer cx={260} cy={116} />
-        <Db cx={380} y={102} h={28} w={30} />
-        <MiniCache cx={500} cy={116} />
+        <line x1={120} y1={92} x2={880} y2={92} className="s-edge" />
+        <line x1={500} y1={92} x2={500} y2={98} className="s-edge" />
+        <MiniServer cx={380} cy={116} />
+        <Db cx={500} y={102} h={28} w={30} />
+        <MiniCache cx={620} cy={116} />
       </Pop>
-      <Coin cx={380} cy={160} t={2.7} />
-      <Label x={380} y={212}>
+      <Coin cx={500} cy={160} t={2.7} />
+      <Label x={500} y={212}>
         6 apps · one runtime · shared infra
       </Label>
     </Scene>
@@ -834,7 +849,7 @@ export function SharedAleph() {
 
 /** Typical platforms: every app brings its own runtime, database, and cache, and its own bill. */
 export function SharedTypical() {
-  const apps = [130, 380, 630];
+  const apps = [180, 500, 820];
   return (
     <Scene
       wide
@@ -848,16 +863,16 @@ export function SharedTypical() {
         return (
           <g key={cx}>
             <Pop t={t}>
-              <rect x={cx - 105} y={22} width={210} height={160} rx={10} className="pg-tx" />
+              <rect x={cx - 145} y={22} width={290} height={160} rx={10} className="pg-tx" />
               <Doc cx={cx} y={58} s={0.8} />
               <line x1={cx} y1={78} x2={cx} y2={92} className="s-edge" />
             </Pop>
             <Pop t={t + 0.3}>
-              <MiniServer cx={cx - 62} cy={116} />
+              <MiniServer cx={cx - 80} cy={116} />
               <Db cx={cx} y={102} h={28} w={30} />
-              <MiniCache cx={cx + 62} cy={116} />
+              <MiniCache cx={cx + 80} cy={116} />
             </Pop>
-            {[-24, 0, 24].map((dx, k) => (
+            {[-26, 0, 26].map((dx, k) => (
               <Coin key={dx} cx={cx + dx} cy={160} t={t + 0.7 + k * 0.2} />
             ))}
             <Label x={cx} y={212}>
@@ -876,7 +891,7 @@ const RX = { code: 40, artifact: 190, runtime: 340, users: 494 };
 
 /** TypeScript becomes a manifest, and a small Rust core runs the manifest. */
 export function RustAleph() {
-  const dots = [0, 1, 2, 3, 4, 5];
+  const FAST = [0, 1, 2, 3];
   return (
     <Scene aria="Your TypeScript becomes a manifest, a plain JSON file. A small Rust core runs the manifest, and requests from users pass through it quickly one after another.">
       <Card cx={RX.code} />
@@ -905,14 +920,15 @@ export function RustAleph() {
         dur={0.6}
         tone="ok"
       />
-      {dots.map((i) => (
+      {FAST.map((i) => (
         <Dot
           key={i}
+          loop
           x={RX.users - 22}
           y={ONE}
-          t={2.5 + i * 0.3}
+          t={0.1 + i * 0.16}
           dx={RX.runtime + 32 - (RX.users - 22)}
-          dur={0.45}
+          dur={0.64}
         />
       ))}
       <Label x={RX.code}>app.ts</Label>
@@ -925,7 +941,7 @@ export function RustAleph() {
 
 /** A traditional backend: the code is compiled into a program and a language runtime executes it. */
 export function RustTypical() {
-  const dots = [0, 1, 2, 3];
+  const SLOW = [0, 1];
   return (
     <Scene aria="Your code is compiled into a program, and a language runtime executes it. Requests from users move through it slowly, with pauses, and queue up behind it.">
       <Card cx={RX.code} />
@@ -946,14 +962,15 @@ export function RustTypical() {
         dx={RX.runtime - 32 - (RX.artifact + 32)}
         dur={0.6}
       />
-      {dots.map((i) => (
+      {SLOW.map((i) => (
         <Dot
           key={i}
+          loop
           x={RX.users - 22}
           y={ONE}
-          t={2.5 + i * 0.9}
+          t={0.1 + i * 1.1}
           dx={RX.runtime + 32 - (RX.users - 22)}
-          dur={1.5}
+          dur={2.2}
         />
       ))}
       {[0, 1].map((i) => (
@@ -997,9 +1014,10 @@ export function RustTypical() {
 // ─── 6. Platform agnostic ───────────────────────────────────────────────────────
 
 const OUTPUTS = ["MCP server", "OpenAPI spec", "Swagger docs"];
-const OUT_Y = [18, 80, 142];
+const OUT_Y = [24, 90, 156];
+const FEATURE_NAMES = ["auth", "logs", "workflows", "db", "queues", "files"];
 
-/** A feature's name on a card: with a check when it is built in, with a cog when it is a library. */
+/** A feature's name on a card: with a check when it is generated, with a cog when it is a library. */
 function Output({
   x,
   y,
@@ -1037,68 +1055,120 @@ function Output({
   );
 }
 
+/** The icon for one of the platform's built-in features, centered on (cx, cy). */
+function FeatureIcon({ name, cx, cy }: { name: string; cx: number; cy: number }) {
+  switch (name) {
+    case "auth":
+      return <Keyhole cx={cx} cy={cy} />;
+    case "logs":
+      return (
+        <g>
+          {[-9, 0, 9].map((dy) => (
+            <line
+              key={dy}
+              x1={cx - 13}
+              y1={cy + dy}
+              x2={cx + 13 - Math.abs(dy)}
+              y2={cy + dy}
+              className="pg-line"
+            />
+          ))}
+        </g>
+      );
+    case "workflows":
+      return (
+        <g>
+          <line x1={cx - 18} y1={cy} x2={cx + 18} y2={cy} className="pg-line" />
+          {[-18, 0, 18].map((dx) => (
+            <circle key={dx} cx={cx + dx} cy={cy} r={5} className="pg-env" />
+          ))}
+        </g>
+      );
+    case "db":
+      return <Db cx={cx} y={cy - 14} h={28} w={30} />;
+    case "queues":
+      return (
+        <g>
+          {[-17, -3, 11].map((dx) => (
+            <rect key={dx} x={cx + dx} y={cy - 7} width={9} height={14} rx={2} className="pg-env" />
+          ))}
+          <polyline
+            points={`${cx + 23},${cy - 5} ${cx + 28},${cy} ${cx + 23},${cy + 5}`}
+            className="pg-line"
+          />
+        </g>
+      );
+    default:
+      return (
+        <g>
+          <polygon
+            points={`${cx - 10},${cy - 13} ${cx + 4},${cy - 13} ${cx + 10},${cy - 7} ${cx + 10},${cy + 13} ${cx - 10},${cy + 13}`}
+            className="pg-env"
+          />
+          <polyline
+            points={`${cx + 4},${cy - 13} ${cx + 4},${cy - 7} ${cx + 10},${cy - 7}`}
+            className="pg-line"
+          />
+        </g>
+      );
+  }
+}
+
 /**
- * With Aleph: the manifest goes into a platform, and the platform gives you MCP, OpenAPI, and
- * Swagger docs generated from it, plus auth, logs, and a database it already runs.
+ * With Aleph: the manifest goes into a platform that supports it. The platform generates MCP,
+ * OpenAPI, and Swagger docs from the manifest, and already runs auth, logs, workflows, a database,
+ * queues, and files.
  */
 export function AgnosticAleph() {
+  const tileX = [220, 358, 496];
+  const tileY = [46, 120];
   return (
     <Scene
       wide
       w={WW}
       h={SH}
-      aria="A manifest goes into a platform. The platform generates an MCP server, an OpenAPI spec, and Swagger docs from it, and provides auth, logs, and a database."
+      aria="A manifest goes into a platform that supports the Aleph manifest. The platform generates an MCP server, an OpenAPI spec, and Swagger docs from it, and provides built-in auth, logs, workflows, a database, queues, and files."
     >
+      <Tag>with aleph</Tag>
       <Pop t={0.2}>
-        <rect x={30} y={46} width={64} height={110} rx={8} className="s-card" />
-        <Glyph cx={62} size={17}>
-          {"{ }"}
-        </Glyph>
+        <rect x={40} y={50} width={70} height={110} rx={8} className="s-card" />
+        <Glyph cx={75}>{"{ }"}</Glyph>
       </Pop>
-      <line x1={94} y1={101} x2={150} y2={101} className="s-edge" />
-      <Dot x={94} y={101} t={0.8} dx={52} dur={0.6} tone="ok" />
+      <line x1={110} y1={105} x2={200} y2={105} className="s-edge" />
+      <Dot x={110} y={105} t={0.8} dx={86} dur={0.6} tone="ok" />
       <Pop t={1.2}>
-        <rect x={150} y={18} width={320} height={170} rx={10} className="s-card s-strong-card" />
-        <g>
-          <rect x={186} y={72} width={44} height={56} rx={6} className="pg-env" />
-          <Keyhole cx={208} cy={100} />
-          <text x={208} y={146} textAnchor="middle" className="pg-tiny">
-            auth
-          </text>
-        </g>
-        <g>
-          <rect x={288} y={72} width={44} height={56} rx={6} className="pg-env" />
-          {[86, 98, 110].map((y) => (
-            <line key={y} x1={297} y1={y} x2={323} y2={y} className="pg-line" />
-          ))}
-          <text x={310} y={146} textAnchor="middle" className="pg-tiny">
-            logs
-          </text>
-        </g>
-        <g>
-          <Db cx={412} y={72} h={56} w={44} />
-          <text x={412} y={146} textAnchor="middle" className="pg-tiny">
-            db
-          </text>
-        </g>
+        <rect x={200} y={22} width={440} height={170} rx={10} className="s-card s-strong-card" />
+        {FEATURE_NAMES.map((name, i) => {
+          const x = tileX[i % 3] as number;
+          const y = tileY[Math.floor(i / 3)] as number;
+          return (
+            <g key={name}>
+              <rect x={x} y={y} width={124} height={62} rx={7} className="pg-tile" />
+              <FeatureIcon name={name} cx={x + 62} cy={y + 26} />
+              <text x={x + 62} y={y + 55} textAnchor="middle" className="pg-tiny">
+                {name}
+              </text>
+            </g>
+          );
+        })}
       </Pop>
       {OUTPUTS.map((name, i) => {
         const y = (OUT_Y[i] as number) + 22;
         return (
           <g key={name}>
-            <line x1={470} y1={y} x2={530} y2={y} className="s-edge" />
-            <Dot x={470} y={y} t={2 + i * 0.5} dx={56} dur={0.5} tone="ok" />
-            <Output x={530} y={y - 22} name={name} t={2.5 + i * 0.5} ok />
+            <line x1={640} y1={y} x2={780} y2={y} className="s-edge" />
+            <Dot x={640} y={y} t={2.2 + i * 0.5} dx={136} dur={0.6} tone="ok" />
+            <Output x={780} y={y - 22} name={name} t={2.8 + i * 0.5} ok />
           </g>
         );
       })}
-      <Label x={62} y={212}>
+      <Label x={75} y={216}>
         manifest
       </Label>
-      <Label x={310} y={212}>
-        platform
+      <Label x={420} y={216}>
+        platform supporting aleph manifest
       </Label>
-      <Label x={630} y={212}>
+      <Label x={880} y={216}>
         generated from it
       </Label>
     </Scene>
@@ -1112,6 +1182,9 @@ const LIBS = [
   "passport · auth",
   "pino · logs",
   "orm + pg · db",
+  "temporal · workflows",
+  "bullmq · queues",
+  "s3 sdk · files",
 ];
 
 /** A traditional backend: each of those is another library to choose, install, wire up, and keep updated. */
@@ -1121,24 +1194,23 @@ export function AgnosticTypical() {
       wide
       w={WW}
       h={SH}
-      aria="A traditional backend needs a separate library for MCP, OpenAPI, Swagger docs, auth, logs, and the database, each one installed and wired up by hand."
+      aria="A traditional backend needs a separate library for MCP, OpenAPI, Swagger docs, auth, logs, the database, workflows, queues, and files, each one installed and wired up by hand."
     >
+      <Tag>a typical backend</Tag>
       <Pop t={0.2}>
-        <rect x={30} y={46} width={64} height={110} rx={8} className="s-card" />
-        <Glyph cx={62} size={17}>
-          TS
-        </Glyph>
+        <rect x={40} y={50} width={70} height={110} rx={8} className="s-card" />
+        <Glyph cx={75}>TS</Glyph>
       </Pop>
       <line
-        x1={94}
-        y1={101}
-        x2={150}
-        y2={101}
+        x1={110}
+        y1={105}
+        x2={200}
+        y2={105}
         className="pg-ghost pg-at"
         style={vars({ "--t": "0.8s" })}
       />
       <Pop t={1}>
-        <rect x={150} y={18} width={560} height={170} rx={10} className="pg-tx" />
+        <rect x={200} y={22} width={770} height={170} rx={10} className="pg-tx" />
       </Pop>
       {LIBS.map((name, i) => {
         const col = i % 3;
@@ -1146,19 +1218,19 @@ export function AgnosticTypical() {
         return (
           <Output
             key={name}
-            x={170 + col * 180}
-            y={40 + row * 70}
-            w={170}
+            x={220 + col * 250}
+            y={34 + row * 52}
+            w={230}
             name={name}
-            t={1.4 + i * 0.4}
+            t={1.4 + i * 0.3}
           />
         );
       })}
-      <Label x={62} y={212}>
+      <Label x={75} y={216}>
         your server
       </Label>
-      <Label x={430} y={212}>
-        6 libraries to wire up and keep updated
+      <Label x={585} y={216}>
+        9 libraries to install, wire up and keep updated
       </Label>
     </Scene>
   );
