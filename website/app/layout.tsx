@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     template: "%s · Aleph",
   },
   description:
-    "Every Aleph route declares what it can read, write, and compute, and anything unbounded is rejected before it ships. So an app can't flood your database or spike CPU and memory, and many apps can share one runtime.",
+    "Every Aleph route declares what it can read, write, and compute, and anything unbounded is rejected before it ships. So an app can't flood your database or spike CPU and memory. Auth, databases, queues, and more are built in, and many apps can share one runtime.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

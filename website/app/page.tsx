@@ -48,7 +48,8 @@ export default function Home() {
         <p className="lead">
           Every Aleph route declares what it can read, write, and compute, and anything unbounded is
           rejected before it ships. So an app can&rsquo;t flood your database or spike CPU and
-          memory, and many apps can share one runtime.
+          memory. Auth, databases, queues, and more are built in, and many apps can share one
+          runtime.
         </p>
         <p className="tagline">Write TypeScript. Run on Rust.</p>
       </section>
