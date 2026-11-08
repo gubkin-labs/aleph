@@ -183,6 +183,14 @@ body:has(main.home) .topbar nav {
   margin: 0 auto;
 }
 
+.tagline {
+  margin: 18px 0 0;
+  font: 12px var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
 .install {
   margin: 36px auto 0;
   max-width: 680px;

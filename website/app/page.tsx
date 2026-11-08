@@ -43,12 +43,14 @@ export default function Home() {
           ℵ
         </div>
         <h1>
-          The future of generated code is <em>declarative.</em>
+          A backend language where the worst case is known <em>before it ships.</em>
         </h1>
         <p className="lead">
-          Aleph is a trusted, declarative language for server-side applications. You write the
-          routes, access rules, and queries. Aleph takes care of everything else.
+          Write your routes, data, and rules in TypeScript. Aleph counts what every route can read,
+          write, and compute, rejects what&rsquo;s unbounded, and runs the rest on shared
+          infrastructure.
         </p>
+        <p className="tagline">Built for agents. Run on Rust.</p>
       </section>
 
       <section className="pg-wrap" aria-label="What Aleph rules out">

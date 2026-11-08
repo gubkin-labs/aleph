@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     template: "%s · Aleph",
   },
   description:
-    "Aleph is a trusted, declarative language for server-side applications. You write the routes, access rules, and queries; Aleph takes care of everything else.",
+    "Write your routes, data, and rules in TypeScript. Aleph counts what every route can read, write, and compute, rejects what's unbounded, and runs the rest on shared infrastructure.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
