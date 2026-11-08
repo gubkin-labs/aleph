@@ -6,8 +6,7 @@ import { Demo, type Step } from "@/components/Demo";
 import { NodePane } from "@/components/NodePane";
 import { Playground, type PlaygroundTab } from "@/components/Playground";
 import {
-  AgnosticAleph,
-  AgnosticTypical,
+  BuiltInScene,
   ExactlyAleph,
   ExactlyNode,
   GuardrailsScene,
@@ -216,11 +215,15 @@ function stacked(top: ReactNode, bottom: ReactNode) {
 export function PlaygroundSection() {
   const tabs: PlaygroundTab[] = [
     {
-      id: "agnostic",
-      label: "Platform agnostic",
-      layout: "stack",
-      ms: tabMs(9000),
-      body: stacked(<AgnosticAleph />, <AgnosticTypical />),
+      id: "builtin",
+      label: "Built in the language",
+      layout: "single",
+      ms: tabMs(14000),
+      body: (
+        <Cell c="w" r={1}>
+          <BuiltInScene />
+        </Cell>
+      ),
     },
     {
       id: "infra",

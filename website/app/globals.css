@@ -1756,6 +1756,10 @@ body:has(main.home) .topbar nav {
   grid-template-rows: 300px 300px;
 }
 
+.pg-single {
+  grid-template-rows: 616px;
+}
+
 .pg-panes > * {
   min-width: 0;
 }
@@ -1782,6 +1786,17 @@ body:has(main.home) .topbar nav {
 .pg-tile {
   fill: #172435;
   stroke: #3d5069;
+}
+
+.scene .pg-name {
+  fill: var(--fg);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.scene .pg-desc {
+  fill: var(--fg-muted);
+  font-size: 11px;
 }
 
 .pg-docline {
@@ -2284,7 +2299,8 @@ body:has(main.home) .topbar nav {
   }
 
   .pg-code,
-  .pg-stack {
+  .pg-stack,
+  .pg-single {
     grid-template-rows: none;
   }
 }
@@ -2300,6 +2316,10 @@ body:has(main.home) .topbar nav {
 
   .pg-scene svg {
     min-width: 500px;
+  }
+
+  .pg-scene-big svg {
+    min-width: 820px;
   }
 
   .pg-tab {

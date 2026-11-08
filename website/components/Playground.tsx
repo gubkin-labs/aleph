@@ -14,8 +14,8 @@ export type PlaygroundTab = {
   label: string;
   /** How long the tab stays up before the next one, in milliseconds. */
   ms: number;
-  /** "code" is a scene over each code pane; "stack" is two scenes, one over the other. */
-  layout: "code" | "stack";
+  /** "code" is a scene over each code pane; "stack" is two scenes, one over the other; "single" is one scene for the whole tab. */
+  layout: "code" | "stack" | "single";
   /** The tab's cells, each placed in the grid by its own `pg-c*` and `pg-r*` classes. */
   body: ReactNode;
 };

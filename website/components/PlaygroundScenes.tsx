@@ -34,16 +34,23 @@ function Scene({
   w = 560,
   h = 172,
   wide,
+  big,
   children,
 }: {
   aria: string;
   w?: number;
   h?: number;
   wide?: boolean;
+  /** A scene that is the whole tab: it needs more room to stay readable on narrow screens. */
+  big?: boolean;
   children: ReactNode;
 }) {
   return (
-    <figure className={wide ? "demo pg-scene pg-scene-wide" : "demo pg-scene"}>
+    <figure
+      className={["demo", "pg-scene", wide && "pg-scene-wide", big && "pg-scene-big"]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <Visible>
         <svg viewBox={`0 0 ${w} ${h}`} className="scene" role="img" aria-label={aria}>
           {children}
@@ -1011,51 +1018,9 @@ export function RustTypical() {
   );
 }
 
-// ─── 6. Platform agnostic ───────────────────────────────────────────────────────
+// ─── 6. Built in the language ───────────────────────────────────────────────────
 
-const OUTPUTS = ["MCP server", "OpenAPI spec", "Swagger docs"];
-const OUT_Y = [24, 90, 156];
-const FEATURE_NAMES = ["auth", "logs", "workflows", "db", "queues", "files"];
-
-/** A feature's name on a card: with a check when it is generated, with a cog when it is a library. */
-function Output({
-  x,
-  y,
-  w = 200,
-  name,
-  t,
-  ok,
-}: {
-  x: number;
-  y: number;
-  w?: number;
-  name: string;
-  t: number;
-  ok?: boolean;
-}) {
-  return (
-    <Pop t={t}>
-      <rect
-        x={x}
-        y={y}
-        width={w}
-        height={44}
-        rx={7}
-        className={ok ? "s-card s-strong-card" : "s-card"}
-      />
-      <text x={x + 14} y={y + 26} className="pg-feature">
-        {name}
-      </text>
-      {ok ? (
-        <Mark cx={x + w - 22} cy={y + 22} ok t={0} k={0.75} />
-      ) : (
-        <Gear cx={x + w - 22} cy={y + 22} r={7} />
-      )}
-    </Pop>
-  );
-}
-
-/** The icon for one of the platform's built-in features, centered on (cx, cy). */
+/** The icon for one thing the platform generates from the manifest, centered on (cx, cy). */
 function FeatureIcon({ name, cx, cy }: { name: string; cx: number; cy: number }) {
   switch (name) {
     case "auth":
@@ -1098,7 +1063,7 @@ function FeatureIcon({ name, cx, cy }: { name: string; cx: number; cy: number })
           />
         </g>
       );
-    default:
+    case "files":
       return (
         <g>
           <polygon
@@ -1111,126 +1076,173 @@ function FeatureIcon({ name, cx, cy }: { name: string; cx: number; cy: number })
           />
         </g>
       );
+    case "mcp":
+      return (
+        <g>
+          {[
+            [-16, -9],
+            [16, -9],
+            [0, 14],
+          ].map(([dx, dy]) => (
+            <line
+              key={`${dx}${dy}`}
+              x1={cx}
+              y1={cy}
+              x2={cx + (dx as number)}
+              y2={cy + (dy as number)}
+              className="pg-line"
+            />
+          ))}
+          {[
+            [-16, -9],
+            [16, -9],
+            [0, 14],
+          ].map(([dx, dy]) => (
+            <circle
+              key={`c${dx}${dy}`}
+              cx={cx + (dx as number)}
+              cy={cy + (dy as number)}
+              r={4.5}
+              className="pg-env"
+            />
+          ))}
+          <circle cx={cx} cy={cy} r={6} className="pg-shape" />
+        </g>
+      );
+    case "openapi":
+      return (
+        <text x={cx} y={cy + 6} textAnchor="middle" className="pg-glyph" fontSize={18}>
+          {"{ }"}
+        </text>
+      );
+    default:
+      return (
+        <g>
+          <rect x={cx - 15} y={cy - 13} width={30} height={26} rx={4} className="pg-env" />
+          <polygon
+            points={`${cx - 4},${cy - 6} ${cx + 7},${cy} ${cx - 4},${cy + 6}`}
+            className="pg-shape-fill"
+          />
+        </g>
+      );
   }
 }
 
-/**
- * With Aleph: the manifest goes into a platform that supports it. The platform generates MCP,
- * OpenAPI, and Swagger docs from the manifest, and already runs auth, logs, workflows, a database,
- * queues, and files.
- */
-export function AgnosticAleph() {
-  const tileX = [220, 358, 496];
-  const tileY = [46, 120];
-  return (
-    <Scene
-      wide
-      w={WW}
-      h={SH}
-      aria="A manifest goes into a platform that supports the Aleph manifest. The platform generates an MCP server, an OpenAPI spec, and Swagger docs from it, and provides built-in auth, logs, workflows, a database, queues, and files."
-    >
-      <Tag>with aleph</Tag>
-      <Pop t={0.2}>
-        <rect x={40} y={50} width={70} height={110} rx={8} className="s-card" />
-        <Glyph cx={75}>{"{ }"}</Glyph>
-      </Pop>
-      <line x1={110} y1={105} x2={200} y2={105} className="s-edge" />
-      <Dot x={110} y={105} t={0.8} dx={86} dur={0.6} tone="ok" />
-      <Pop t={1.2}>
-        <rect x={200} y={22} width={440} height={170} rx={10} className="s-card s-strong-card" />
-        {FEATURE_NAMES.map((name, i) => {
-          const x = tileX[i % 3] as number;
-          const y = tileY[Math.floor(i / 3)] as number;
-          return (
-            <g key={name}>
-              <rect x={x} y={y} width={124} height={62} rx={7} className="pg-tile" />
-              <FeatureIcon name={name} cx={x + 62} cy={y + 26} />
-              <text x={x + 62} y={y + 55} textAnchor="middle" className="pg-tiny">
-                {name}
-              </text>
-            </g>
-          );
-        })}
-      </Pop>
-      {OUTPUTS.map((name, i) => {
-        const y = (OUT_Y[i] as number) + 22;
-        return (
-          <g key={name}>
-            <line x1={640} y1={y} x2={780} y2={y} className="s-edge" />
-            <Dot x={640} y={y} t={2.2 + i * 0.5} dx={136} dur={0.6} tone="ok" />
-            <Output x={780} y={y - 22} name={name} t={2.8 + i * 0.5} ok />
-          </g>
-        );
-      })}
-      <Label x={75} y={216}>
-        manifest
-      </Label>
-      <Label x={420} y={216}>
-        platform supporting aleph manifest
-      </Label>
-      <Label x={880} y={216}>
-        generated from it
-      </Label>
-    </Scene>
-  );
-}
-
-const LIBS = [
-  "mcp sdk",
-  "openapi lib",
-  "swagger ui",
-  "passport · auth",
-  "pino · logs",
-  "orm + pg · db",
-  "temporal · workflows",
-  "bullmq · queues",
-  "s3 sdk · files",
+/** What the platform generates from the manifest, and the one-sentence benefit of each. */
+const BUILT_IN = [
+  {
+    id: "auth",
+    name: "auth",
+    lines: ["Routes are private by", "default and roles are", "declared, not hand-wired."],
+  },
+  {
+    id: "db",
+    name: "database",
+    lines: [
+      "A transactional store with",
+      "indexes you declare, so no",
+      "ORM or migrations to run.",
+    ],
+  },
+  {
+    id: "logs",
+    name: "logs",
+    lines: ["The platform logs requests", "and jobs, so there is no", "logger to set up."],
+  },
+  {
+    id: "workflows",
+    name: "workflows",
+    lines: ["Multi-step work waits for", "days and survives crashes", "with no job server."],
+  },
+  {
+    id: "queues",
+    name: "queues",
+    lines: ["Retries, backoff and a", "dead-letter handler are", "declared, not coded."],
+  },
+  {
+    id: "files",
+    name: "files",
+    lines: ["Signed uploads with size", "and type limits, reachable", "only by your app."],
+  },
+  {
+    id: "mcp",
+    name: "MCP server",
+    lines: ["Agents can call your routes", "as tools, generated from", "the same manifest."],
+  },
+  {
+    id: "openapi",
+    name: "OpenAPI spec",
+    lines: ["An exact API spec that", "stays in sync, because it", "is derived, not written."],
+  },
+  {
+    id: "swagger",
+    name: "Swagger docs",
+    lines: ["Interactive docs to try", "every route, rendered from", "the OpenAPI spec."],
+  },
 ];
 
-/** A traditional backend: each of those is another library to choose, install, wire up, and keep updated. */
-export function AgnosticTypical() {
+const BIG_H = 570;
+
+/**
+ * Your code becomes a manifest, and a platform that supports the manifest generates everything
+ * else from it: auth, database, logs, workflows, queues, files, an MCP server, an OpenAPI spec,
+ * and Swagger docs. Each one appears with a sentence on why it matters.
+ */
+export function BuiltInScene() {
+  const colX = [330, 550, 770];
+  const rowY = [26, 194, 362];
   return (
     <Scene
       wide
-      w={WW}
-      h={SH}
-      aria="A traditional backend needs a separate library for MCP, OpenAPI, Swagger docs, auth, logs, the database, workflows, queues, and files, each one installed and wired up by hand."
+      big
+      w={1000}
+      h={BIG_H}
+      aria="Your code becomes a manifest. A platform that supports the manifest generates auth, a database, logs, workflows, queues, files, an MCP server, an OpenAPI spec, and Swagger docs from it, each with a short description of its benefit."
     >
-      <Tag>a typical backend</Tag>
       <Pop t={0.2}>
-        <rect x={40} y={50} width={70} height={110} rx={8} className="s-card" />
-        <Glyph cx={75}>TS</Glyph>
+        <Doc cx={60} y={285} s={1.5} />
       </Pop>
-      <line
-        x1={110}
-        y1={105}
-        x2={200}
-        y2={105}
-        className="pg-ghost pg-at"
-        style={vars({ "--t": "0.8s" })}
-      />
-      <Pop t={1}>
-        <rect x={200} y={22} width={770} height={170} rx={10} className="pg-tx" />
+      <line x1={100} y1={285} x2={165} y2={285} className="s-edge" />
+      <Dot x={100} y={285} t={0.7} dx={62} dur={0.6} tone="ok" />
+      <Pop t={1.2}>
+        <rect x={165} y={215} width={80} height={140} rx={8} className="s-card s-strong-card" />
+        <text x={205} y={291} textAnchor="middle" className="pg-glyph" fontSize={18}>
+          {"{ }"}
+        </text>
       </Pop>
-      {LIBS.map((name, i) => {
-        const col = i % 3;
-        const row = Math.floor(i / 3);
+      <line x1={245} y1={285} x2={316} y2={285} className="s-edge" />
+      <Dot x={245} y={285} t={1.9} dx={66} dur={0.6} tone="ok" />
+      <Pop t={2.4}>
+        <rect x={316} y={10} width={674} height={520} rx={10} className="pg-tx" />
+      </Pop>
+      {BUILT_IN.map((f, i) => {
+        const x = colX[i % 3] as number;
+        const y = rowY[Math.floor(i / 3)] as number;
+        const t = 3 + i * 0.9;
+        const cx = x + 102;
         return (
-          <Output
-            key={name}
-            x={220 + col * 250}
-            y={34 + row * 52}
-            w={230}
-            name={name}
-            t={1.4 + i * 0.3}
-          />
+          <Pop key={f.id} t={t}>
+            <rect x={x} y={y} width={205} height={152} rx={8} className="pg-tile" />
+            <FeatureIcon name={f.id} cx={cx} cy={y + 34} />
+            <text x={cx} y={y + 74} textAnchor="middle" className="pg-name">
+              {f.name}
+            </text>
+            {f.lines.map((line, k) => (
+              <text key={line} x={cx} y={y + 98 + k * 16} textAnchor="middle" className="pg-desc">
+                {line}
+              </text>
+            ))}
+          </Pop>
         );
       })}
-      <Label x={75} y={216}>
-        your server
+      <Label x={60} y={BIG_H - 8}>
+        your code
       </Label>
-      <Label x={585} y={216}>
-        9 libraries to install, wire up and keep updated
+      <Label x={205} y={BIG_H - 8}>
+        manifest
+      </Label>
+      <Label x={653} y={BIG_H - 8}>
+        generated from the manifest
       </Label>
     </Scene>
   );
