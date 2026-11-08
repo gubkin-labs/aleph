@@ -15,7 +15,7 @@ npm install --save-dev @aleph-lang/cli
 npm pkg set type=module   # Aleph apps are ES modules; new npm projects default to CommonJS
 ```
 
-Then follow the [quickstart](https://aleph-lang.vercel.app/docs/quickstart/).
+Then follow the [quickstart](https://aleph-lang.com/docs/quickstart/).
 
 ## What's here
 

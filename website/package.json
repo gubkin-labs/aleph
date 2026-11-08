@@ -1,7 +1,7 @@
 {
   "name": "@aleph-lang/website",
   "private": true,
-  "description": "aleph.dev: the Aleph documentation and project website",
+  "description": "aleph-lang.com: the Aleph documentation and project website",
   "type": "module",
   "scripts": {
     "dev": "next dev",

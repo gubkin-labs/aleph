@@ -14,8 +14,9 @@ const serif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://aleph-lang.com"),
   title: {
-    default: "Aleph: a trusted, declarative language for server-side apps",
+    default: "Aleph: a backend language where the worst case is known before it ships",
     template: "%s · Aleph",
   },
   description:
