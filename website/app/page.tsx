@@ -1,7 +1,7 @@
 import Link from "next/link";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Demo, Panel } from "@/components/Demo";
-import { Install } from "@/components/Install";
+import { PlaygroundSection } from "@/components/PlaygroundSection";
 import {
   HowScene,
   IsolationScene,
@@ -11,22 +11,6 @@ import {
   TransactionScene,
 } from "@/components/Scenes";
 import { agent, evolve, loop, more, usage } from "./demos";
-
-/** What a backend usually needs and an Aleph author doesn't write. Each is struck out in turn. */
-const HANDLED = [
-  "servers",
-  "scaling",
-  "connection pools",
-  "transactions",
-  "retries",
-  "exactly-once events",
-  "input validation",
-  "auth middleware",
-  "migrations",
-  "tenant isolation",
-  "API docs",
-  "client SDK",
-];
 
 function Section({
   eyebrow,
@@ -65,17 +49,10 @@ export default function Home() {
           Aleph is a trusted, declarative language for server-side applications. You write the
           routes, access rules, and queries. Aleph takes care of everything else.
         </p>
-        <ul className="handled" aria-label="Handled by Aleph">
-          {HANDLED.map((h, i) => (
-            <li key={h} style={{ "--i": i } as CSSProperties}>
-              {h}
-            </li>
-          ))}
-          <li className="handled-yours" style={{ "--i": HANDLED.length } as CSSProperties}>
-            your business logic
-          </li>
-        </ul>
-        <Install />
+      </section>
+
+      <section className="pg-wrap" aria-label="What Aleph rules out">
+        <PlaygroundSection />
       </section>
 
       <Section

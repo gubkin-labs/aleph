@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import { highlight } from "@/components/highlight";
 
 /**
  * A homepage demo: an editor showing a slice of app.ts above a terminal, driven by a short
@@ -26,7 +27,11 @@ export type Step =
   | { edit: number; from: string; to: string }
   | { insert: number; text: string }
   | { clear: true }
+  | { verdict: Verdict | null }
   | { pause: number };
+
+/** A diagonal ribbon across the editor's corner: what the checker made of the code. */
+export type Verdict = "rejected" | "accepted";
 
 type CodeLine = { text: string; orig: string | null };
 type Typing = { where: "term"; line: Line } | { where: "code"; index: number; pos: number } | null;
@@ -37,6 +42,7 @@ type State = {
   mark: string[];
   term: Line[];
   typing: Typing;
+  verdict: Verdict | null;
 };
 
 const SPEED = { cmd: 24, agent: 14, codeType: 65, codeErase: 40, out: 60, afterCmd: 450 };
@@ -49,6 +55,7 @@ function initial(code: string[]): State {
     mark: [],
     term: [],
     typing: null,
+    verdict: null,
   };
 }
 
@@ -67,6 +74,7 @@ function apply(s: State, step: Step, start: number): State {
   if ("termHl" in step)
     return { ...s, term: s.term.map((l, i) => (step.termHl.includes(i) ? { ...l, hl: true } : l)) };
   if ("clear" in step) return { ...s, term: [] };
+  if ("verdict" in step) return { ...s, verdict: step.verdict };
   if ("edit" in step) {
     const i = indexOf(start, step.edit);
     const code = s.code.map((l, j) =>
@@ -109,29 +117,6 @@ function simulate(code: string[], steps: Step[], start: number, upTo = steps.len
   return { still: s, maxCode, maxTerm };
 }
 
-// ─── Syntax colors: a tiny tokenizer, enough for SDK code ───────────────────────
-
-const TOKEN =
-  /(\/\/.*$)|("(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?|`[^`]*`?)|(\b\d+\b)|\b(import|from|const|export|default|return|true|false)\b|(\.\w+)(?=\()|(\b[A-Z]\w*\b)/g;
-
-function highlight(text: string): ReactNode[] {
-  const out: ReactNode[] = [];
-  let last = 0;
-  for (const m of text.matchAll(TOKEN)) {
-    const at = m.index ?? 0;
-    if (at > last) out.push(text.slice(last, at));
-    const cls = m[1] ? "c" : m[2] ? "s" : m[3] ? "n" : m[4] ? "k" : m[5] ? "f" : "ty";
-    out.push(
-      <span key={at} className={`tk-${cls}`}>
-        {m[0]}
-      </span>,
-    );
-    last = at + m[0].length;
-  }
-  if (last < text.length) out.push(text.slice(last));
-  return out;
-}
-
 function lineClass(line: Line) {
   return ["ln", `ln-${line.k ?? "out"}`, line.hl && "ln-hl", line.table && "ln-table"]
     .filter(Boolean)
@@ -149,6 +134,7 @@ export function Demo({
   still,
   rows,
   caption,
+  noTerm,
 }: {
   title: string;
   file?: string;
@@ -160,7 +146,9 @@ export function Demo({
   still?: number;
   /** Show at most this many code lines, scrolling to keep the highlight in view. */
   rows?: number;
-  caption: ReactNode;
+  caption?: ReactNode;
+  /** Leave out the terminal; the verdict ribbon says what the checker made of the code. */
+  noTerm?: boolean;
 }) {
   const ref = useRef<HTMLElement>(null);
   const sim = simulate(code, steps, start, still);
@@ -321,6 +309,11 @@ export function Demo({
 
       <div className="editor">
         <div className="editor-tab">{file}</div>
+        {state.verdict && (
+          <div key={state.verdict} className={`ribbon ribbon-${state.verdict}`}>
+            {state.verdict}
+          </div>
+        )}
         <div
           className={rows ? "editor-body stack editor-scroll" : "editor-body stack"}
           style={rows ? { maxHeight: `calc(${rows} * 11.5px * 1.7 + 8px)` } : undefined}
@@ -381,33 +374,35 @@ export function Demo({
         </div>
       </div>
 
-      <div className="term stack">
-        <div className="ghost" aria-hidden>
-          {sim.maxTerm.map((line, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: lines are positional
-            <div key={i} className={line.table ? "ln ln-table" : "ln"}>
-              {line.t || " "}
-            </div>
-          ))}
-          <div className="ln"> </div>
+      {!noTerm && (
+        <div className="term stack">
+          <div className="ghost" aria-hidden>
+            {sim.maxTerm.map((line, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: lines are positional
+              <div key={i} className={line.table ? "ln ln-table" : "ln"}>
+                {line.t || " "}
+              </div>
+            ))}
+            <div className="ln"> </div>
+          </div>
+          <div>
+            {state.term.map((line, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: lines are positional
+              <div key={i} className={lineClass(line)}>
+                {line.t || " "}
+              </div>
+            ))}
+            {typing?.where === "term" && (
+              <div className={`ln ln-${typing.line.k}`}>
+                {typing.line.t}
+                <span className="cursor" />
+              </div>
+            )}
+          </div>
         </div>
-        <div>
-          {state.term.map((line, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: lines are positional
-            <div key={i} className={lineClass(line)}>
-              {line.t || " "}
-            </div>
-          ))}
-          {typing?.where === "term" && (
-            <div className={`ln ln-${typing.line.k}`}>
-              {typing.line.t}
-              <span className="cursor" />
-            </div>
-          )}
-        </div>
-      </div>
+      )}
 
-      <div className="panel-caption">{caption}</div>
+      {caption && <div className="panel-caption">{caption}</div>}
     </figure>
   );
 }

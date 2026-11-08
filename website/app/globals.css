@@ -1704,3 +1704,447 @@ body:has(main.home) .topbar nav {
     right: 0;
   }
 }
+
+/* ─── Playground (tabs under the hero) ───────────────────── */
+
+.pg-wrap {
+  margin-top: 40px;
+}
+
+.pg {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(20, 32, 48, 0.55);
+  overflow: hidden;
+}
+
+.pg-panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  padding: 22px 24px;
+  align-items: stretch;
+}
+
+/* Each side is a code pane over a scene; the grid lines the two scenes up in a row of their own. */
+.pg-side {
+  display: contents;
+}
+
+.pg-aleph > :first-child {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.pg-aleph > :last-child {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.pg-other > :first-child {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.pg-other > :last-child {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.pg-panes > * > .demo {
+  min-width: 0;
+}
+
+/* Every code pane is the same height on every tab; longer code scrolls inside it. */
+.pg-panes .demo:not(.pg-scene) {
+  height: 360px;
+  display: flex;
+  flex-direction: column;
+}
+
+.pg-panes .demo:not(.pg-scene) .editor {
+  position: relative;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 0;
+}
+
+.pg-panes .demo:not(.pg-scene) .editor-tab {
+  flex: none;
+  align-self: flex-start;
+}
+
+.pg-panes .demo:not(.pg-scene) .editor-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* The verdict: a ribbon across the corner of the code. */
+.ribbon {
+  position: absolute;
+  top: 30px;
+  right: -46px;
+  width: 170px;
+  padding: 5px 0;
+  z-index: 2;
+  transform: rotate(45deg);
+  text-align: center;
+  font: 700 11px var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #0d141f;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.ribbon-rejected {
+  background: #f08a6d;
+}
+
+.ribbon-accepted {
+  background: #7ddc9a;
+}
+
+.ribbon-warn {
+  background: #e0b35a;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ribbon {
+    animation: ribbon-in 0.35s ease-out both;
+  }
+
+  .ribbon-late {
+    animation-delay: 1.4s;
+  }
+}
+
+@keyframes ribbon-in {
+  from {
+    opacity: 0;
+    transform: rotate(45deg) scale(1.5);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(45deg);
+  }
+}
+
+.scene .pg-label {
+  fill: var(--fg-muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.pg-env {
+  fill: #1c2a3c;
+  stroke: #4a5d78;
+}
+
+/* Scenes: pieces appear (pg-at) or travel (pg-fly) on a timeline set by --t. */
+.pg-scene svg {
+  padding: 8px 12px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.pg-pkt {
+  fill: #1c2a3c;
+  stroke: var(--accent);
+}
+
+.pg-pkt-ok {
+  stroke: #3f7a55;
+  fill: #1d4a33;
+}
+
+.pg-pkt-err {
+  stroke: #b8693f;
+  fill: #5a3420;
+}
+
+.pg-dot-plain {
+  fill: var(--accent);
+}
+
+.pg-dot-ok {
+  fill: #7ddc9a;
+}
+
+.pg-dot-err {
+  fill: #f6a26b;
+}
+
+.pg-shape {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.pg-shape-fill {
+  fill: var(--accent);
+}
+
+.pg-anon {
+  stroke: #6b7a90;
+  stroke-dasharray: 3 3;
+}
+
+.pg-anon-fill {
+  fill: #6b7a90;
+}
+
+.pg-line {
+  fill: none;
+  stroke: #6f82a0;
+  stroke-width: 1.3;
+  stroke-linejoin: round;
+}
+
+.pg-tx {
+  fill: rgba(169, 156, 255, 0.05);
+  stroke: #4a4f7a;
+  stroke-dasharray: 5 4;
+}
+
+.pg-flash {
+  fill: none;
+  stroke-width: 2;
+}
+
+.pg-flash-err {
+  stroke: #f6a26b;
+}
+
+.pg-flash-ok {
+  stroke: #7ddc9a;
+}
+
+.pg-mark-bg {
+  stroke-width: 1.4;
+}
+
+.pg-mark-bg-ok {
+  fill: #123325;
+  stroke: #3f7a55;
+}
+
+.pg-mark-bg-err {
+  fill: #3a2214;
+  stroke: #b8693f;
+}
+
+.pg-mark {
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.pg-mark-ok {
+  stroke: #7ddc9a;
+}
+
+.pg-mark-err {
+  stroke: #f6a26b;
+}
+
+.pg-ghost {
+  stroke: #b8693f;
+  stroke-width: 1.4;
+  stroke-dasharray: 4 4;
+}
+
+.pg-load {
+  fill: #f6a26b;
+}
+
+.pg-grow {
+  transform-box: fill-box;
+  transform-origin: left;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pg-at {
+    opacity: 0;
+    animation: pg-show 0.35s ease var(--t, 0s) forwards;
+  }
+
+  .pg-fly {
+    opacity: 0;
+    animation: pg-fly var(--dur, 1s) ease-in-out var(--t, 0s) forwards;
+  }
+
+  .pg-grow {
+    transform: scaleX(0.04);
+    animation: pg-grow var(--d, 2s) linear var(--t, 0s) forwards;
+  }
+}
+
+/* Hold every animation until the scene is on screen. */
+.pg-view:not(.in) :is(.pg-at, .pg-fly, .pg-grow) {
+  animation-play-state: paused;
+}
+
+@keyframes pg-show {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pg-fly {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  12% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: var(--o, 1);
+    transform: translate(var(--dx, 0px), var(--dy, 0px));
+  }
+}
+
+@keyframes pg-grow {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* Without motion, travellers rest where they end up, and ones that vanish stay hidden. */
+@media (prefers-reduced-motion: reduce) {
+  .pg-fly {
+    opacity: var(--o, 1);
+    transform: translate(var(--dx, 0px), var(--dy, 0px));
+  }
+}
+
+.pg-tabs {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.pg-tab {
+  position: relative;
+  flex: 1 1 0;
+  font: 12px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  background: none;
+  border: 0;
+  border-right: 1px solid var(--border);
+  padding: 16px 20px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.2s ease;
+}
+
+.pg-replay {
+  flex: none;
+  background: none;
+  border: 0;
+  border-left: 1px solid var(--border);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 15px;
+  padding: 0 18px;
+}
+
+.pg-replay:hover {
+  color: var(--fg);
+}
+
+.pg-tab:hover,
+.pg-tab.active {
+  color: var(--fg);
+}
+
+.pg-tab.active {
+  box-shadow: inset 0 -2px 0 var(--border);
+}
+
+.pg-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.pg-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--accent);
+  transform-origin: left;
+  transform: scaleX(0);
+  animation: pg-fill linear forwards;
+}
+
+@keyframes pg-fill {
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* With no timer, the active tab keeps a solid underline. */
+.pg-tab.active:not(:has(.pg-bar)) {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* Side by side only where the code and the scenes both stay legible. */
+@media (max-width: 1060px) {
+  .pg-panes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pg-other > :first-child {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .pg-other > :last-child {
+    grid-column: 1;
+    grid-row: 4;
+  }
+}
+
+@media (max-width: 860px) {
+  .pg-panes {
+    padding: 16px 14px;
+  }
+
+  .pg-view {
+    overflow-x: auto;
+  }
+
+  .pg-scene svg {
+    min-width: 500px;
+  }
+
+  .pg-tab {
+    flex: 1 0 auto;
+  }
+
+  .pg-tab {
+    padding: 14px 14px;
+  }
+}
