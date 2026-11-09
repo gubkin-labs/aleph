@@ -1265,51 +1265,47 @@ const BUILT_IN = [
   {
     id: "auth",
     name: "auth",
-    lines: ["Routes are private by", "default and roles are", "declared, not hand-wired."],
+    lines: ["Auth is a first-class", "feature of the language, so", "there's no library to pick."],
   },
   {
     id: "db",
     name: "database",
-    lines: [
-      "A transactional store with",
-      "indexes you declare, so no",
-      "ORM or migrations to run.",
-    ],
+    lines: ["The database is part of the", "language: declare your data", "and query it, no ORM."],
   },
   {
     id: "logs",
     name: "logs",
-    lines: ["The platform logs requests", "and jobs, so there is no", "logger to set up."],
+    lines: ["The platform logs every", "request and job for you, so", "no log calls in your code."],
   },
   {
     id: "workflows",
     name: "workflows",
-    lines: ["Multi-step work waits for", "days and survives crashes", "with no job server."],
+    lines: ["Long-running work is built", "in. It waits for days and", "survives crashes."],
   },
   {
     id: "queues",
     name: "queues",
-    lines: ["Retries, backoff and a", "dead-letter handler are", "declared, not coded."],
+    lines: ["Queues are built in, with", "retries, backoff and a", "dead-letter handler."],
   },
   {
     id: "files",
     name: "files",
-    lines: ["Signed uploads with size", "and type limits, reachable", "only by your app."],
+    lines: ["File uploads are built in,", "with size and type limits", "and signed URLs."],
   },
   {
     id: "mcp",
     name: "MCP server",
-    lines: ["Agents can call your routes", "as tools, generated from", "the same manifest."],
+    lines: ["An MCP server is generated", "automatically, so agents", "can call your routes."],
   },
   {
     id: "openapi",
     name: "OpenAPI spec",
-    lines: ["An exact API spec that", "stays in sync, because it", "is derived, not written."],
+    lines: ["Your API spec is generated", "from the code, so it never", "drifts out of date."],
   },
   {
     id: "swagger",
     name: "Swagger docs",
-    lines: ["Interactive docs to try", "every route, rendered from", "the OpenAPI spec."],
+    lines: ["Interactive docs for every", "route are generated from", "the spec automatically."],
   },
 ];
 
