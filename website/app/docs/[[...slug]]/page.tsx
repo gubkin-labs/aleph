@@ -22,7 +22,14 @@ export const dynamicParams = false;
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const page = pageFor((await params).slug);
-  return page ? { title: page.title, description: page.description } : {};
+  if (!page) return {};
+  const path = page.slug === "" ? "/docs/" : `/docs/${page.slug}/`;
+  return {
+    title: page.title,
+    description: page.description,
+    alternates: { canonical: path },
+    openGraph: { type: "article", url: path, title: page.title, description: page.description },
+  };
 }
 
 export default async function DocPage({ params }: Props) {

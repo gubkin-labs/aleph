@@ -215,16 +215,32 @@ function Envelope({ cx, cy, w = 36 }: { cx: number; cy: number; w?: number }) {
   );
 }
 
-/** A cog; the teeth are a dashed ring. */
-function Gear({ cx, cy, r = 11 }: { cx: number; cy: number; r?: number }) {
+/** A cog; the teeth are a dashed ring. With `spin`, it turns once every `spin` seconds from `t`. */
+function Gear({
+  cx,
+  cy,
+  r = 11,
+  spin,
+  t = 0,
+}: {
+  cx: number;
+  cy: number;
+  r?: number;
+  spin?: number;
+  t?: number;
+}) {
+  const tooth = (2 * Math.PI * (r + 3)) / 16;
   return (
-    <g>
+    <g
+      className={spin ? "pg-spin" : undefined}
+      style={spin ? vars({ "--spin": `${spin}s`, "--t": `${t}s` }) : undefined}
+    >
       <circle
         cx={cx}
         cy={cy}
         r={r + 3}
         className="pg-teeth"
-        strokeDasharray={`${(2 * Math.PI * (r + 3)) / 16} ${(2 * Math.PI * (r + 3)) / 16}`}
+        strokeDasharray={`${tooth} ${tooth}`}
       />
       <circle cx={cx} cy={cy} r={r} className="pg-shape" />
       <circle cx={cx} cy={cy} r={r / 3} className="pg-shape" />
@@ -386,10 +402,13 @@ function Ship({ st, gate, serverMark = true }: { st: Stage; gate: number; server
         <Keyhole cx={gate} />
       </g>
       <DocPkt from={from} tone="err" t={6.3} dx={reach(gate - 28, from, 22)} dur={1} />
-      {flashCard(gate, 7.4, "err")}
-      <Mark cx={gate} t={7.4} />
+      <Out t={9.1}>
+        {flashCard(gate, 7.4, "err")}
+        <Mark cx={gate} t={7.4} />
+      </Out>
       <DocPkt from={from} tone="ok" t={9.4} dx={reach(st.mid - 28, from, 22)} dur={1.4} />
-      <Mark cx={gate} cy={L1} ok t={10.1} />
+      {flashCard(gate, 10.0, "ok")}
+      <Mark cx={gate} ok t={10.0} />
       {serverMark && <Mark cx={st.mid} ok t={10.9} />}
       <Label x={st.users} t={5.2}>
         your code
@@ -398,21 +417,6 @@ function Ship({ st, gate, serverMark = true }: { st: Stage; gate: number; server
         aleph check
       </Label>
     </g>
-  );
-}
-
-/** A row stored in a database. */
-function Row({ cx, y, t, tone = "plain" }: { cx: number; y: number; t: number; tone?: Tone }) {
-  return (
-    <rect
-      x={cx - 22}
-      y={y}
-      width={44}
-      height={10}
-      rx={3}
-      className={`pg-pkt pg-pkt-${tone} pg-at`}
-      style={vars({ "--t": `${t}s` })}
-    />
   );
 }
 
@@ -497,6 +501,78 @@ function Dot({
   );
 }
 
+/** One row of a result: a small chip that flies by (dx, dy) from its top-left corner at (x, y). */
+function Chip({
+  x,
+  y,
+  t,
+  dx,
+  dy = 0,
+  dur = 0.9,
+  tone = "plain",
+  o = 0,
+}: {
+  x: number;
+  y: number;
+  t: number;
+  dx: number;
+  dy?: number;
+  dur?: number;
+  tone?: Tone;
+  o?: number;
+}) {
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <g
+        className="pg-fly"
+        style={vars({
+          "--t": `${t}s`,
+          "--dx": `${dx}px`,
+          "--dy": `${dy}px`,
+          "--dur": `${dur}s`,
+          "--o": o,
+        })}
+      >
+        <rect width={16} height={7} rx={2} className={`pg-pkt pg-pkt-${tone}`} />
+      </g>
+    </g>
+  );
+}
+
+/** A number that counts up: each value shows for `step` seconds, the last one stays. */
+function Count({
+  x,
+  y,
+  t,
+  step,
+  values,
+  tone,
+}: {
+  x: number;
+  y: number;
+  t: number;
+  step: number;
+  values: string[];
+  tone: "ok" | "err";
+}) {
+  return (
+    <g>
+      {values.map((v, i) => {
+        const text = (
+          <text x={x} y={y} textAnchor="middle" className={`pg-count pg-count-${tone}`}>
+            {v}
+          </text>
+        );
+        return (
+          <Pop key={v} t={t + i * step}>
+            {i < values.length - 1 ? <Out t={t + (i + 1) * step}>{text}</Out> : text}
+          </Pop>
+        );
+      })}
+    </g>
+  );
+}
+
 /** A meter that fills up to `to` (0 to 1) from `t`. `hot` makes it red. */
 function Meter({
   x,
@@ -543,14 +619,22 @@ const GATE = 270;
 export function InfraScene() {
   const st = WIDE;
   const midL = st.mid - 28;
-  const dbL = st.db - 32;
   const from = st.users + 24;
-  const dots = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+  const QY = ONE - 18;
+  const dbEdge = st.db - 36;
+  const chipX = st.db - 56;
+  const lanes = [ONE - 6, ONE + 2, ONE + 10, ONE - 2, ONE + 6];
+  const flood = Array.from({ length: 30 }, (_, i) => i);
+  const page = Array.from({ length: 20 }, (_, i) => i);
+  const pageX = st.mid + 50;
+  const query = (t: number, tone: Tone) => (
+    <Dot x={st.mid + 32} y={QY} t={t} dx={dbEdge - (st.mid + 32)} dur={0.7} tone={tone} />
+  );
   return (
     <Scene
       wide
       w={st.w}
-      aria="Users send a request to a server, which queries a database. A typical backend accepts a request for far too much and floods the database until it fails. With Aleph, the code that would allow that is rejected before it ships, and the bounded version passes the check and reaches the server."
+      aria="Users send a request to a server, which queries a database. A typical backend runs a query with no limit and the database returns a thousand rows that flood the server until the database fails. With Aleph, the code that allows that is rejected before it ships, and the bounded version passes the check and returns a page of twenty rows."
     >
       <Server cx={st.mid} />
       <Db cx={st.db} />
@@ -567,37 +651,64 @@ export function InfraScene() {
           height={7}
           rx={3}
           className="pg-load pg-grow"
-          style={vars({ "--t": "1.7s", "--d": "2.6s" })}
+          style={vars({ "--t": "2.1s", "--d": "2.3s" })}
         />
         <Pkt from={from} w={64} t={0.4} dx={reach(midL, from, 64)} dur={0.8} />
         <Mark cx={st.mid} ok t={1.3} />
-        {dots.map((i) => (
-          <Dot
+        {query(1.4, "plain")}
+        <Pop t={1.4}>
+          <text x={718} y={36} textAnchor="middle" className="pg-tiny">
+            query · no limit
+          </text>
+        </Pop>
+        {flood.map((i) => (
+          <Chip
             key={i}
-            x={st.mid + 32}
-            y={ONE}
-            t={1.6 + i * 0.25}
-            dx={dbL - 4 - (st.mid + 32)}
-            dy={-16 + i * 4}
+            x={chipX - 16}
+            y={lanes[i % lanes.length] as number}
+            t={1.9 + i * 0.065}
+            dx={st.mid + 34 - (chipX - 16)}
+            dur={1}
           />
         ))}
+        <Count
+          x={718}
+          y={116}
+          t={2.2}
+          step={0.45}
+          tone="err"
+          values={["40 rows", "180 rows", "420 rows", "700 rows", "1,000 rows"]}
+        />
+        {flashCard(st.db, 4.2, "err", 64)}
         <Mark cx={st.db} t={4.2} />
       </Out>
 
       <Tag t={5.2}>with aleph</Tag>
       <Ship st={st} gate={GATE} />
-      {[0, 1, 2].map((i) => (
-        <Dot
-          key={i}
-          x={st.mid + 32}
-          y={ONE}
-          t={11 + i * 0.12}
-          dx={dbL - 4 - (st.mid + 32)}
-          dy={-4 + i * 4}
-          dur={0.6}
-          tone="ok"
-        />
-      ))}
+      {query(11, "ok")}
+      <Pop t={11}>
+        <text x={646} y={36} textAnchor="middle" className="pg-tiny">
+          query · limit 20
+        </text>
+      </Pop>
+      {page.map((i) => {
+        const tx = pageX + (i % 10) * 19;
+        const ty = ONE - 9 + Math.floor(i / 10) * 11;
+        return (
+          <Chip
+            key={i}
+            x={chipX - 16}
+            y={ONE - 3}
+            t={11.5 + i * 0.04}
+            dx={tx - (chipX - 16)}
+            dy={ty - (ONE - 3)}
+            dur={0.7}
+            tone="ok"
+            o={1}
+          />
+        );
+      })}
+      <Count x={646} y={116} t={12.3} step={1} tone="ok" values={["20 rows"]} />
       <rect
         x={st.db - 20}
         y={TOP + 26}
@@ -605,21 +716,19 @@ export function InfraScene() {
         height={7}
         rx={3}
         className="s-track pg-at"
-        style={vars({ "--t": "11.5s" })}
+        style={vars({ "--t": "11.4s" })}
       />
       <rect
         x={st.db - 20}
         y={TOP + 26}
-        width={9}
+        width={4}
         height={7}
         rx={3}
         className="pg-calm pg-at"
         style={vars({ "--t": "11.6s" })}
       />
-      <Row cx={st.db} y={60} t={11.7} tone="ok" />
-      <Row cx={st.db} y={72} t={11.8} tone="ok" />
-      <Row cx={st.db} y={84} t={11.9} tone="ok" />
-      <Mark cx={st.db} ok t={12} />
+      {flashCard(st.db, 12.5, "ok", 64)}
+      <Mark cx={st.db} ok t={12.5} />
 
       <Label x={st.mid}>server</Label>
       <Label x={st.db}>db</Label>
@@ -680,6 +789,9 @@ export function GuardrailsScene() {
             style={vars({ "--t": `${3.2 + i * 0.3}s` })}
           />
         ))}
+        <Label x={midL - 27} y={ONE + 40} t={3.2}>
+          queued
+        </Label>
       </Out>
 
       <Tag t={5.2}>with aleph</Tag>
@@ -687,6 +799,18 @@ export function GuardrailsScene() {
         {meters(st.mid, false, 10.9, 0.16, 0.2)}
       </g>
       <Ship st={st} gate={GATE} serverMark={false} />
+      {[0, 1, 2].map((i) => (
+        <Dot
+          key={i}
+          loop
+          x={st.mid + 32}
+          y={ONE - 10 + i * 10}
+          t={11.4 + i * 0.4}
+          dx={st.db - 36 - (st.mid + 32)}
+          dur={1.2}
+          tone="ok"
+        />
+      ))}
 
       <Label x={st.mid}>server</Label>
       <Label x={st.db}>db</Label>
@@ -716,50 +840,54 @@ function exactlyScene(atomic: boolean) {
   const DB_MARK = DB_X + 38;
   const MAIL_MARK = MAIL_X + 38;
   /** `fails` is whether this user's transaction goes wrong. */
-  const lane = (y: number, t0: number, fails: boolean) => (
-    <g>
-      <User cx={40} y={y} />
-      {atomic ? (
-        <rect x={TXL} y={y - 28} width={TXR - TXL} height={56} rx={8} className="pg-tx" />
-      ) : (
-        <>
-          <rect x={TXL} y={y - 28} width={120} height={56} rx={8} className="pg-tx" />
-          <rect x={TXR - 120} y={y - 28} width={120} height={56} rx={8} className="pg-tx" />
-        </>
-      )}
-      <Pkt from={from} lane={y} w={30} t={t0} dx={reach(TXL, from, 30)} dur={0.8} />
-      <g className="pg-at" style={vars({ "--t": `${t0 + 0.9}s` })}>
-        <Insert cx={DB_X} y={y} />
+  const lane = (y: number, t0: number, fails: boolean) => {
+    /** With Aleph a failed transaction is rolled back: what it wrote disappears. */
+    const gone = (shape: ReactNode) => (atomic && fails ? <Out t={t0 + 2.8}>{shape}</Out> : shape);
+    return (
+      <g>
+        <User cx={40} y={y} />
+        {atomic ? (
+          <rect x={TXL} y={y - 28} width={TXR - TXL} height={56} rx={8} className="pg-tx" />
+        ) : (
+          <>
+            <rect x={TXL} y={y - 28} width={120} height={56} rx={8} className="pg-tx" />
+            <rect x={TXR - 120} y={y - 28} width={120} height={56} rx={8} className="pg-tx" />
+          </>
+        )}
+        <Pkt from={from} lane={y} w={30} t={t0} dx={reach(TXL, from, 30)} dur={0.8} />
+        <g className="pg-at" style={vars({ "--t": `${t0 + 0.9}s` })}>
+          {gone(<Insert cx={DB_X} y={y} />)}
+        </g>
+        <g className="pg-at" style={vars({ "--t": `${t0 + 1.2}s` })}>
+          {gone(<Envelope cx={MAIL_X} cy={y} w={36} />)}
+        </g>
+        {atomic ? (
+          <>
+            <Flash x={TXL} y={y - 28} w={TXR - TXL} h={56} tone={fails ? "err" : "ok"} t={t0 + 2} />
+            <Mark cx={DB_MARK} cy={y} ok={!fails} t={t0 + 2} k={0.85} />
+            <Mark cx={MAIL_MARK} cy={y} ok={!fails} t={t0 + 2} k={0.85} />
+          </>
+        ) : (
+          <>
+            <Flash x={TXL} y={y - 28} w={120} h={56} tone="ok" t={t0 + 1.7} />
+            <Mark cx={DB_MARK} cy={y} ok t={t0 + 1.7} k={0.85} />
+            {fails ? (
+              <>
+                <Mark cx={(TXL + 120 + TXR - 120) / 2} cy={y} t={t0 + 2.4} k={0.85} />
+                <Flash x={TXR - 120} y={y - 28} w={120} h={56} tone="err" t={t0 + 3} />
+                <Mark cx={MAIL_MARK} cy={y} t={t0 + 3} k={0.85} />
+              </>
+            ) : (
+              <>
+                <Flash x={TXR - 120} y={y - 28} w={120} h={56} tone="ok" t={t0 + 2.6} />
+                <Mark cx={MAIL_MARK} cy={y} ok t={t0 + 2.6} k={0.85} />
+              </>
+            )}
+          </>
+        )}
       </g>
-      <g className="pg-at" style={vars({ "--t": `${t0 + 1.2}s` })}>
-        <Envelope cx={MAIL_X} cy={y} w={36} />
-      </g>
-      {atomic ? (
-        <>
-          <Flash x={TXL} y={y - 28} w={TXR - TXL} h={56} tone={fails ? "err" : "ok"} t={t0 + 2} />
-          <Mark cx={DB_MARK} cy={y} ok={!fails} t={t0 + 2} k={0.85} />
-          <Mark cx={MAIL_MARK} cy={y} ok={!fails} t={t0 + 2} k={0.85} />
-        </>
-      ) : (
-        <>
-          <Flash x={TXL} y={y - 28} w={120} h={56} tone="ok" t={t0 + 1.7} />
-          <Mark cx={DB_MARK} cy={y} ok t={t0 + 1.7} k={0.85} />
-          {fails ? (
-            <>
-              <Mark cx={(TXL + 120 + TXR - 120) / 2} cy={y} t={t0 + 2.4} k={0.85} />
-              <Flash x={TXR - 120} y={y - 28} w={120} h={56} tone="err" t={t0 + 3} />
-              <Mark cx={MAIL_MARK} cy={y} t={t0 + 3} k={0.85} />
-            </>
-          ) : (
-            <>
-              <Flash x={TXR - 120} y={y - 28} w={120} h={56} tone="ok" t={t0 + 2.6} />
-              <Mark cx={MAIL_MARK} cy={y} ok t={t0 + 2.6} k={0.85} />
-            </>
-          )}
-        </>
-      )}
-    </g>
-  );
+    );
+  };
   return (
     <Scene
       aria={
@@ -858,33 +986,35 @@ export function SharedAleph() {
 
 /** Typical platforms: every app brings its own runtime, database, and cache, and its own bill. */
 export function SharedTypical() {
-  const apps = [180, 500, 820];
+  const apps = [0, 1, 2, 3, 4, 5].map((i) => 80 + i * 168);
+  /** It plays once the Aleph scene above has finished. */
+  const T0 = 3.6;
   return (
     <Scene
       wide
       w={WW}
       h={SH}
-      aria="Three apps, each in its own runtime with its own server, database, and cache, each with a stack of dollar coins for its cost."
+      aria="Six apps, each in its own runtime with its own server, database, and cache, each with its own pair of dollar coins for its cost."
     >
       <Tag>a typical platform</Tag>
       {apps.map((cx, i) => {
-        const t = 0.2 + i * 0.6;
+        const t = T0 + i * 0.3;
         return (
           <g key={cx}>
             <Pop t={t}>
-              <rect x={cx - 145} y={22} width={290} height={160} rx={10} className="pg-tx" />
+              <rect x={cx - 76} y={22} width={152} height={160} rx={10} className="pg-tx" />
               <Doc cx={cx} y={58} s={0.8} />
               <line x1={cx} y1={78} x2={cx} y2={92} className="s-edge" />
             </Pop>
-            <Pop t={t + 0.3}>
-              <MiniServer cx={cx - 80} cy={116} />
+            <Pop t={t + 0.2}>
+              <MiniServer cx={cx - 46} cy={116} />
               <Db cx={cx} y={102} h={28} w={30} />
-              <MiniCache cx={cx + 80} cy={116} />
+              <MiniCache cx={cx + 46} cy={116} />
             </Pop>
-            {[-26, 0, 26].map((dx, k) => (
-              <Coin key={dx} cx={cx + dx} cy={160} t={t + 0.7 + k * 0.2} />
+            {[-12, 12].map((dx, k) => (
+              <Coin key={dx} cx={cx + dx} cy={160} t={t + 0.5 + k * 0.15} />
             ))}
-            <Label x={cx} y={212}>
+            <Label x={cx} y={212} t={t}>
               app {i + 1} · own infra
             </Label>
           </g>
@@ -908,8 +1038,8 @@ export function RustAleph() {
       <Card cx={RX.artifact} />
       <Glyph cx={RX.artifact}>{"{ }"}</Glyph>
       <Card cx={RX.runtime} strong />
-      <Gear cx={RX.runtime} cy={ONE - 8} />
-      <text x={RX.runtime} y={ONE + 18} textAnchor="middle" className="pg-glyph" fontSize={13}>
+      <Gear cx={RX.runtime} cy={ONE - 14} spin={1.4} t={2} />
+      <text x={RX.runtime} y={ONE + 20} textAnchor="middle" className="pg-glyph" fontSize={13}>
         Rust
       </text>
       <User cx={RX.users} y={ONE} />
@@ -935,7 +1065,7 @@ export function RustAleph() {
           loop
           x={RX.users - 22}
           y={ONE}
-          t={0.1 + i * 0.16}
+          t={2.3 + i * 0.16}
           dx={RX.runtime + 32 - (RX.users - 22)}
           dur={0.64}
         />
@@ -958,8 +1088,8 @@ export function RustTypical() {
       <Card cx={RX.artifact} />
       <Cube cx={RX.artifact} cy={ONE - 6} />
       <Card cx={RX.runtime} />
-      <Gear cx={RX.runtime} cy={ONE - 8} />
-      <text x={RX.runtime} y={ONE + 18} textAnchor="middle" className="pg-glyph" fontSize={13}>
+      <Gear cx={RX.runtime} cy={ONE - 14} spin={5} t={2} />
+      <text x={RX.runtime} y={ONE + 20} textAnchor="middle" className="pg-glyph" fontSize={13}>
         V8
       </text>
       <User cx={RX.users} y={ONE} />
@@ -977,7 +1107,7 @@ export function RustTypical() {
           loop
           x={RX.users - 22}
           y={ONE}
-          t={0.1 + i * 1.1}
+          t={2.3 + i * 1.1}
           dx={RX.runtime + 32 - (RX.users - 22)}
           dur={2.2}
         />
@@ -991,10 +1121,10 @@ export function RustTypical() {
           height={14}
           rx={7}
           className="pg-pkt pg-pkt-err pg-at"
-          style={vars({ "--t": `${3.4 + i * 0.5}s` })}
+          style={vars({ "--t": `${4.6 + i * 0.5}s` })}
         />
       ))}
-      <Pop t={3.4}>
+      <Pop t={4.6}>
         <rect
           x={RX.runtime - 8}
           y={MARK_Y - 4}

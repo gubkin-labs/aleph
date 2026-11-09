@@ -2103,6 +2103,25 @@ body:has(main.home) .topbar nav {
   fill: #f6a26b;
 }
 
+.scene .pg-count {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.scene .pg-count-ok {
+  fill: #7ddc9a;
+}
+
+.scene .pg-count-err {
+  fill: #f6a26b;
+}
+
+.pg-spin {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .pg-at {
     opacity: 0;
@@ -2132,10 +2151,14 @@ body:has(main.home) .topbar nav {
   .pg-out {
     animation: pg-out 0.4s ease var(--t, 0s) forwards;
   }
+
+  .pg-spin {
+    animation: pg-spin var(--spin, 3s) linear var(--t, 0s) infinite;
+  }
 }
 
 /* Hold every animation until the scene is on screen. */
-.pg-view:not(.in) :is(.pg-at, .pg-fly, .pg-flyloop, .pg-grow, .pg-rise, .pg-out) {
+.pg-view:not(.in) :is(.pg-at, .pg-fly, .pg-flyloop, .pg-grow, .pg-rise, .pg-out, .pg-spin) {
   animation-play-state: paused;
 }
 
@@ -2199,6 +2222,12 @@ body:has(main.home) .topbar nav {
 @keyframes pg-out {
   to {
     opacity: 0;
+  }
+}
+
+@keyframes pg-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
