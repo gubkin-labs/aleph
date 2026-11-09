@@ -3,7 +3,8 @@
 Aleph is a declarative language for backends. You describe routes, data, and logic in TypeScript.
 The SDK compiles that into a versioned **manifest**, and a platform runs the manifest on shared
 infrastructure. Every operation is bounded, so thousands of apps can share the same processes and
-databases safely.
+databases safely. For an in-depth look at how the language works, read
+[How Aleph programs work](https://aleph-lang.com/docs/programming-model/).
 
 ## Install
 
